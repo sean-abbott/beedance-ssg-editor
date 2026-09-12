@@ -6,18 +6,50 @@
 </head>
 <body>
   <h1>beedance-ssg-editor</h1>
-  <p>pws-fgf.2: invoking the bundled Zola sidecar from Rust.</p>
-  <button id="check">Run zola --version</button>
-  <pre id="result">(not run yet)</pre>
+
+  <section>
+    <h2>pws-fgf.2: Zola sidecar</h2>
+    <button id="check">Run zola --version</button>
+    <pre id="result">(not run yet)</pre>
+  </section>
+
+  <section>
+    <h2>pws-fgf.4: git-backed content (sample-site/)</h2>
+    <button id="status">git status</button>
+    <pre id="status-result">(not run yet)</pre>
+    <input id="commit-msg" type="text" placeholder="commit message" size="40" />
+    <button id="commit">git commit</button>
+    <pre id="commit-result">(not run yet)</pre>
+  </section>
 
   <script>
     const { invoke } = window.__TAURI__.core;
+
     document.getElementById("check").addEventListener("click", async () => {
-      const result = document.getElementById("result");
+      const el = document.getElementById("result");
       try {
-        result.textContent = await invoke("zola_version");
+        el.textContent = await invoke("zola_version");
       } catch (err) {
-        result.textContent = "ERROR: " + err;
+        el.textContent = "ERROR: " + err;
+      }
+    });
+
+    document.getElementById("status").addEventListener("click", async () => {
+      const el = document.getElementById("status-result");
+      try {
+        el.textContent = await invoke("git_status");
+      } catch (err) {
+        el.textContent = "ERROR: " + err;
+      }
+    });
+
+    document.getElementById("commit").addEventListener("click", async () => {
+      const el = document.getElementById("commit-result");
+      const message = document.getElementById("commit-msg").value || "Update from beedance-ssg-editor";
+      try {
+        el.textContent = await invoke("git_commit", { message });
+      } catch (err) {
+        el.textContent = "ERROR: " + err;
       }
     });
   </script>

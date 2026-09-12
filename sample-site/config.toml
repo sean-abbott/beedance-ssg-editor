@@ -1,0 +1,4 @@
+base_url = "http://127.0.0.1:1111"
+title = "Beedance Sample Site"
+compile_sass = false
+build_search_index = false
