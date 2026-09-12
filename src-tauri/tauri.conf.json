@@ -7,6 +7,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "beedance-ssg-editor",
@@ -16,6 +17,7 @@
     ]
   },
   "bundle": {
-    "active": false
+    "active": false,
+    "externalBin": ["binaries/zola"]
   }
 }

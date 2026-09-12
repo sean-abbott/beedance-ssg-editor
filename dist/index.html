@@ -6,6 +6,20 @@
 </head>
 <body>
   <h1>beedance-ssg-editor</h1>
-  <p>Tauri shell boots. Nothing else here yet (pws-fgf.1).</p>
+  <p>pws-fgf.2: invoking the bundled Zola sidecar from Rust.</p>
+  <button id="check">Run zola --version</button>
+  <pre id="result">(not run yet)</pre>
+
+  <script>
+    const { invoke } = window.__TAURI__.core;
+    document.getElementById("check").addEventListener("click", async () => {
+      const result = document.getElementById("result");
+      try {
+        result.textContent = await invoke("zola_version");
+      } catch (err) {
+        result.textContent = "ERROR: " + err;
+      }
+    });
+  </script>
 </body>
 </html>
