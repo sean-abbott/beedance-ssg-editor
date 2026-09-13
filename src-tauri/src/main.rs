@@ -242,14 +242,14 @@ fn write_file(path: String, content: String, tracker: tauri::State<SelfWriteTrac
     std::fs::write(full, content).map_err(|e| e.to_string())
 }
 
-// Size/quality tiers for inserted images - deliberately not a single fixed
-// cap. Close-up nature/macro photography (this app's first real site is a
-// bee/pollinator committee blog) genuinely needs more resolution than a
-// typical web photo, so "high detail" exists alongside a smaller default -
-// both still bound the output, just at different points, so a raw
-// multi-MB/high-megapixel camera original never gets committed unprocessed.
-// User-adjustable (see get_tier_settings/set_tier_settings) rather than
-// fixed, since the right tradeoff depends on the site's own photos.
+// Saved presets the frontend offers when inserting an image - not the only
+// choice available there (insert_image below takes an explicit width/height/
+// quality, so any custom size works), just a quick-fill starting point.
+// Deliberately two presets, not one: close-up nature/macro photography
+// (this app's first real site is a bee/pollinator committee blog) genuinely
+// needs more resolution than a typical web photo. User-adjustable (see
+// get_tier_settings/set_tier_settings) since the right tradeoff depends on
+// the site's own photos.
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TierSettings {
@@ -281,14 +281,6 @@ fn load_tier_settings() -> TierSettings {
         .and_then(|dir| std::fs::read_to_string(dir.join(TIER_SETTINGS_FILE)).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
-}
-
-fn tier_params(settings: &TierSettings, tier: &str) -> Result<(u32, u8), String> {
-    match tier {
-        "web" => Ok((settings.web_cap, settings.web_quality)),
-        "high" => Ok((settings.high_cap, settings.high_quality)),
-        other => Err(format!("unknown size tier: {other}")),
-    }
 }
 
 #[tauri::command]
@@ -364,28 +356,27 @@ struct InsertImageResult {
     renamed_content_path: Option<String>,
 }
 
-/// Inserts an image into the site: normalizes it (downscale-only per the
-/// chosen tier, re-encoded so EXIF/metadata is dropped, original format
-/// preserved) and writes it to either a site-wide static/images/ folder or
-/// alongside the current page as a Zola page bundle. If the current page
-/// isn't a bundle yet, bundle placement converts it in place - the caller is
-/// expected to have already confirmed that with the user, since it's a
-/// content-structure change (a file rename+move), not just an insert.
+/// Inserts an image into the site: normalizes it (downscale-only to the
+/// given width/height, re-encoded so EXIF/metadata is dropped, original
+/// format preserved) and writes it to either a site-wide static/images/
+/// folder or alongside the current page as a Zola page bundle. If the
+/// current page isn't a bundle yet, bundle placement converts it in place -
+/// the caller is expected to have already confirmed that with the user,
+/// since it's a content-structure change (a file rename+move), not just an
+/// insert. width/height/quality are whatever the frontend's insert panel
+/// ended up with (a preset, hand-typed, or a mix) - this command doesn't
+/// know or care which.
 #[tauri::command]
 async fn insert_image(
     source_path: String,
-    tier: String,
+    width: u32,
+    height: u32,
+    quality: u8,
     placement: String,
     current_content_path: String,
     tracker: tauri::State<'_, SelfWriteTracker>,
     open_files: tauri::State<'_, OpenFiles>,
-    tier_settings: tauri::State<'_, TierSettingsState>,
 ) -> Result<InsertImageResult, String> {
-    let (cap, quality) = {
-        let settings = tier_settings.0.lock().unwrap();
-        tier_params(&settings, &tier)?
-    };
-
     // Format is just a header read, cheap - fine on the main thread that
     // #[tauri::command] runs synchronous work on. Decoding/resizing/encoding
     // a real photo is not cheap, and is moved to spawn_blocking below so a
@@ -477,8 +468,8 @@ async fn insert_image(
                 .map_err(|e| e.to_string())?
                 .decode()
                 .map_err(|e| e.to_string())?;
-            let resized = if img.width() > cap || img.height() > cap {
-                img.resize(cap, cap, FilterType::Lanczos3)
+            let resized = if img.width() > width || img.height() > height {
+                img.resize(width, height, FilterType::Lanczos3)
             } else {
                 img
             };
@@ -514,7 +505,7 @@ async fn insert_image(
 /// touch SelfWriteTracker/OpenFiles - image files are never registered as
 /// open tabs in this app, so the content watcher never watches them.
 #[tauri::command]
-async fn resize_image_in_place(path: String, max_dimension: u32) -> Result<(), String> {
+async fn resize_image_in_place(path: String, width: u32, height: u32) -> Result<(), String> {
     let full = resolve_site_path(&path)?;
 
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
@@ -527,15 +518,15 @@ async fn resize_image_in_place(path: String, max_dimension: u32) -> Result<(), S
             .ok_or_else(|| "could not determine image format".to_string())?;
 
         let img = reader.decode().map_err(|e| e.to_string())?;
-        if max_dimension >= img.width() && max_dimension >= img.height() {
+        if width >= img.width() && height >= img.height() {
             return Err(format!(
-                "new size ({max_dimension}px) isn't smaller than the current image ({}x{}) - this can only shrink, not enlarge",
+                "new size ({width}x{height}) isn't smaller than the current image ({}x{}) - this can only shrink, not enlarge",
                 img.width(),
                 img.height()
             ));
         }
 
-        let resized = img.resize(max_dimension, max_dimension, FilterType::Lanczos3);
+        let resized = img.resize(width, height, FilterType::Lanczos3);
         match format {
             ImageFormat::Jpeg => {
                 let mut out = std::fs::File::create(&full).map_err(|e| e.to_string())?;
@@ -556,6 +547,21 @@ async fn resize_image_in_place(path: String, max_dimension: u32) -> Result<(), S
     .map_err(|e| e.to_string())??;
 
     Ok(())
+}
+
+/// Dimensions of an image file at an arbitrary path - unlike most other
+/// commands here, NOT resolved against the site, since this serves two
+/// callers: a not-yet-inserted source file (anywhere on disk, e.g.
+/// ~/Downloads) and an already-inserted one (where the frontend passes the
+/// full absolute path itself, having prefixed the site dir on). Read-only,
+/// so accepting any path is low-risk - unlike resize_image_in_place, which
+/// overwrites a file and stays constrained to the site via
+/// resolve_site_path.
+#[tauri::command]
+async fn get_image_dimensions(path: String) -> Result<(u32, u32), String> {
+    tauri::async_runtime::spawn_blocking(move || image::image_dimensions(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Reads an image file and returns it as a data: URL, purely so the frontend
@@ -871,7 +877,8 @@ fn main() {
             is_bundle_page,
             get_tier_settings,
             set_tier_settings,
-            resize_image_in_place
+            resize_image_in_place,
+            get_image_dimensions
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

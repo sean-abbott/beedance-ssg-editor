@@ -344,12 +344,16 @@
 
           <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; padding: 8px;">
             <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Size</legend>
-            <label style="display: block; font-size: 13px; margin-bottom: 4px;">
-              <input type="radio" name="insert-image-tier" value="web" checked /> Web standard (best for most photos)
-            </label>
-            <label style="display: block; font-size: 13px;">
-              <input type="radio" name="insert-image-tier" value="high" /> High detail (close-ups, macro shots)
-            </label>
+            <div id="insert-image-current-size" style="font-size: 12px; color: var(--muted); margin-bottom: 6px;"></div>
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+              <button type="button" class="secondary" id="insert-preset-web">Web standard</button>
+              <button type="button" class="secondary" id="insert-preset-high">High detail</button>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px;">
+              <label>Width <input type="number" id="insert-image-width" min="1" style="width: 75px;" /> px</label>
+              <label>Height <input type="number" id="insert-image-height" min="1" style="width: 75px;" /> px</label>
+              <label>Quality <input type="number" id="insert-image-quality" min="1" max="100" style="width: 55px;" /></label>
+            </div>
           </fieldset>
 
           <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
@@ -367,6 +371,36 @@
           <div style="display: flex; justify-content: flex-end; gap: 8px;">
             <button id="insert-image-cancel" class="secondary">Cancel</button>
             <button id="insert-image-confirm">Insert</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="resize-image-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+        <div class="panel" style="width: min(360px, 90%); padding: 16px; background: var(--panel);">
+          <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Resize image</h3>
+          <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+            Shrinks the actual image file on disk and overwrites it. This
+            can't be undone, and the image can't be made bigger again
+            afterward.
+          </p>
+          <div id="resize-current-size" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
+
+          <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+            <button type="button" class="secondary" data-resize-preset="0.75">75%</button>
+            <button type="button" class="secondary" data-resize-preset="0.5">50%</button>
+            <button type="button" class="secondary" data-resize-preset="0.25">25%</button>
+          </div>
+
+          <div style="display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; margin-bottom: 10px;">
+            <label>Width <input type="number" id="resize-width" min="1" style="width: 80px;" /> px</label>
+            <label>Height <input type="number" id="resize-height" min="1" style="width: 80px;" /> px</label>
+          </div>
+
+          <div id="resize-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 8px;">
+            <button id="resize-cancel" class="secondary">Cancel</button>
+            <button id="resize-confirm">Shrink image</button>
           </div>
         </div>
       </div>
@@ -806,16 +840,27 @@
     };
 
     // Image insert flow: a file path (from the picker or a drag/drop) opens
-    // this panel for tier/placement/alt-text choice before anything is
+    // this panel for size/placement/alt-text choice before anything is
     // written to disk. The actual normalize+store work happens in the Rust
     // insert_image command - this is just the picker/preview/confirm UI.
+    //
+    // Size is width/height (linked to preserve the source's aspect ratio),
+    // not a fixed choice of two tiers - "Web standard"/"High detail" are
+    // quick-fill presets (from Settings-adjustable saved values), not the
+    // only options, since a fixed binary choice is exactly what this was
+    // before and it wasn't enough.
     const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
     let pendingImagePath = null;
+    let pendingImageDims = null; // {width, height} of the chosen source file
 
     const imagePanel = document.getElementById("insert-image-panel");
     const imagePreview = document.getElementById("insert-image-preview");
     const imageAltInput = document.getElementById("insert-image-alt");
     const imageStatus = document.getElementById("insert-image-status");
+    const insertCurrentSizeEl = document.getElementById("insert-image-current-size");
+    const insertWidthInput = document.getElementById("insert-image-width");
+    const insertHeightInput = document.getElementById("insert-image-height");
+    const insertQualityInput = document.getElementById("insert-image-quality");
 
     const looksLikeImagePath = (path) => {
       const ext = path.split(".").pop().toLowerCase();
@@ -827,22 +872,66 @@
       return base.includes(".") ? base.slice(0, base.lastIndexOf(".")) : base;
     };
 
+    // Scales {srcW, srcH} down to fit within a cap x cap box, preserving
+    // aspect ratio - never upscales, matching the backend's own behavior.
+    const fitWithinCap = (srcW, srcH, cap) => {
+      if (srcW <= cap && srcH <= cap) return { width: srcW, height: srcH };
+      const scale = cap / Math.max(srcW, srcH);
+      return { width: Math.round(srcW * scale), height: Math.round(srcH * scale) };
+    };
+
+    const applyInsertPreset = async (which) => {
+      if (!pendingImageDims) return;
+      const tiers = await invoke("get_tier_settings");
+      const cap = which === "web" ? tiers.webCap : tiers.highCap;
+      const quality = which === "web" ? tiers.webQuality : tiers.highQuality;
+      const fit = fitWithinCap(pendingImageDims.width, pendingImageDims.height, cap);
+      insertWidthInput.value = fit.width;
+      insertHeightInput.value = fit.height;
+      insertQualityInput.value = quality;
+    };
+
+    document.getElementById("insert-preset-web").addEventListener("click", () => applyInsertPreset("web"));
+    document.getElementById("insert-preset-high").addEventListener("click", () => applyInsertPreset("high"));
+
+    insertWidthInput.addEventListener("input", () => {
+      if (!pendingImageDims) return;
+      const w = Number(insertWidthInput.value);
+      if (w > 0) insertHeightInput.value = Math.round((w * pendingImageDims.height) / pendingImageDims.width);
+    });
+    insertHeightInput.addEventListener("input", () => {
+      if (!pendingImageDims) return;
+      const h = Number(insertHeightInput.value);
+      if (h > 0) insertWidthInput.value = Math.round((h * pendingImageDims.width) / pendingImageDims.height);
+    });
+
     const openInsertImagePanel = async (path) => {
       pendingImagePath = path;
       imageAltInput.value = filenameStem(path).replace(/[-_]+/g, " ");
       imageStatus.textContent = "";
       imagePreview.src = "";
+      insertCurrentSizeEl.textContent = "";
       imagePanel.style.display = "flex";
       try {
         imagePreview.src = await invoke("read_image_preview", { path });
       } catch (err) {
         imageStatus.textContent = "Couldn't preview this file: " + err;
       }
+      try {
+        const [width, height] = await invoke("get_image_dimensions", { path });
+        pendingImageDims = { width, height };
+        insertCurrentSizeEl.textContent = `Original size: ${width} x ${height}px`;
+        await applyInsertPreset("web");
+      } catch (err) {
+        pendingImageDims = null;
+        insertCurrentSizeEl.textContent = "Couldn't read this image's size: " + err;
+      }
     };
 
     const closeInsertImagePanel = () => {
       imagePanel.style.display = "none";
       pendingImagePath = null;
+      pendingImageDims = null;
     };
 
     document.getElementById("fmt-image").addEventListener("click", withActiveTab(async () => {
@@ -863,7 +952,17 @@
 
     document.getElementById("insert-image-confirm").addEventListener("click", async () => {
       if (!pendingImagePath || !activeTab) return;
-      const tier = document.querySelector('input[name="insert-image-tier"]:checked').value;
+      const width = Number(insertWidthInput.value);
+      const height = Number(insertHeightInput.value);
+      const quality = Number(insertQualityInput.value);
+      if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
+        imageStatus.textContent = "Width and height must be whole numbers greater than 0.";
+        return;
+      }
+      if (!Number.isInteger(quality) || quality < 1 || quality > 100) {
+        imageStatus.textContent = "Quality must be a whole number between 1 and 100.";
+        return;
+      }
       const placement = document.querySelector('input[name="insert-image-placement"]:checked').value;
       const alt = imageAltInput.value;
 
@@ -887,7 +986,9 @@
       try {
         const result = await invoke("insert_image", {
           sourcePath: pendingImagePath,
-          tier,
+          width,
+          height,
+          quality,
           placement,
           currentContentPath: activeTab,
         });
@@ -1038,33 +1139,85 @@
 
     const imageAlignStatus = document.getElementById("image-align-status");
 
+    // Resize panel: opened from the alignment toolbar's "Resize..." button.
+    // Percentage presets (of the image's CURRENT on-disk size) plus linked
+    // width/height inputs, rather than a single ambiguous number - the
+    // warning text + a clearly-labeled action button serve as the
+    // confirmation step, instead of stacking a native confirm() on top.
+    const resizePanel = document.getElementById("resize-image-panel");
+    const resizeCurrentSizeEl = document.getElementById("resize-current-size");
+    const resizeWidthInput = document.getElementById("resize-width");
+    const resizeHeightInput = document.getElementById("resize-height");
+    const resizeStatus = document.getElementById("resize-status");
+    let pendingResizePath = null; // site-relative path passed to resize_image_in_place
+    let pendingResizeDims = null; // {width, height} of the image's CURRENT on-disk size
+
     document.getElementById("image-resize-button").addEventListener("click", async () => {
       const found = findImageAtCursor();
       if (!found) return;
 
-      const input = prompt("New maximum width/height in pixels (the image can only shrink, not enlarge):");
-      if (input === null) return;
+      pendingResizePath = resolveImageFilePath(found.src);
+      resizeStatus.textContent = "";
+      resizeCurrentSizeEl.textContent = "";
+      resizePanel.style.display = "flex";
 
-      const maxDimension = Number(input);
-      if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
-        imageAlignStatus.textContent = "Enter a whole number of pixels greater than 0.";
+      try {
+        const absolutePath = `${currentSiteDir}/${pendingResizePath}`;
+        const [width, height] = await invoke("get_image_dimensions", { path: absolutePath });
+        pendingResizeDims = { width, height };
+        resizeCurrentSizeEl.textContent = `Current size: ${width} x ${height}px`;
+        resizeWidthInput.value = width;
+        resizeHeightInput.value = height;
+      } catch (err) {
+        pendingResizeDims = null;
+        resizeCurrentSizeEl.textContent = "Couldn't read this image's size: " + err;
+      }
+    });
+
+    resizeWidthInput.addEventListener("input", () => {
+      if (!pendingResizeDims) return;
+      const w = Number(resizeWidthInput.value);
+      if (w > 0) resizeHeightInput.value = Math.round((w * pendingResizeDims.height) / pendingResizeDims.width);
+    });
+    resizeHeightInput.addEventListener("input", () => {
+      if (!pendingResizeDims) return;
+      const h = Number(resizeHeightInput.value);
+      if (h > 0) resizeWidthInput.value = Math.round((h * pendingResizeDims.width) / pendingResizeDims.height);
+    });
+
+    resizePanel.querySelectorAll("button[data-resize-preset]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!pendingResizeDims) return;
+        const pct = Number(btn.dataset.resizePreset);
+        resizeWidthInput.value = Math.round(pendingResizeDims.width * pct);
+        resizeHeightInput.value = Math.round(pendingResizeDims.height * pct);
+      });
+    });
+
+    document.getElementById("resize-cancel").addEventListener("click", () => {
+      resizePanel.style.display = "none";
+      pendingResizePath = null;
+      pendingResizeDims = null;
+    });
+
+    document.getElementById("resize-confirm").addEventListener("click", async () => {
+      if (!pendingResizePath) return;
+      const width = Number(resizeWidthInput.value);
+      const height = Number(resizeHeightInput.value);
+      if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
+        resizeStatus.textContent = "Width and height must be whole numbers greater than 0.";
         return;
       }
 
-      const proceed = confirm(
-        `This shrinks the actual image file on disk to fit within ${maxDimension}px and overwrites it - it cannot be undone and the image can't be made bigger again afterward. Continue?`
-      );
-      if (!proceed) return;
-
-      imageAlignStatus.textContent = "Resizing…";
+      resizeStatus.textContent = "Resizing…";
       try {
-        await invoke("resize_image_in_place", {
-          path: resolveImageFilePath(found.src),
-          maxDimension,
-        });
-        imageAlignStatus.textContent = "Resized.";
+        await invoke("resize_image_in_place", { path: pendingResizePath, width, height });
+        resizeStatus.textContent = "Resized.";
+        setTimeout(() => {
+          resizePanel.style.display = "none";
+        }, 600);
       } catch (err) {
-        imageAlignStatus.textContent = "ERROR: " + err;
+        resizeStatus.textContent = "ERROR: " + err;
       }
     });
 
