@@ -534,8 +534,13 @@
     });
 
     const siteDirEl = document.getElementById("site-dir");
+    // Kept separate from siteDirEl's displayed text, which can carry a
+    // trailing " (warning: ...)" suffix after set_site_dir - the picker's
+    // defaultPath needs the bare path.
+    let currentSiteDir = "";
 
     invoke("get_site_dir").then((dir) => {
+      currentSiteDir = dir;
       siteDirEl.textContent = dir;
     });
 
@@ -549,6 +554,7 @@
           directory: true,
           multiple: false,
           title: "Choose site directory",
+          defaultPath: currentSiteDir,
         });
         if (!folder) return;
 
@@ -562,6 +568,7 @@
         zolaLog.textContent = "";
 
         const result = await invoke("set_site_dir", { path: folder });
+        currentSiteDir = folder;
         siteDirEl.textContent = result;
 
         await refreshFileList();
