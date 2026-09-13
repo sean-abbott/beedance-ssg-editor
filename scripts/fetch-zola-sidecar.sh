@@ -14,10 +14,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="$REPO_ROOT/src-tauri/binaries"
 DEST="$BIN_DIR/zola-${TARGET_TRIPLE}"
 
-if [[ -x "$DEST" && "${1:-}" != "--force" ]]; then
-    echo "Already present: $DEST (pass --force to re-fetch)"
-    "$DEST" --version
-    exit 0
+if [[ -x "$DEST" ]]; then
+    installed_version="$("$DEST" --version 2>/dev/null | awk '{print $2}')"
+    if [[ "$installed_version" == "$ZOLA_VERSION" && "${1:-}" != "--force" ]]; then
+        echo "Already present: $DEST ($installed_version, matches pinned version)"
+        exit 0
+    fi
+    echo "Installed sidecar is $installed_version, pinned version is $ZOLA_VERSION - re-fetching."
 fi
 
 mkdir -p "$BIN_DIR"
