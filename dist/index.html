@@ -14,9 +14,23 @@
   </section>
 
   <section>
-    <h2>pws-fgf.4: git-backed content (sample-site/)</h2>
+    <h2>pws-fgf.4: git-backed content (sample-site/, its own repo)</h2>
+
+    <p>
+      Current branch:
+      <button id="branch">refresh</button>
+      <span id="branch-result">(not run yet)</span>
+    </p>
+
+    <p>
+      <input id="draft-name" type="text" placeholder="draft name" size="20" />
+      <button id="start-draft">Start a draft</button>
+      <span id="draft-result"></span>
+    </p>
+
     <button id="status">git status</button>
     <pre id="status-result">(not run yet)</pre>
+
     <input id="commit-msg" type="text" placeholder="commit message" size="40" />
     <button id="commit">git commit</button>
     <pre id="commit-result">(not run yet)</pre>
@@ -25,32 +39,29 @@
   <script>
     const { invoke } = window.__TAURI__.core;
 
-    document.getElementById("check").addEventListener("click", async () => {
-      const el = document.getElementById("result");
-      try {
-        el.textContent = await invoke("zola_version");
-      } catch (err) {
-        el.textContent = "ERROR: " + err;
-      }
-    });
+    const wire = (buttonId, resultId, run) => {
+      document.getElementById(buttonId).addEventListener("click", async () => {
+        const el = document.getElementById(resultId);
+        try {
+          el.textContent = await run();
+        } catch (err) {
+          el.textContent = "ERROR: " + err;
+        }
+      });
+    };
 
-    document.getElementById("status").addEventListener("click", async () => {
-      const el = document.getElementById("status-result");
-      try {
-        el.textContent = await invoke("git_status");
-      } catch (err) {
-        el.textContent = "ERROR: " + err;
-      }
-    });
+    wire("check", "result", () => invoke("zola_version"));
+    wire("branch", "branch-result", () => invoke("current_branch"));
+    wire("status", "status-result", () => invoke("git_status"));
 
-    document.getElementById("commit").addEventListener("click", async () => {
-      const el = document.getElementById("commit-result");
+    wire("commit", "commit-result", () => {
       const message = document.getElementById("commit-msg").value || "Update from beedance-ssg-editor";
-      try {
-        el.textContent = await invoke("git_commit", { message });
-      } catch (err) {
-        el.textContent = "ERROR: " + err;
-      }
+      return invoke("git_commit", { message });
+    });
+
+    wire("start-draft", "draft-result", () => {
+      const name = document.getElementById("draft-name").value || "untitled";
+      return invoke("start_draft", { name });
     });
   </script>
 </body>
