@@ -196,6 +196,11 @@
       <h3 id="editor-heading">content/_index.md</h3>
       <textarea id="editor" spellcheck="false"></textarea>
     </div>
+
+    <details style="margin: 12px 0 0;">
+      <summary>zola serve log</summary>
+      <pre id="zola-log">(nothing yet)</pre>
+    </details>
   </main>
 
   <script>
@@ -226,10 +231,14 @@
       return invoke("start_draft", { name });
     });
 
+    const zolaLog = document.getElementById("zola-log");
+
     document.getElementById("preview-start").addEventListener("click", async () => {
       const status = document.getElementById("editor-status");
+      zolaLog.textContent = "";
       try {
         await invoke("zola_serve");
+        status.textContent = "";
       } catch (err) {
         status.textContent = "ERROR: " + err;
       }
@@ -307,6 +316,10 @@
 
     listen("content-file-changed", () => {
       banner.style.display = "block";
+    });
+
+    listen("zola-log", (event) => {
+      zolaLog.textContent += event.payload + "\n";
     });
 
     document.getElementById("banner-reload").addEventListener("click", async () => {

@@ -264,11 +264,32 @@ fn zola_serve(app: tauri::AppHandle, state: tauri::State<ServeState>) -> Result<
 
     *state.0.lock().unwrap() = Some(child);
 
-    // Drain output so the child's stdout/stderr pipe never fills up and blocks it;
-    // ignored for the spike, would surface to the UI in the real app.
-    tauri::async_runtime::spawn(async move { while rx.recv().await.is_some() {} });
+    // Forward zola's own stdout/stderr to the frontend instead of discarding
+    // it - a failed start (e.g. a configured theme that was never vendored)
+    // otherwise just looks like an unexplained connection-refused later.
+    let log_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        use tauri_plugin_shell::process::CommandEvent;
+        while let Some(event) = rx.recv().await {
+            let line = match event {
+                CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
+                    Some(String::from_utf8_lossy(&bytes).to_string())
+                }
+                CommandEvent::Error(err) => Some(format!("error: {err}")),
+                CommandEvent::Terminated(payload) => Some(format!("zola serve exited: {payload:?}")),
+                _ => None,
+            };
+            if let Some(line) = line {
+                let _ = log_app.emit("zola-log", line);
+            }
+        }
+    });
 
-    wait_for_port(1111, Duration::from_secs(5));
+    if !wait_for_port(1111, Duration::from_secs(5)) {
+        return Err(
+            "zola serve did not start listening on 127.0.0.1:1111 within 5s - check the log panel below for the actual error".to_string(),
+        );
+    }
     open_or_focus_preview_window(&app)?;
 
     Ok("zola serve started on http://127.0.0.1:1111".to_string())
