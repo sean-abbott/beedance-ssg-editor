@@ -259,9 +259,50 @@
       <button id="fmt-quote" class="secondary" title="Quote">&ldquo;&rdquo;</button>
       <button id="fmt-ul" class="secondary" title="Bulleted list">&bull; List</button>
       <button id="fmt-ol" class="secondary" title="Numbered list">1. List</button>
+      <button id="fmt-image" class="secondary" title="Insert image">&#128247; Image</button>
     </div>
-    <div class="panel" style="border-radius: 0 0 var(--radius) var(--radius);">
+    <div class="panel" style="border-radius: 0 0 var(--radius) var(--radius); position: relative;">
       <textarea id="editor" spellcheck="false"></textarea>
+
+      <div id="insert-image-panel" hidden style="position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) 85%, transparent); display: flex; align-items: center; justify-content: center;">
+        <div class="panel" style="width: min(420px, 90%); padding: 16px; background: var(--panel);">
+          <h3 style="margin: 0 0 10px; font-size: 13px; color: var(--muted);">Insert image</h3>
+
+          <img id="insert-image-preview" style="max-width: 100%; max-height: 200px; display: block; margin: 0 auto 12px; border-radius: var(--radius);" />
+
+          <label style="display: block; margin-bottom: 8px; font-size: 13px;">
+            Alt text
+            <input id="insert-image-alt" type="text" style="width: 100%; margin-top: 4px;" placeholder="Describe the image for screen readers" />
+          </label>
+
+          <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; padding: 8px;">
+            <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Size</legend>
+            <label style="display: block; font-size: 13px; margin-bottom: 4px;">
+              <input type="radio" name="insert-image-tier" value="web" checked /> Web standard (best for most photos)
+            </label>
+            <label style="display: block; font-size: 13px;">
+              <input type="radio" name="insert-image-tier" value="high" /> High detail (close-ups, macro shots)
+            </label>
+          </fieldset>
+
+          <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
+            <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Where it lives</legend>
+            <label style="display: block; font-size: 13px; margin-bottom: 4px;">
+              <input type="radio" name="insert-image-placement" value="static" checked /> Shared images folder (reusable across pages)
+            </label>
+            <label style="display: block; font-size: 13px;">
+              <input type="radio" name="insert-image-placement" value="bundle" /> With this page only
+            </label>
+          </fieldset>
+
+          <div id="insert-image-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 8px;">
+            <button id="insert-image-cancel" class="secondary">Cancel</button>
+            <button id="insert-image-confirm">Insert</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <details style="margin: 12px 0 0;">
@@ -606,6 +647,131 @@
     document.getElementById("fmt-quote").addEventListener("click", withActiveTab(() => prefixLines("> ")));
     document.getElementById("fmt-ul").addEventListener("click", withActiveTab(() => prefixLines("- ")));
     document.getElementById("fmt-ol").addEventListener("click", withActiveTab(numberLines));
+
+    // Inserts plain text at the cursor without wrapping a selection (unlike
+    // wrapSelection above) - used for splicing in the final image markdown.
+    const insertAtCursor = (text) => {
+      const start = editorEl.selectionStart;
+      const end = editorEl.selectionEnd;
+      const value = editorEl.value;
+      editorEl.value = value.slice(0, start) + text + value.slice(end);
+      editorEl.focus();
+      const pos = start + text.length;
+      editorEl.setSelectionRange(pos, pos);
+      emitEdited();
+    };
+
+    // Image insert flow: a file path (from the picker or a drag/drop) opens
+    // this panel for tier/placement/alt-text choice before anything is
+    // written to disk. The actual normalize+store work happens in the Rust
+    // insert_image command - this is just the picker/preview/confirm UI.
+    const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
+    let pendingImagePath = null;
+
+    const imagePanel = document.getElementById("insert-image-panel");
+    const imagePreview = document.getElementById("insert-image-preview");
+    const imageAltInput = document.getElementById("insert-image-alt");
+    const imageStatus = document.getElementById("insert-image-status");
+
+    const looksLikeImagePath = (path) => {
+      const ext = path.split(".").pop().toLowerCase();
+      return IMAGE_EXTENSIONS.includes(ext);
+    };
+
+    const filenameStem = (path) => {
+      const base = path.split(/[\\/]/).pop();
+      return base.includes(".") ? base.slice(0, base.lastIndexOf(".")) : base;
+    };
+
+    const openInsertImagePanel = async (path) => {
+      pendingImagePath = path;
+      imageAltInput.value = filenameStem(path).replace(/[-_]+/g, " ");
+      imageStatus.textContent = "";
+      imagePreview.src = "";
+      imagePanel.hidden = false;
+      try {
+        imagePreview.src = await invoke("read_image_preview", { path });
+      } catch (err) {
+        imageStatus.textContent = "Couldn't preview this file: " + err;
+      }
+    };
+
+    const closeInsertImagePanel = () => {
+      imagePanel.hidden = true;
+      pendingImagePath = null;
+    };
+
+    document.getElementById("fmt-image").addEventListener("click", withActiveTab(async () => {
+      try {
+        const path = await window.__TAURI__.dialog.open({
+          multiple: false,
+          title: "Choose an image",
+          filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }],
+        });
+        if (path) await openInsertImagePanel(path);
+      } catch (err) {
+        imageStatus.textContent = "ERROR: " + err;
+        imagePanel.hidden = false;
+      }
+    }));
+
+    document.getElementById("insert-image-cancel").addEventListener("click", closeInsertImagePanel);
+
+    document.getElementById("insert-image-confirm").addEventListener("click", async () => {
+      if (!pendingImagePath || !activeTab) return;
+      const tier = document.querySelector('input[name="insert-image-tier"]:checked').value;
+      const placement = document.querySelector('input[name="insert-image-placement"]:checked').value;
+      const alt = imageAltInput.value;
+
+      const isAlreadyBundle = activeTab.split("/").pop() === "index.md";
+      if (placement === "bundle" && !isAlreadyBundle) {
+        const newPath = activeTab.replace(/\.md$/, "") + "/index.md";
+        const proceed = confirm(
+          `"${activeTab}" isn't a page bundle yet. Placing an image with this page will convert it to "${newPath}" so the image can live alongside it. Continue?`
+        );
+        if (!proceed) return;
+      }
+
+      imageStatus.textContent = "Inserting…";
+      try {
+        const result = await invoke("insert_image", {
+          sourcePath: pendingImagePath,
+          tier,
+          placement,
+          currentContentPath: activeTab,
+        });
+
+        if (result.renamedContentPath) {
+          // Bundle placement converted the current leaf page into
+          // content/foo/index.md - move this tab to follow it, and tell the
+          // backend to track the new path instead of the one that no longer
+          // exists on disk.
+          const oldPath = activeTab;
+          const tab = tabs.get(oldPath);
+          tabs.delete(oldPath);
+          tabs.set(result.renamedContentPath, tab);
+          activeTab = result.renamedContentPath;
+          invoke("close_file", { path: oldPath }).catch(() => {});
+          invoke("read_file", { path: result.renamedContentPath }).catch(() => {});
+          await refreshFileList();
+          fileSelect.value = result.renamedContentPath;
+          renderTabBar();
+        }
+
+        insertAtCursor(`![${alt}](${result.markdownReference})`);
+        closeInsertImagePanel();
+      } catch (err) {
+        imageStatus.textContent = "ERROR: " + err;
+      }
+    });
+
+    // Drag/drop a file straight onto the editor as an alternative to the
+    // file picker - core Tauri functionality, no separate plugin.
+    window.__TAURI__.webview.getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type !== "drop" || !activeTab) return;
+      const path = event.payload.paths[0];
+      if (path && looksLikeImagePath(path)) openInsertImagePanel(path);
+    });
 
     window.addEventListener("beforeunload", () => {
       for (const path of tabs.keys()) flushTab(path);

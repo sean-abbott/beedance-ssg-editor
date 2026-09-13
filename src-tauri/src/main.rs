@@ -6,6 +6,8 @@ use std::process::Command as StdCommand;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use image::codecs::jpeg::JpegEncoder;
+use image::{imageops::FilterType, ImageFormat, ImageReader};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{Emitter, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::process::CommandChild;
@@ -226,6 +228,184 @@ fn write_file(path: String, content: String, tracker: tauri::State<SelfWriteTrac
     // genuine external-edit notification for a different one.
     tracker.0.lock().unwrap().insert(full.clone(), Instant::now());
     std::fs::write(full, content).map_err(|e| e.to_string())
+}
+
+// Size/quality tiers for inserted images - deliberately not a single fixed
+// cap. Close-up nature/macro photography (this app's first real site is a
+// bee/pollinator committee blog) genuinely needs more resolution than a
+// typical web photo, so "high detail" exists alongside a smaller default -
+// both still bound the output, just at different points, so a raw
+// multi-MB/high-megapixel camera original never gets committed unprocessed.
+fn tier_params(tier: &str) -> Result<(u32, u8), String> {
+    match tier {
+        "web" => Ok((2000, 80)),
+        "high" => Ok((4800, 90)),
+        other => Err(format!("unknown size tier: {other}")),
+    }
+}
+
+/// Appends "-1", "-2", ... before the extension until an unused filename is
+/// found in `dir`, so inserting two images named the same never clobbers one.
+fn unique_dest(dir: &Path, filename: &str) -> PathBuf {
+    let candidate = dir.join(filename);
+    if !candidate.exists() {
+        return candidate;
+    }
+
+    let stem = Path::new(filename)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| filename.to_string());
+    let ext = Path::new(filename).extension().map(|e| e.to_string_lossy().to_string());
+
+    let mut n = 1;
+    loop {
+        let name = match &ext {
+            Some(e) => format!("{stem}-{n}.{e}"),
+            None => format!("{stem}-{n}"),
+        };
+        let candidate = dir.join(&name);
+        if !candidate.exists() {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+#[derive(serde::Serialize)]
+struct InsertImageResult {
+    // What to write into the markdown at the cursor: a bare filename for a
+    // page-bundle image, or a site-root-relative path for static/images/.
+    markdown_reference: String,
+    // Some(new site-relative path) if inserting as a page-bundle image
+    // required converting the current leaf page into a bundle
+    // (content/foo.md -> content/foo/index.md) - the frontend must move its
+    // open tab to this new path, since the old one no longer exists on disk.
+    renamed_content_path: Option<String>,
+}
+
+/// Inserts an image into the site: normalizes it (downscale-only per the
+/// chosen tier, re-encoded so EXIF/metadata is dropped, original format
+/// preserved) and writes it to either a site-wide static/images/ folder or
+/// alongside the current page as a Zola page bundle. If the current page
+/// isn't a bundle yet, bundle placement converts it in place - the caller is
+/// expected to have already confirmed that with the user, since it's a
+/// content-structure change (a file rename+move), not just an insert.
+#[tauri::command]
+fn insert_image(
+    source_path: String,
+    tier: String,
+    placement: String,
+    current_content_path: String,
+) -> Result<InsertImageResult, String> {
+    let (cap, quality) = tier_params(&tier)?;
+
+    let reader = ImageReader::open(&source_path)
+        .map_err(|e| e.to_string())?
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?;
+    let format = reader
+        .format()
+        .ok_or_else(|| "could not determine image format".to_string())?;
+    if !matches!(format, ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::WebP) {
+        return Err(format!("unsupported image format: {format:?} (supported: JPEG, PNG, WebP)"));
+    }
+
+    let img = reader.decode().map_err(|e| e.to_string())?;
+    let resized = if img.width() > cap || img.height() > cap {
+        img.resize(cap, cap, FilterType::Lanczos3)
+    } else {
+        img
+    };
+
+    let site = site_dir();
+    let source_name = Path::new(&source_path)
+        .file_name()
+        .ok_or_else(|| "invalid source filename".to_string())?
+        .to_string_lossy()
+        .to_string();
+
+    let mut renamed_content_path = None;
+
+    let (dest_dir, markdown_prefix) = match placement.as_str() {
+        "static" => {
+            let dir = site.join("static").join("images");
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            (dir, "/images/".to_string())
+        }
+        "bundle" => {
+            let current_full = resolve_site_path(&current_content_path)?;
+            let is_already_bundle = current_full.file_name().is_some_and(|f| f == "index.md");
+
+            let bundle_dir = if is_already_bundle {
+                current_full
+                    .parent()
+                    .ok_or_else(|| "invalid content path".to_string())?
+                    .to_path_buf()
+            } else {
+                let stem = current_full
+                    .file_stem()
+                    .ok_or_else(|| "invalid content path".to_string())?;
+                let new_dir = current_full
+                    .parent()
+                    .ok_or_else(|| "invalid content path".to_string())?
+                    .join(stem);
+                std::fs::create_dir_all(&new_dir).map_err(|e| e.to_string())?;
+                let new_index = new_dir.join("index.md");
+                std::fs::rename(&current_full, &new_index).map_err(|e| e.to_string())?;
+                renamed_content_path = Some(
+                    new_index
+                        .strip_prefix(&site)
+                        .map_err(|e| e.to_string())?
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+                new_dir
+            };
+            (bundle_dir, String::new())
+        }
+        other => return Err(format!("unknown placement: {other}")),
+    };
+
+    let dest_path = unique_dest(&dest_dir, &source_name);
+    let dest_filename = dest_path.file_name().unwrap().to_string_lossy().to_string();
+
+    match format {
+        ImageFormat::Jpeg => {
+            let mut out = std::fs::File::create(&dest_path).map_err(|e| e.to_string())?;
+            let mut encoder = JpegEncoder::new_with_quality(&mut out, quality);
+            encoder.encode_image(&resized).map_err(|e| e.to_string())?;
+        }
+        _ => {
+            resized.save_with_format(&dest_path, format).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(InsertImageResult {
+        markdown_reference: format!("{markdown_prefix}{dest_filename}"),
+        renamed_content_path,
+    })
+}
+
+/// Reads an image file and returns it as a data: URL, purely so the frontend
+/// can show a preview thumbnail before committing to an insert - a custom
+/// command reading raw bytes sidesteps needing the source path (which can be
+/// anywhere on disk, e.g. ~/Downloads, not just under the site) to fall
+/// within any Tauri asset-protocol scope.
+#[tauri::command]
+fn read_image_preview(path: String) -> Result<String, String> {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine as _;
+
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let mime = match Path::new(&path).extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()) {
+        Some(ext) if ext == "png" => "image/png",
+        Some(ext) if ext == "webp" => "image/webp",
+        Some(ext) if ext == "gif" => "image/gif",
+        _ => "image/jpeg",
+    };
+    let encoded = STANDARD.encode(bytes);
+    Ok(format!("data:{mime};base64,{encoded}"))
 }
 
 /// Watches the whole site tree and emits "content-file-changed" (with the
@@ -473,7 +653,9 @@ fn main() {
             set_site_dir,
             read_file,
             close_file,
-            write_file
+            write_file,
+            insert_image,
+            read_image_preview
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
