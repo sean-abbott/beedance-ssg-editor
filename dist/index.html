@@ -324,11 +324,14 @@
       <button type="button" class="secondary" data-align="left">Left</button>
       <button type="button" class="secondary" data-align="center">Center</button>
       <button type="button" class="secondary" data-align="right">Right</button>
+      <span style="border-left: 1px solid var(--border); height: 16px;"></span>
+      <button type="button" id="image-resize-button" class="secondary">Resize&hellip;</button>
+      <span id="image-align-status" style="color: var(--muted);"></span>
     </div>
-    <div class="panel" style="border-radius: 0 0 var(--radius) var(--radius); position: relative;">
+    <div class="panel" style="border-radius: 0 0 var(--radius) var(--radius);">
       <textarea id="editor" spellcheck="false"></textarea>
 
-      <div id="insert-image-panel" style="position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+      <div id="insert-image-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
         <div class="panel" style="width: min(420px, 90%); padding: 16px; background: var(--panel);">
           <h3 style="margin: 0 0 10px; font-size: 13px; color: var(--muted);">Insert image</h3>
 
@@ -998,6 +1001,7 @@
       imageAlignToolbar.querySelectorAll("button[data-align]").forEach((btn) => {
         btn.classList.toggle("align-active", btn.dataset.align === found.align);
       });
+      imageAlignStatus.textContent = "";
     };
 
     imageAlignToolbar.querySelectorAll("button[data-align]").forEach((btn) => {
@@ -1018,6 +1022,50 @@
         emitEdited();
         updateImageAlignToolbar();
       });
+    });
+
+    // Resolves an image reference's src (a bare filename for a page-bundle
+    // image, or a site-root-relative "/images/..." path for static/images/)
+    // to the site-relative file path the backend needs - the same mapping
+    // insert_image itself uses in reverse when it first placed the file.
+    const resolveImageFilePath = (src) => {
+      if (src.startsWith("/")) {
+        return "static" + src;
+      }
+      const dir = activeTab.includes("/") ? activeTab.slice(0, activeTab.lastIndexOf("/")) : "";
+      return dir ? `${dir}/${src}` : src;
+    };
+
+    const imageAlignStatus = document.getElementById("image-align-status");
+
+    document.getElementById("image-resize-button").addEventListener("click", async () => {
+      const found = findImageAtCursor();
+      if (!found) return;
+
+      const input = prompt("New maximum width/height in pixels (the image can only shrink, not enlarge):");
+      if (input === null) return;
+
+      const maxDimension = Number(input);
+      if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
+        imageAlignStatus.textContent = "Enter a whole number of pixels greater than 0.";
+        return;
+      }
+
+      const proceed = confirm(
+        `This shrinks the actual image file on disk to fit within ${maxDimension}px and overwrites it - it cannot be undone and the image can't be made bigger again afterward. Continue?`
+      );
+      if (!proceed) return;
+
+      imageAlignStatus.textContent = "Resizing…";
+      try {
+        await invoke("resize_image_in_place", {
+          path: resolveImageFilePath(found.src),
+          maxDimension,
+        });
+        imageAlignStatus.textContent = "Resized.";
+      } catch (err) {
+        imageAlignStatus.textContent = "ERROR: " + err;
+      }
     });
 
     editorEl.addEventListener("click", updateImageAlignToolbar);

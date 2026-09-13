@@ -506,6 +506,58 @@ async fn insert_image(
     })
 }
 
+/// Shrinks an already-inserted image file in place - destructive (overwrites
+/// the file) and downscale-only (never enlarges past its current size,
+/// since upscaling only degrades quality further with no real benefit). The
+/// frontend is responsible for warning the user before calling this; the
+/// only guard enforced here is the shrink-only constraint itself. Doesn't
+/// touch SelfWriteTracker/OpenFiles - image files are never registered as
+/// open tabs in this app, so the content watcher never watches them.
+#[tauri::command]
+async fn resize_image_in_place(path: String, max_dimension: u32) -> Result<(), String> {
+    let full = resolve_site_path(&path)?;
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let reader = ImageReader::open(&full)
+            .map_err(|e| e.to_string())?
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?;
+        let format = reader
+            .format()
+            .ok_or_else(|| "could not determine image format".to_string())?;
+
+        let img = reader.decode().map_err(|e| e.to_string())?;
+        if max_dimension >= img.width() && max_dimension >= img.height() {
+            return Err(format!(
+                "new size ({max_dimension}px) isn't smaller than the current image ({}x{}) - this can only shrink, not enlarge",
+                img.width(),
+                img.height()
+            ));
+        }
+
+        let resized = img.resize(max_dimension, max_dimension, FilterType::Lanczos3);
+        match format {
+            ImageFormat::Jpeg => {
+                let mut out = std::fs::File::create(&full).map_err(|e| e.to_string())?;
+                // Manual resizing is a one-off touch-up, not a fresh insert
+                // through a chosen size/quality tier - a fixed, reasonably
+                // high quality keeps this simple rather than asking the user
+                // to also pick a quality number for a single shrink action.
+                let mut encoder = JpegEncoder::new_with_quality(&mut out, 85);
+                encoder.encode_image(&resized).map_err(|e| e.to_string())?;
+            }
+            _ => {
+                resized.save_with_format(&full, format).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(())
+}
+
 /// Reads an image file and returns it as a data: URL, purely so the frontend
 /// can show a preview thumbnail before committing to an insert - a custom
 /// command reading raw bytes sidesteps needing the source path (which can be
@@ -818,7 +870,8 @@ fn main() {
             get_lan_ip,
             is_bundle_page,
             get_tier_settings,
-            set_tier_settings
+            set_tier_settings,
+            resize_image_in_place
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
