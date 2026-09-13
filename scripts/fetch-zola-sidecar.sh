@@ -18,20 +18,35 @@ if [[ -x "$DEST" ]]; then
     installed_version="$("$DEST" --version 2>/dev/null | awk '{print $2}')"
     if [[ "$installed_version" == "$ZOLA_VERSION" && "${1:-}" != "--force" ]]; then
         echo "Already present: $DEST ($installed_version, matches pinned version)"
-        exit 0
+    else
+        echo "Installed sidecar is $installed_version, pinned version is $ZOLA_VERSION - re-fetching."
+        FETCHED=1
     fi
-    echo "Installed sidecar is $installed_version, pinned version is $ZOLA_VERSION - re-fetching."
+else
+    FETCHED=1
 fi
 
-mkdir -p "$BIN_DIR"
+if [[ "${FETCHED:-}" == "1" ]]; then
+    mkdir -p "$BIN_DIR"
 
-TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+    TMP_DIR="$(mktemp -d)"
+    trap 'rm -rf "$TMP_DIR"' EXIT
 
-curl -sL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/${ZOLA_ASSET}" -o "$TMP_DIR/zola.tar.gz"
-tar -xzf "$TMP_DIR/zola.tar.gz" -C "$TMP_DIR"
-mv "$TMP_DIR/zola" "$DEST"
-chmod +x "$DEST"
+    curl -sL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/${ZOLA_ASSET}" -o "$TMP_DIR/zola.tar.gz"
+    tar -xzf "$TMP_DIR/zola.tar.gz" -C "$TMP_DIR"
+    mv "$TMP_DIR/zola" "$DEST"
+    chmod +x "$DEST"
 
-echo "Installed sidecar: $DEST"
+    echo "Installed sidecar: $DEST"
+fi
+
+# Tauri's build.rs copies this into target/<profile>/zola, but only when
+# cargo actually reruns the build script - which is keyed off cargo's own
+# build-script caching, not off whether this file changed or whether the
+# copied destination still exists. Deleting/editing the destination
+# ourselves does nothing reliable. Force it by cleaning just this package
+# (not its dependencies - fast) so the next `cargo tauri dev`/build is
+# guaranteed to rerun build.rs and re-copy a fresh, correct sidecar.
+cargo clean --manifest-path "$REPO_ROOT/src-tauri/Cargo.toml" -p beedance-ssg-editor 2>/dev/null || true
+
 "$DEST" --version
