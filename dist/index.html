@@ -4,21 +4,153 @@
   <meta charset="utf-8" />
   <title>beedance-ssg-editor</title>
   <style>
-    .row { display: flex; gap: 12px; align-items: flex-start; }
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f8;
+      --panel: #ffffff;
+      --border: #ddd;
+      --text: #1c1c1e;
+      --muted: #6b6b70;
+      --accent: #3a6ff7;
+      --accent-text: #ffffff;
+      --banner-bg: #fff6d8;
+      --banner-border: #e6c65c;
+      --radius: 8px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #17181c;
+        --panel: #222329;
+        --border: #35363c;
+        --text: #eaeaec;
+        --muted: #9a9aa2;
+        --banner-bg: #3a331a;
+        --banner-border: #6b5a24;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+
+    main { padding: 16px 20px; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .toolbar .status { margin-left: auto; color: var(--muted); font-size: 13px; }
+
+    button, select, input[type=text] {
+      font: inherit;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 10px;
+    }
+    button {
+      cursor: pointer;
+      background: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+    }
+    button:hover { filter: brightness(1.08); }
+    button.secondary { background: var(--panel); color: var(--text); border-color: var(--border); }
+
+    .row { display: flex; gap: 12px; align-items: stretch; }
     .col { flex: 1 1 0; min-width: 0; }
-    #editor { width: 100%; height: 500px; box-sizing: border-box; font-family: monospace; }
-    #preview-frame { width: 100%; height: 500px; border: 1px solid gray; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .panel h3 {
+      margin: 0;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--panel) 92%, var(--text));
+    }
+    #editor {
+      width: 100%;
+      height: 500px;
+      box-sizing: border-box;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      border: none;
+      padding: 12px;
+      resize: none;
+      background: var(--panel);
+      color: var(--text);
+    }
+    #editor:focus { outline: none; }
+    #preview-frame { width: 100%; height: 500px; border: none; display: block; background: white; }
+
+    #external-change-banner {
+      display: none;
+      background: var(--banner-bg);
+      border: 1px solid var(--banner-border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      margin: 0 20px 12px;
+      font-size: 13px;
+    }
+    #external-change-banner button { margin-left: 8px; }
+
+    details {
+      margin: 0 20px 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    details summary { cursor: pointer; padding: 6px 0; }
+    details section { padding: 8px 0; }
+    details h3 { font-size: 12px; margin: 0 0 6px; color: var(--muted); }
+    details pre {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px;
+      font-size: 12px;
+      overflow-x: auto;
+    }
   </style>
 </head>
 <body>
-  <h1>beedance-ssg-editor</h1>
+  <header>
+    <h1>beedance-ssg-editor</h1>
+  </header>
+
+  <div id="external-change-banner">
+    File changed on disk externally (pws-fgf.6).
+    <button id="banner-reload" class="secondary">Reload</button>
+    <button id="banner-dismiss" class="secondary">Ignore</button>
+  </div>
 
   <details>
-    <summary>debug tools (pws-fgf.2 / pws-fgf.4)</summary>
+    <summary>debug tools</summary>
 
     <section>
       <h3>Zola sidecar</h3>
-      <button id="check">Run zola --version</button>
+      <button id="check" class="secondary">Run zola --version</button>
       <pre id="result">(not run yet)</pre>
     </section>
 
@@ -27,51 +159,52 @@
 
       <p>
         Current branch:
-        <button id="branch">refresh</button>
+        <button id="branch" class="secondary">refresh</button>
         <span id="branch-result">(not run yet)</span>
       </p>
 
       <p>
         <input id="draft-name" type="text" placeholder="draft name" size="20" />
-        <button id="start-draft">Start a draft</button>
+        <button id="start-draft" class="secondary">Start a draft</button>
         <span id="draft-result"></span>
       </p>
 
-      <button id="status">git status</button>
+      <button id="status" class="secondary">git status</button>
       <pre id="status-result">(not run yet)</pre>
 
       <input id="commit-msg" type="text" placeholder="commit message" size="40" />
-      <button id="commit">git commit</button>
+      <button id="commit" class="secondary">git commit</button>
       <pre id="commit-result">(not run yet)</pre>
     </section>
   </details>
 
-  <div id="external-change-banner" style="display:none; background:#fffae0; border:1px solid #d9c56b; padding:8px; margin-bottom:8px;">
-    File changed on disk externally (pws-fgf.6).
-    <button id="banner-reload">Reload</button>
-    <button id="banner-dismiss">Ignore</button>
-  </div>
-
-  <section>
-    <p>
+  <main>
+    <div class="toolbar">
       <button id="preview-start">Start preview</button>
-      <button id="preview-stop">Stop preview</button>
-      <button id="reload">Reload from disk</button>
+      <button id="preview-stop" class="secondary">Stop preview</button>
+      <label>
+        File:
+        <select id="file-select">
+          <option value="content/_index.md">content/_index.md</option>
+          <option value="templates/index.html">templates/index.html</option>
+        </select>
+      </label>
+      <button id="reload" class="secondary">Reload from disk</button>
       <button id="save">Save</button>
-      <span id="editor-status"></span>
-    </p>
+      <span id="editor-status" class="status"></span>
+    </div>
 
     <div class="row">
-      <div class="col">
-        <h3>content/_index.md</h3>
+      <div class="col panel">
+        <h3 id="editor-heading">content/_index.md</h3>
         <textarea id="editor" spellcheck="false"></textarea>
       </div>
-      <div class="col">
+      <div class="col panel">
         <h3>Preview</h3>
         <iframe id="preview-frame" src="about:blank"></iframe>
       </div>
     </div>
-  </section>
+  </main>
 
   <script>
     const { invoke } = window.__TAURI__.core;
@@ -123,10 +256,15 @@
       }
     });
 
+    const fileSelect = document.getElementById("file-select");
+    const editorHeading = document.getElementById("editor-heading");
+
     const loadEditor = async () => {
       const status = document.getElementById("editor-status");
+      const path = fileSelect.value;
       try {
-        document.getElementById("editor").value = await invoke("read_content_file");
+        document.getElementById("editor").value = await invoke("read_file", { path });
+        editorHeading.textContent = path;
         status.textContent = "";
       } catch (err) {
         status.textContent = "ERROR: " + err;
@@ -134,11 +272,12 @@
     };
 
     document.getElementById("reload").addEventListener("click", loadEditor);
+    fileSelect.addEventListener("change", loadEditor);
 
     document.getElementById("save").addEventListener("click", async () => {
       const status = document.getElementById("editor-status");
       try {
-        await invoke("write_content_file", { content: document.getElementById("editor").value });
+        await invoke("write_file", { path: fileSelect.value, content: document.getElementById("editor").value });
         status.textContent = "saved";
       } catch (err) {
         status.textContent = "ERROR: " + err;
