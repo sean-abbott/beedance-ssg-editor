@@ -54,6 +54,7 @@
       margin-bottom: 12px;
     }
     .toolbar .status { margin-left: auto; color: var(--muted); font-size: 13px; }
+    .toolbar .status.dirty { color: #b8860b; font-weight: 600; }
 
     button, select, input[type=text] {
       font: inherit;
@@ -90,6 +91,57 @@
       border-bottom: 1px solid var(--border);
       background: color-mix(in srgb, var(--panel) 92%, var(--text));
     }
+
+    #tab-bar {
+      display: flex;
+      gap: 2px;
+      flex-wrap: wrap;
+      background: color-mix(in srgb, var(--panel) 92%, var(--text));
+      border: 1px solid var(--border);
+      border-bottom: none;
+      border-radius: var(--radius) var(--radius) 0 0;
+      padding: 6px 6px 0;
+    }
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 220px;
+      padding: 6px 8px 6px 10px;
+      font-size: 12px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-bottom: none;
+      border-radius: 6px 6px 0 0;
+      cursor: pointer;
+      color: var(--muted);
+    }
+    .tab:hover { background: var(--bg); }
+    .tab.active {
+      background: var(--panel);
+      border-color: var(--border);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .tab .tab-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tab .tab-dot { color: #b8860b; flex-shrink: 0; }
+    .tab .tab-external-dot { color: #c0392b; flex-shrink: 0; }
+    .tab .tab-close {
+      border: none;
+      background: none;
+      color: inherit;
+      font-size: 13px;
+      line-height: 1;
+      padding: 0 2px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .tab .tab-close:hover { color: #c0392b; }
+
     #editor {
       width: 100%;
       height: 500px;
@@ -140,7 +192,7 @@
   </header>
 
   <div id="external-change-banner">
-    File changed on disk externally (pws-fgf.6).
+    <span id="external-change-message">File changed on disk externally.</span>
     <button id="banner-reload" class="secondary">Reload</button>
     <button id="banner-dismiss" class="secondary">Ignore</button>
   </div>
@@ -183,7 +235,7 @@
       <button id="preview-start">Start preview</button>
       <button id="preview-stop" class="secondary">Stop preview</button>
       <label>
-        File:
+        Open file:
         <select id="file-select"></select>
         <button id="refresh-files" class="secondary" title="Rescan for template files (e.g. after just add-theme)">rescan</button>
       </label>
@@ -193,8 +245,8 @@
       <span id="editor-status" class="status"></span>
     </div>
 
-    <div class="panel">
-      <h3 id="editor-heading">content/_index.md</h3>
+    <div id="tab-bar"></div>
+    <div class="panel" style="border-radius: 0 0 var(--radius) var(--radius);">
       <textarea id="editor" spellcheck="false"></textarea>
     </div>
 
@@ -266,7 +318,17 @@
     });
 
     const fileSelect = document.getElementById("file-select");
-    const editorHeading = document.getElementById("editor-heading");
+    const editorEl = document.getElementById("editor");
+    const tabBar = document.getElementById("tab-bar");
+    const statusEl = document.getElementById("editor-status");
+    const banner = document.getElementById("external-change-banner");
+    const bannerMessage = document.getElementById("external-change-message");
+
+    // Every open file is its own tab with its own buffer/dirty/autosave-timer/
+    // external-change state, keyed by site-relative path.
+    const tabs = new Map();
+    let activeTab = null;
+    const AUTOSAVE_DELAY_MS = 1200;
 
     const refreshFileList = async () => {
       const previous = fileSelect.value;
@@ -281,103 +343,229 @@
       if (files.includes(previous)) fileSelect.value = previous;
     };
 
-    const loadEditor = async () => {
-      const status = document.getElementById("editor-status");
-      const path = fileSelect.value;
-      try {
-        document.getElementById("editor").value = await invoke("read_file", { path });
-        editorHeading.textContent = path;
-        status.textContent = "";
-      } catch (err) {
-        status.textContent = "ERROR: " + err;
+    const renderTabBar = () => {
+      tabBar.innerHTML = "";
+      for (const [path, tab] of tabs) {
+        const el = document.createElement("div");
+        el.className = "tab" + (path === activeTab ? " active" : "");
+        el.title = path;
+
+        if (tab.dirty) {
+          const dot = document.createElement("span");
+          dot.className = "tab-dot";
+          dot.textContent = "●";
+          el.appendChild(dot);
+        } else if (tab.externallyChanged) {
+          const dot = document.createElement("span");
+          dot.className = "tab-external-dot";
+          dot.textContent = "●";
+          el.appendChild(dot);
+        }
+
+        const label = document.createElement("span");
+        label.className = "tab-label";
+        label.textContent = path;
+        el.appendChild(label);
+
+        const close = document.createElement("button");
+        close.className = "tab-close";
+        close.textContent = "×";
+        close.setAttribute("aria-label", "Close " + path);
+        close.addEventListener("click", (e) => {
+          e.stopPropagation();
+          closeTab(path);
+        });
+        el.appendChild(close);
+
+        el.addEventListener("click", () => switchToTab(path));
+        tabBar.appendChild(el);
       }
     };
 
-    // Debounced autosave: saves ~1.2s after typing stops. A pending save is
-    // flushed (not discarded) when switching files - so switching away from
-    // unsaved edits doesn't silently lose them - but is cancelled outright
-    // (not flushed) on an explicit reload, since that means "discard what's
-    // in the editor, give me what's really on disk."
-    const editorEl = document.getElementById("editor");
-    let autosaveTimer = null;
-    let autosavePendingPath = null;
+    const updateStatusForActiveTab = () => {
+      statusEl.classList.remove("dirty");
+      if (!activeTab) {
+        statusEl.textContent = "";
+        return;
+      }
+      const tab = tabs.get(activeTab);
+      if (tab.dirty) {
+        statusEl.classList.add("dirty");
+        statusEl.textContent = "● unsaved changes";
+      } else {
+        statusEl.textContent = "";
+      }
+    };
+
+    const switchToTab = (path) => {
+      const tab = tabs.get(path);
+      if (!tab) return;
+      activeTab = path;
+      editorEl.value = tab.content;
+      editorEl.disabled = false;
+      updateStatusForActiveTab();
+      renderTabBar();
+      if (tab.externallyChanged) {
+        bannerMessage.textContent = path + " changed on disk externally.";
+        banner.style.display = "block";
+      } else {
+        banner.style.display = "none";
+      }
+    };
+
+    const openTab = async (path) => {
+      if (tabs.has(path)) {
+        switchToTab(path);
+        return;
+      }
+      try {
+        const content = await invoke("read_file", { path });
+        tabs.set(path, { content, dirty: false, timer: null, externallyChanged: false });
+        switchToTab(path);
+      } catch (err) {
+        statusEl.textContent = "ERROR: " + err;
+      }
+    };
 
     const doSave = async (path, content) => {
-      const status = document.getElementById("editor-status");
+      const tab = tabs.get(path);
       try {
         await invoke("write_file", { path, content });
-        status.textContent = "saved";
+        if (tab) tab.dirty = false;
+        if (path === activeTab) updateStatusForActiveTab();
+        renderTabBar();
       } catch (err) {
-        status.textContent = "ERROR: " + err;
+        if (path === activeTab) statusEl.textContent = "ERROR: " + err;
       }
     };
 
-    const flushAutosave = () => {
-      if (autosaveTimer) {
-        clearTimeout(autosaveTimer);
-        autosaveTimer = null;
-        doSave(autosavePendingPath, editorEl.value);
+    const flushTab = (path) => {
+      const tab = tabs.get(path);
+      if (!tab) return;
+      if (tab.timer) {
+        clearTimeout(tab.timer);
+        tab.timer = null;
+        doSave(path, tab.content);
       }
     };
 
-    const cancelAutosave = () => {
-      clearTimeout(autosaveTimer);
-      autosaveTimer = null;
+    const cancelTabAutosave = (path) => {
+      const tab = tabs.get(path);
+      if (tab && tab.timer) {
+        clearTimeout(tab.timer);
+        tab.timer = null;
+      }
+    };
+
+    const closeTab = (path) => {
+      flushTab(path);
+      invoke("close_file", { path }).catch(() => {});
+      tabs.delete(path);
+
+      if (activeTab === path) {
+        const remaining = [...tabs.keys()];
+        if (remaining.length > 0) {
+          switchToTab(remaining[remaining.length - 1]);
+        } else {
+          activeTab = null;
+          editorEl.value = "";
+          editorEl.disabled = true;
+          banner.style.display = "none";
+          updateStatusForActiveTab();
+          renderTabBar();
+        }
+      } else {
+        renderTabBar();
+      }
     };
 
     editorEl.addEventListener("input", () => {
-      clearTimeout(autosaveTimer);
-      autosavePendingPath = fileSelect.value;
-      autosaveTimer = setTimeout(() => {
-        autosaveTimer = null;
-        doSave(autosavePendingPath, editorEl.value);
-      }, 1200);
+      if (!activeTab) return;
+      const tab = tabs.get(activeTab);
+      tab.content = editorEl.value;
+      tab.dirty = true;
+      updateStatusForActiveTab();
+      renderTabBar();
+
+      clearTimeout(tab.timer);
+      const path = activeTab;
+      tab.timer = setTimeout(() => {
+        tab.timer = null;
+        doSave(path, tab.content);
+      }, AUTOSAVE_DELAY_MS);
     });
 
-    window.addEventListener("beforeunload", flushAutosave);
+    window.addEventListener("beforeunload", () => {
+      for (const path of tabs.keys()) flushTab(path);
+    });
 
-    document.getElementById("reload").addEventListener("click", () => {
-      cancelAutosave();
-      loadEditor();
+    document.getElementById("reload").addEventListener("click", async () => {
+      if (!activeTab) return;
+      const path = activeTab;
+      cancelTabAutosave(path);
+      try {
+        const content = await invoke("read_file", { path });
+        const tab = tabs.get(path);
+        tab.content = content;
+        tab.dirty = false;
+        tab.externallyChanged = false;
+        if (path === activeTab) {
+          editorEl.value = content;
+          updateStatusForActiveTab();
+          banner.style.display = "none";
+        }
+        renderTabBar();
+      } catch (err) {
+        statusEl.textContent = "ERROR: " + err;
+      }
     });
-    document.getElementById("refresh-files").addEventListener("click", async () => {
-      await refreshFileList();
-      await loadEditor();
-    });
-    fileSelect.addEventListener("change", () => {
-      flushAutosave();
-      loadEditor();
-    });
+
+    document.getElementById("refresh-files").addEventListener("click", refreshFileList);
+
+    fileSelect.addEventListener("change", () => openTab(fileSelect.value));
 
     document.getElementById("save").addEventListener("click", () => {
-      cancelAutosave();
-      doSave(fileSelect.value, editorEl.value);
+      if (!activeTab) return;
+      cancelTabAutosave(activeTab);
+      doSave(activeTab, editorEl.value);
     });
 
     invoke("get_site_dir").then((dir) => {
       document.getElementById("site-dir").textContent = dir;
     });
 
-    refreshFileList().then(loadEditor);
+    refreshFileList().then(() => {
+      if (fileSelect.value) openTab(fileSelect.value);
+    });
 
     const { listen } = window.__TAURI__.event;
-    const banner = document.getElementById("external-change-banner");
 
-    listen("content-file-changed", () => {
-      banner.style.display = "block";
+    listen("content-file-changed", (event) => {
+      const path = event.payload;
+      const tab = tabs.get(path);
+      if (!tab) return;
+      tab.externallyChanged = true;
+      renderTabBar();
+      if (path === activeTab) {
+        bannerMessage.textContent = path + " changed on disk externally.";
+        banner.style.display = "block";
+      }
     });
 
     listen("zola-log", (event) => {
       zolaLog.textContent += event.payload + "\n";
     });
 
-    document.getElementById("banner-reload").addEventListener("click", async () => {
-      cancelAutosave();
-      await loadEditor();
-      banner.style.display = "none";
+    document.getElementById("banner-reload").addEventListener("click", () => {
+      document.getElementById("reload").click();
     });
 
     document.getElementById("banner-dismiss").addEventListener("click", () => {
+      if (activeTab) {
+        const tab = tabs.get(activeTab);
+        if (tab) tab.externallyChanged = false;
+        renderTabBar();
+      }
       banner.style.display = "none";
     });
   </script>

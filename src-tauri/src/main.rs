@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 use std::sync::Mutex;
@@ -14,17 +15,18 @@ const PREVIEW_LABEL: &str = "preview";
 const DESKTOP_PREVIEW_SIZE: (f64, f64) = (1280.0, 800.0);
 const PHONE_PREVIEW_SIZE: (f64, f64) = (390.0, 844.0);
 
+/// Tracks when this app last wrote each path itself, per-path (not a single
+/// global timestamp - with multiple tabs open, saving one file must not
+/// suppress a genuine external-edit notification for a different one), so the
+/// file watcher can tell "the user's own save" apart from a real external edit.
+struct SelfWriteTracker(Mutex<HashMap<PathBuf, Instant>>);
+
+/// Every file currently open in a tab, so the watcher (which covers the whole
+/// site, not just content/) knows which changed paths are worth telling the
+/// frontend about - anything not open in some tab is irrelevant to it.
+struct OpenFiles(Mutex<HashSet<PathBuf>>);
+
 struct ServeState(Mutex<Option<CommandChild>>);
-
-/// Tracks when this app last wrote the open file itself, so the file watcher
-/// can tell "the user clicked Save" apart from a genuine external edit and
-/// only surface the external-change banner for the latter.
-struct SelfWriteTracker(Mutex<Instant>);
-
-/// The site-relative path of whatever file is currently open in the editor,
-/// so the watcher (which now covers the whole site, not just content/) knows
-/// which changed file is worth telling the frontend about.
-struct OpenFile(Mutex<Option<PathBuf>>);
 
 const SELF_WRITE_WINDOW: Duration = Duration::from_millis(750);
 
@@ -136,27 +138,40 @@ fn list_editable_files() -> Vec<String> {
 }
 
 #[tauri::command]
-fn read_file(path: String, open_file: tauri::State<OpenFile>) -> Result<String, String> {
+fn read_file(path: String, open_files: tauri::State<OpenFiles>) -> Result<String, String> {
     let full = resolve_site_path(&path)?;
     let content = std::fs::read_to_string(&full).map_err(|e| e.to_string())?;
-    *open_file.0.lock().unwrap() = Some(full);
+    open_files.0.lock().unwrap().insert(full);
     Ok(content)
+}
+
+/// Called when a tab closes, so the watcher stops caring about that path -
+/// otherwise an external edit to a file with no open tab would still (and
+/// shouldn't) trigger a change notification.
+#[tauri::command]
+fn close_file(path: String, open_files: tauri::State<OpenFiles>) -> Result<(), String> {
+    let full = resolve_site_path(&path)?;
+    open_files.0.lock().unwrap().remove(&full);
+    Ok(())
 }
 
 #[tauri::command]
 fn write_file(path: String, content: String, tracker: tauri::State<SelfWriteTracker>) -> Result<(), String> {
     let full = resolve_site_path(&path)?;
-    // Mark the self-write window BEFORE writing, not after: the watcher thread
-    // runs concurrently and must never be able to observe the resulting fs
-    // event before this timestamp is in place, or it reads as external.
-    *tracker.0.lock().unwrap() = Instant::now();
+    // Mark the self-write window for THIS path BEFORE writing, not after: the
+    // watcher thread runs concurrently and must never be able to observe the
+    // resulting fs event before this timestamp is in place, or it reads as
+    // external. Keyed per-path so saving one open tab never suppresses a
+    // genuine external-edit notification for a different one.
+    tracker.0.lock().unwrap().insert(full.clone(), Instant::now());
     std::fs::write(full, content).map_err(|e| e.to_string())
 }
 
-/// Watches the whole site tree and emits "content-file-changed" when whatever
-/// file is currently open (per OpenFile) is touched from outside the app
-/// (e.g. an agent editing in the background, or another editor). Detection
-/// only for this spike - no auto-reload or merge, that's future work.
+/// Watches the whole site tree and emits "content-file-changed" (with the
+/// changed path as payload) whenever a file that's open in some tab (per
+/// OpenFiles) is touched from outside the app (e.g. an agent editing in the
+/// background, or another editor). Detection only for this spike - no
+/// auto-reload or merge, that's future work.
 fn spawn_content_watcher(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -174,14 +189,24 @@ fn spawn_content_watcher(app: tauri::AppHandle) {
         }
 
         for res in rx {
-            if let Ok(event) = res {
-                let open_path = app.state::<OpenFile>().0.lock().unwrap().clone();
-                let Some(open_path) = open_path else { continue };
-                if event.paths.iter().any(|p| p == &open_path) {
-                    let tracker = app.state::<SelfWriteTracker>();
-                    let is_self_write = tracker.0.lock().unwrap().elapsed() < SELF_WRITE_WINDOW;
-                    if !is_self_write {
-                        let _ = app.emit("content-file-changed", ());
+            let Ok(event) = res else { continue };
+            let open_files = app.state::<OpenFiles>();
+            let changed_open_paths: Vec<PathBuf> = {
+                let open = open_files.0.lock().unwrap();
+                event.paths.iter().filter(|p| open.contains(*p)).cloned().collect()
+            };
+
+            for path in changed_open_paths {
+                let tracker = app.state::<SelfWriteTracker>();
+                let is_self_write = tracker
+                    .0
+                    .lock()
+                    .unwrap()
+                    .get(&path)
+                    .is_some_and(|t| t.elapsed() < SELF_WRITE_WINDOW);
+                if !is_self_write {
+                    if let Ok(rel) = path.strip_prefix(site_dir()) {
+                        let _ = app.emit("content-file-changed", rel.to_string_lossy().replace('\\', "/"));
                     }
                 }
             }
@@ -347,10 +372,8 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(ServeState(Mutex::new(None)))
-        .manage(SelfWriteTracker(Mutex::new(
-            Instant::now() - Duration::from_secs(3600),
-        )))
-        .manage(OpenFile(Mutex::new(None)))
+        .manage(SelfWriteTracker(Mutex::new(HashMap::new())))
+        .manage(OpenFiles(Mutex::new(HashSet::new())))
         .setup(|app| {
             spawn_content_watcher(app.handle().clone());
             Ok(())
@@ -382,6 +405,7 @@ fn main() {
             list_editable_files,
             get_site_dir,
             read_file,
+            close_file,
             write_file
         ])
         .run(tauri::generate_context!())
