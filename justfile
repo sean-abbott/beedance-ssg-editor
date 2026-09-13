@@ -12,3 +12,7 @@ dev: fetch-zola
 # Build the app (fetches the sidecar first if missing)
 build: fetch-zola
     cargo tauri build
+
+# Vendor a Zola theme from a git repo into sample-site/themes/<name>
+add-theme name url:
+    ./scripts/add-theme.sh {{name}} {{url}}

@@ -5,9 +5,14 @@ use std::process::Command as StdCommand;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
+
+const PREVIEW_LABEL: &str = "preview";
+// "idiomatic average web page" desktop viewport, and a common phone reference size.
+const DESKTOP_PREVIEW_SIZE: (f64, f64) = (1280.0, 800.0);
+const PHONE_PREVIEW_SIZE: (f64, f64) = (390.0, 844.0);
 
 struct ServeState(Mutex<Option<CommandChild>>);
 
@@ -66,6 +71,40 @@ fn resolve_site_path(relative: &str) -> Result<PathBuf, String> {
         return Err(format!("invalid path: {}", relative));
     }
     Ok(sample_site_dir().join(rel))
+}
+
+fn collect_html_templates(dir: &Path, root: &Path, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_html_templates(&path, root, out);
+        } else if path.extension().is_some_and(|e| e == "html") {
+            if let Ok(rel) = path.strip_prefix(root) {
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+}
+
+/// Lists content/_index.md plus every .html template under the site's own
+/// templates/ (if any) and any vendored theme's templates/ (themes/*/templates/),
+/// so the editor's file switcher covers real themes, not just a hardcoded pair.
+#[tauri::command]
+fn list_editable_files() -> Vec<String> {
+    let dir = sample_site_dir();
+    let mut files = vec!["content/_index.md".to_string()];
+
+    collect_html_templates(&dir.join("templates"), &dir, &mut files);
+
+    if let Ok(entries) = std::fs::read_dir(dir.join("themes")) {
+        for entry in entries.flatten() {
+            collect_html_templates(&entry.path().join("templates"), &dir, &mut files);
+        }
+    }
+
+    files.sort();
+    files
 }
 
 #[tauri::command]
@@ -176,6 +215,25 @@ fn start_draft(name: String) -> Result<String, String> {
     Ok(format!("Switched to new branch '{}'", branch))
 }
 
+fn open_or_focus_preview_window(app: &tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(PREVIEW_LABEL) {
+        win.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(
+        app,
+        PREVIEW_LABEL,
+        WebviewUrl::External("http://127.0.0.1:1111".parse().unwrap()),
+    )
+    .title("Preview")
+    .inner_size(DESKTOP_PREVIEW_SIZE.0, DESKTOP_PREVIEW_SIZE.1)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 #[tauri::command]
 fn zola_serve(app: tauri::AppHandle, state: tauri::State<ServeState>) -> Result<String, String> {
     // Stop any previous instance first so repeated clicks don't fight over the port.
@@ -196,11 +254,17 @@ fn zola_serve(app: tauri::AppHandle, state: tauri::State<ServeState>) -> Result<
     // ignored for the spike, would surface to the UI in the real app.
     tauri::async_runtime::spawn(async move { while rx.recv().await.is_some() {} });
 
+    open_or_focus_preview_window(&app)?;
+
     Ok("zola serve started on http://127.0.0.1:1111".to_string())
 }
 
 #[tauri::command]
-fn zola_stop(state: tauri::State<ServeState>) -> Result<String, String> {
+fn zola_stop(app: tauri::AppHandle, state: tauri::State<ServeState>) -> Result<String, String> {
+    if let Some(win) = app.get_webview_window(PREVIEW_LABEL) {
+        let _ = win.close();
+    }
+
     match state.0.lock().unwrap().take() {
         Some(child) => {
             child.kill().map_err(|e| e.to_string())?;
@@ -208,6 +272,15 @@ fn zola_stop(state: tauri::State<ServeState>) -> Result<String, String> {
         }
         None => Ok("nothing running".to_string()),
     }
+}
+
+#[tauri::command]
+fn set_preview_phone_mode(app: tauri::AppHandle, phone: bool) -> Result<(), String> {
+    let win = app
+        .get_webview_window(PREVIEW_LABEL)
+        .ok_or_else(|| "preview window is not open".to_string())?;
+    let (w, h) = if phone { PHONE_PREVIEW_SIZE } else { DESKTOP_PREVIEW_SIZE };
+    win.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())
 }
 
 fn main() {
@@ -230,6 +303,8 @@ fn main() {
             start_draft,
             zola_serve,
             zola_stop,
+            set_preview_phone_mode,
+            list_editable_files,
             read_file,
             write_file
         ])

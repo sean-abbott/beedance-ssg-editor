@@ -103,7 +103,6 @@
       color: var(--text);
     }
     #editor:focus { outline: none; }
-    #preview-frame { width: 100%; height: 500px; border: none; display: block; background: white; }
 
     #external-change-banner {
       display: none;
@@ -184,25 +183,18 @@
       <button id="preview-stop" class="secondary">Stop preview</button>
       <label>
         File:
-        <select id="file-select">
-          <option value="content/_index.md">content/_index.md</option>
-          <option value="templates/index.html">templates/index.html</option>
-        </select>
+        <select id="file-select"></select>
+        <button id="refresh-files" class="secondary" title="Rescan for template files (e.g. after just add-theme)">rescan</button>
       </label>
+      <label><input type="checkbox" id="phone-toggle" /> Phone preview</label>
       <button id="reload" class="secondary">Reload from disk</button>
       <button id="save">Save</button>
       <span id="editor-status" class="status"></span>
     </div>
 
-    <div class="row">
-      <div class="col panel">
-        <h3 id="editor-heading">content/_index.md</h3>
-        <textarea id="editor" spellcheck="false"></textarea>
-      </div>
-      <div class="col panel">
-        <h3>Preview</h3>
-        <iframe id="preview-frame" src="about:blank"></iframe>
-      </div>
+    <div class="panel">
+      <h3 id="editor-heading">content/_index.md</h3>
+      <textarea id="editor" spellcheck="false"></textarea>
     </div>
   </main>
 
@@ -238,9 +230,6 @@
       const status = document.getElementById("editor-status");
       try {
         await invoke("zola_serve");
-        setTimeout(() => {
-          document.getElementById("preview-frame").src = "http://127.0.0.1:1111";
-        }, 500);
       } catch (err) {
         status.textContent = "ERROR: " + err;
       }
@@ -250,14 +239,37 @@
       const status = document.getElementById("editor-status");
       try {
         await invoke("zola_stop");
-        document.getElementById("preview-frame").src = "about:blank";
+        document.getElementById("phone-toggle").checked = false;
       } catch (err) {
         status.textContent = "ERROR: " + err;
       }
     });
 
+    document.getElementById("phone-toggle").addEventListener("change", async (e) => {
+      const status = document.getElementById("editor-status");
+      try {
+        await invoke("set_preview_phone_mode", { phone: e.target.checked });
+      } catch (err) {
+        status.textContent = "ERROR: " + err;
+        e.target.checked = !e.target.checked;
+      }
+    });
+
     const fileSelect = document.getElementById("file-select");
     const editorHeading = document.getElementById("editor-heading");
+
+    const refreshFileList = async () => {
+      const previous = fileSelect.value;
+      const files = await invoke("list_editable_files");
+      fileSelect.innerHTML = "";
+      for (const f of files) {
+        const opt = document.createElement("option");
+        opt.value = f;
+        opt.textContent = f;
+        fileSelect.appendChild(opt);
+      }
+      if (files.includes(previous)) fileSelect.value = previous;
+    };
 
     const loadEditor = async () => {
       const status = document.getElementById("editor-status");
@@ -272,6 +284,10 @@
     };
 
     document.getElementById("reload").addEventListener("click", loadEditor);
+    document.getElementById("refresh-files").addEventListener("click", async () => {
+      await refreshFileList();
+      await loadEditor();
+    });
     fileSelect.addEventListener("change", loadEditor);
 
     document.getElementById("save").addEventListener("click", async () => {
@@ -284,7 +300,7 @@
       }
     });
 
-    loadEditor();
+    refreshFileList().then(loadEditor);
 
     const { listen } = window.__TAURI__.event;
     const banner = document.getElementById("external-change-banner");

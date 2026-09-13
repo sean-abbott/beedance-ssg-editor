@@ -6,7 +6,7 @@
 # platforms/architectures - this defaults to Linux x86_64.
 set -euo pipefail
 
-ZOLA_VERSION="0.19.2"
+ZOLA_VERSION="0.23.6"
 ZOLA_ASSET="zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
 TARGET_TRIPLE="x86_64-unknown-linux-gnu"
 
