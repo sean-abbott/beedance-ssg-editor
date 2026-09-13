@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Preview</title>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #toolbar {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      padding: 6px;
+      background: #e8e8ea;
+      border-bottom: 1px solid #ccc;
+    }
+    #toolbar button {
+      font-size: 15px;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+    #frame { width: 100%; height: calc(100% - 39px); border: none; display: block; }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <button id="back" title="Back" aria-label="Back">&larr;</button>
+    <button id="forward" title="Forward" aria-label="Forward">&rarr;</button>
+    <button id="reload" title="Reload" aria-label="Reload">&#8635;</button>
+  </div>
+  <iframe id="frame" src="http://127.0.0.1:1111"></iframe>
+
+  <script>
+    const frame = document.getElementById("frame");
+
+    // history.back()/forward() are allowed cross-origin per spec even though
+    // the iframe (127.0.0.1:1111) and this page (tauri's own origin) differ.
+    document.getElementById("back").addEventListener("click", () => {
+      frame.contentWindow.history.back();
+    });
+    document.getElementById("forward").addEventListener("click", () => {
+      frame.contentWindow.history.forward();
+    });
+
+    // Reassigning the iframe's own src (an element the parent owns) reloads
+    // it without needing cross-origin access to contentWindow.location.
+    document.getElementById("reload").addEventListener("click", () => {
+      frame.src = frame.src;
+    });
+  </script>
+</body>
+</html>

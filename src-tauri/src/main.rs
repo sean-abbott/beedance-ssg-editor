@@ -99,13 +99,13 @@ fn resolve_site_path(relative: &str) -> Result<PathBuf, String> {
     Ok(site_dir().join(rel))
 }
 
-fn collect_html_templates(dir: &Path, root: &Path, out: &mut Vec<String>) {
+fn collect_files_with_ext(dir: &Path, root: &Path, ext: &str, out: &mut Vec<String>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            collect_html_templates(&path, root, out);
-        } else if path.extension().is_some_and(|e| e == "html") {
+            collect_files_with_ext(&path, root, ext, out);
+        } else if path.extension().is_some_and(|e| e == ext) {
             if let Ok(rel) = path.strip_prefix(root) {
                 out.push(rel.to_string_lossy().replace('\\', "/"));
             }
@@ -113,19 +113,21 @@ fn collect_html_templates(dir: &Path, root: &Path, out: &mut Vec<String>) {
     }
 }
 
-/// Lists content/_index.md plus every .html template under the site's own
-/// templates/ (if any) and any vendored theme's templates/ (themes/*/templates/),
-/// so the editor's file switcher covers real themes, not just a hardcoded pair.
+/// Lists every .md file under content/ (every page/post in the site, however
+/// many there are), plus every .html template under the site's own templates/
+/// (if any) and any vendored theme's templates/ (themes/*/templates/), so the
+/// editor's file switcher covers a real multi-page site, not just one file.
 #[tauri::command]
 fn list_editable_files() -> Vec<String> {
     let dir = site_dir();
-    let mut files = vec!["content/_index.md".to_string()];
+    let mut files = Vec::new();
 
-    collect_html_templates(&dir.join("templates"), &dir, &mut files);
+    collect_files_with_ext(&dir.join("content"), &dir, "md", &mut files);
+    collect_files_with_ext(&dir.join("templates"), &dir, "html", &mut files);
 
     if let Ok(entries) = std::fs::read_dir(dir.join("themes")) {
         for entry in entries.flatten() {
-            collect_html_templates(&entry.path().join("templates"), &dir, &mut files);
+            collect_files_with_ext(&entry.path().join("templates"), &dir, "html", &mut files);
         }
     }
 
@@ -261,11 +263,7 @@ fn open_or_focus_preview_window(app: &tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(
-        app,
-        PREVIEW_LABEL,
-        WebviewUrl::External("http://127.0.0.1:1111".parse().unwrap()),
-    )
+    WebviewWindowBuilder::new(app, PREVIEW_LABEL, WebviewUrl::App("preview.html".into()))
     .title("Preview")
     .inner_size(DESKTOP_PREVIEW_SIZE.0, DESKTOP_PREVIEW_SIZE.1)
     .build()
