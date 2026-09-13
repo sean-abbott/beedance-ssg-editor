@@ -215,6 +215,20 @@ fn start_draft(name: String) -> Result<String, String> {
     Ok(format!("Switched to new branch '{}'", branch))
 }
 
+/// Polls the port zola serve binds to rather than guessing a fixed delay -
+/// spawn() returns as soon as the process starts, well before it's actually
+/// listening, which is what caused the "Connection refused" race.
+fn wait_for_port(port: u16, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    false
+}
+
 fn open_or_focus_preview_window(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(PREVIEW_LABEL) {
         win.set_focus().map_err(|e| e.to_string())?;
@@ -254,6 +268,7 @@ fn zola_serve(app: tauri::AppHandle, state: tauri::State<ServeState>) -> Result<
     // ignored for the spike, would surface to the UI in the real app.
     tauri::async_runtime::spawn(async move { while rx.recv().await.is_some() {} });
 
+    wait_for_port(1111, Duration::from_secs(5));
     open_or_focus_preview_window(&app)?;
 
     Ok("zola serve started on http://127.0.0.1:1111".to_string())
@@ -294,6 +309,21 @@ fn main() {
         .setup(|app| {
             spawn_content_watcher(app.handle().clone());
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the main window should take the preview (window + zola
+            // serve process) down with it, not leave it orphaned.
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                let app = window.app_handle();
+                if let Some(state) = app.try_state::<ServeState>() {
+                    if let Some(child) = state.0.lock().unwrap().take() {
+                        let _ = child.kill();
+                    }
+                }
+                if let Some(preview) = app.get_webview_window(PREVIEW_LABEL) {
+                    let _ = preview.close();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             zola_version,
