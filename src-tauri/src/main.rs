@@ -298,33 +298,30 @@ struct InsertImageResult {
 /// expected to have already confirmed that with the user, since it's a
 /// content-structure change (a file rename+move), not just an insert.
 #[tauri::command]
-fn insert_image(
+async fn insert_image(
     source_path: String,
     tier: String,
     placement: String,
     current_content_path: String,
-    tracker: tauri::State<SelfWriteTracker>,
-    open_files: tauri::State<OpenFiles>,
+    tracker: tauri::State<'_, SelfWriteTracker>,
+    open_files: tauri::State<'_, OpenFiles>,
 ) -> Result<InsertImageResult, String> {
     let (cap, quality) = tier_params(&tier)?;
 
-    let reader = ImageReader::open(&source_path)
+    // Format is just a header read, cheap - fine on the main thread that
+    // #[tauri::command] runs synchronous work on. Decoding/resizing/encoding
+    // a real photo is not cheap, and is moved to spawn_blocking below so a
+    // multi-megapixel insert doesn't freeze the whole app the way
+    // zola_serve's blocking wait_for_port used to.
+    let format = ImageReader::open(&source_path)
         .map_err(|e| e.to_string())?
         .with_guessed_format()
-        .map_err(|e| e.to_string())?;
-    let format = reader
+        .map_err(|e| e.to_string())?
         .format()
         .ok_or_else(|| "could not determine image format".to_string())?;
     if !matches!(format, ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::WebP) {
         return Err(format!("unsupported image format: {format:?} (supported: JPEG, PNG, WebP)"));
     }
-
-    let img = reader.decode().map_err(|e| e.to_string())?;
-    let resized = if img.width() > cap || img.height() > cap {
-        img.resize(cap, cap, FilterType::Lanczos3)
-    } else {
-        img
-    };
 
     let site = site_dir();
     let source_name = Path::new(&source_path)
@@ -404,16 +401,36 @@ fn insert_image(
     let dest_path = unique_dest(&dest_dir, &source_name);
     let dest_filename = dest_path.file_name().unwrap().to_string_lossy().to_string();
 
-    match format {
-        ImageFormat::Jpeg => {
-            let mut out = std::fs::File::create(&dest_path).map_err(|e| e.to_string())?;
-            let mut encoder = JpegEncoder::new_with_quality(&mut out, quality);
-            encoder.encode_image(&resized).map_err(|e| e.to_string())?;
+    let decode_resize_encode = {
+        let source_path = source_path.clone();
+        let dest_path = dest_path.clone();
+        move || -> Result<(), String> {
+            let img = ImageReader::open(&source_path)
+                .map_err(|e| e.to_string())?
+                .decode()
+                .map_err(|e| e.to_string())?;
+            let resized = if img.width() > cap || img.height() > cap {
+                img.resize(cap, cap, FilterType::Lanczos3)
+            } else {
+                img
+            };
+
+            match format {
+                ImageFormat::Jpeg => {
+                    let mut out = std::fs::File::create(&dest_path).map_err(|e| e.to_string())?;
+                    let mut encoder = JpegEncoder::new_with_quality(&mut out, quality);
+                    encoder.encode_image(&resized).map_err(|e| e.to_string())?;
+                }
+                _ => {
+                    resized.save_with_format(&dest_path, format).map_err(|e| e.to_string())?;
+                }
+            }
+            Ok(())
         }
-        _ => {
-            resized.save_with_format(&dest_path, format).map_err(|e| e.to_string())?;
-        }
-    }
+    };
+    tauri::async_runtime::spawn_blocking(decode_resize_encode)
+        .await
+        .map_err(|e| e.to_string())??;
 
     Ok(InsertImageResult {
         markdown_reference: format!("{markdown_prefix}{dest_filename}"),
@@ -576,7 +593,7 @@ fn open_or_focus_preview_window(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn zola_serve(app: tauri::AppHandle, state: tauri::State<ServeState>, network: bool) -> Result<String, String> {
+async fn zola_serve(app: tauri::AppHandle, state: tauri::State<'_, ServeState>, network: bool) -> Result<String, String> {
     // Stop any previous instance first so repeated clicks don't fight over the port.
     if let Some(child) = state.0.lock().unwrap().take() {
         let _ = child.kill();
@@ -625,7 +642,15 @@ fn zola_serve(app: tauri::AppHandle, state: tauri::State<ServeState>, network: b
         }
     });
 
-    if !wait_for_port(1111, Duration::from_secs(5)) {
+    // wait_for_port's polling loop uses a blocking std::thread::sleep - this
+    // command runs on the main thread by default (it wasn't `async fn`
+    // before), so that loop used to freeze the whole app's UI for up to 5s
+    // every time preview started. spawn_blocking moves it off the main
+    // thread; the command staying `async fn` is what makes that possible.
+    let port_ready = tauri::async_runtime::spawn_blocking(|| wait_for_port(1111, Duration::from_secs(5)))
+        .await
+        .map_err(|e| e.to_string())?;
+    if !port_ready {
         return Err(
             "zola serve did not start listening on 127.0.0.1:1111 within 5s - check the log panel below for the actual error".to_string(),
         );
