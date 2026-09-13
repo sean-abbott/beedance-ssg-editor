@@ -272,7 +272,13 @@ fn unique_dest(dir: &Path, filename: &str) -> PathBuf {
     }
 }
 
+// Tauri's camelCase auto-conversion for invoke() only applies to command
+// ARGUMENTS (JS -> Rust); a returned struct goes through plain serde, which
+// uses the Rust field names as-is unless told otherwise - without this
+// attribute the frontend's `result.markdownReference` reads undefined off a
+// `markdown_reference` key and silently inserts `![alt](undefined)`.
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct InsertImageResult {
     // What to write into the markdown at the cursor: a bare filename for a
     // page-bundle image, or a site-root-relative path for static/images/.
@@ -297,6 +303,8 @@ fn insert_image(
     tier: String,
     placement: String,
     current_content_path: String,
+    tracker: tauri::State<SelfWriteTracker>,
+    open_files: tauri::State<OpenFiles>,
 ) -> Result<InsertImageResult, String> {
     let (cap, quality) = tier_params(&tier)?;
 
@@ -335,7 +343,17 @@ fn insert_image(
         }
         "bundle" => {
             let current_full = resolve_site_path(&current_content_path)?;
-            let is_already_bundle = current_full.file_name().is_some_and(|f| f == "index.md");
+            // Zola has two "already has its own directory" conventions:
+            // index.md (a leaf page turned into a page bundle) and _index.md
+            // (a section index - ALWAYS already able to colocate assets in
+            // its own directory, never needs converting into a nested
+            // bundle). Treating only index.md as "already a bundle" would
+            // rename a section's _index.md into <dir>/_index/index.md,
+            // which breaks Zola's ability to find that section at all - this
+            // is exactly what happened to content/_index.md (the site root).
+            let is_already_bundle = current_full
+                .file_name()
+                .is_some_and(|f| f == "index.md" || f == "_index.md");
 
             let bundle_dir = if is_already_bundle {
                 current_full
@@ -352,7 +370,23 @@ fn insert_image(
                     .join(stem);
                 std::fs::create_dir_all(&new_dir).map_err(|e| e.to_string())?;
                 let new_index = new_dir.join("index.md");
+
+                // The rename below is invisible to the frontend until it gets
+                // this command's result back, but the content watcher runs
+                // concurrently and covers the whole site - without this, it
+                // sees a real fs event on `current_full` (which is still in
+                // OpenFiles, since the frontend hasn't called close_file yet)
+                // with no self-write record, and reports it as an external
+                // change on a tab that's actually just being moved by us.
+                {
+                    let mut t = tracker.0.lock().unwrap();
+                    t.insert(current_full.clone(), Instant::now());
+                    t.insert(new_index.clone(), Instant::now());
+                }
+
                 std::fs::rename(&current_full, &new_index).map_err(|e| e.to_string())?;
+                open_files.0.lock().unwrap().remove(&current_full);
+
                 renamed_content_path = Some(
                     new_index
                         .strip_prefix(&site)
@@ -542,16 +576,29 @@ fn open_or_focus_preview_window(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn zola_serve(app: tauri::AppHandle, state: tauri::State<ServeState>) -> Result<String, String> {
+fn zola_serve(app: tauri::AppHandle, state: tauri::State<ServeState>, network: bool) -> Result<String, String> {
     // Stop any previous instance first so repeated clicks don't fight over the port.
     if let Some(child) = state.0.lock().unwrap().take() {
         let _ = child.kill();
     }
 
+    let mut args = vec!["serve".to_string()];
+    if network {
+        // Binding 0.0.0.0 still answers on 127.0.0.1 too, so wait_for_port
+        // below needs no change. base-url also needs to follow, or asset/
+        // live-reload URLs Zola injects stay pinned to 127.0.0.1 and silently
+        // fail to load from another device on the LAN (per Zola's own docs).
+        let lan_ip = local_ip_address::local_ip().map_err(|e| e.to_string())?;
+        args.push("--interface".to_string());
+        args.push("0.0.0.0".to_string());
+        args.push("--base-url".to_string());
+        args.push(format!("http://{lan_ip}:1111"));
+    }
+
     let sidecar = app.shell().sidecar("zola").map_err(|e| e.to_string())?;
     let (mut rx, child) = sidecar
         .current_dir(site_dir())
-        .args(["serve"])
+        .args(args)
         .spawn()
         .map_err(|e| e.to_string())?;
 
@@ -585,7 +632,21 @@ fn zola_serve(app: tauri::AppHandle, state: tauri::State<ServeState>) -> Result<
     }
     open_or_focus_preview_window(&app)?;
 
-    Ok("zola serve started on http://127.0.0.1:1111".to_string())
+    if network {
+        let lan_ip = local_ip_address::local_ip().map_err(|e| e.to_string())?;
+        Ok(format!("zola serve started on http://127.0.0.1:1111 (also reachable on your network at http://{lan_ip}:1111)"))
+    } else {
+        Ok("zola serve started on http://127.0.0.1:1111".to_string())
+    }
+}
+
+/// Best-guess LAN IP for this machine, so the Settings panel can show a
+/// clickable-looking address before the user even starts the preview server.
+#[tauri::command]
+fn get_lan_ip() -> Result<String, String> {
+    local_ip_address::local_ip()
+        .map(|ip| ip.to_string())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -655,7 +716,8 @@ fn main() {
             close_file,
             write_file,
             insert_image,
-            read_image_preview
+            read_image_preview,
+            get_lan_ip
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

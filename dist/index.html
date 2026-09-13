@@ -183,6 +183,21 @@
       font-size: 12px;
       overflow-x: auto;
     }
+
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--muted);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: -2px;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -191,8 +206,29 @@
     <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
       <div id="site-dir" style="font-size: 12px; color: var(--muted);">(loading...)</div>
       <button id="change-site" class="secondary" style="font-size: 11px; padding: 2px 8px;">Change site&hellip;</button>
+      <button id="open-settings" class="secondary" style="font-size: 11px; padding: 2px 8px;">Settings&hellip;</button>
     </div>
   </header>
+
+  <div id="settings-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(440px, 90%); padding: 16px; background: var(--panel);">
+      <h3 style="margin: 0 0 12px; font-size: 13px; color: var(--muted);">Settings</h3>
+
+      <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+        <input type="checkbox" id="network-serve-toggle" /> Run the preview server on the network
+      </label>
+      <p style="font-size: 12px; color: var(--muted); margin: 0 0 12px;">
+        Makes the preview reachable from other devices on your network (e.g. a
+        phone) instead of only this machine. Takes effect next time you start
+        the preview.
+      </p>
+      <div id="lan-address" style="font-size: 12px; margin-bottom: 16px;"></div>
+
+      <div style="display: flex; justify-content: flex-end;">
+        <button id="close-settings" class="secondary">Close</button>
+      </div>
+    </div>
+  </div>
 
   <div id="external-change-banner">
     <span id="external-change-message">File changed on disk externally.</span>
@@ -341,11 +377,37 @@
 
     const zolaLog = document.getElementById("zola-log");
 
+    // Settings panel - currently just the one network-serve toggle, but its
+    // own dialog rather than living under "debug tools" since it's a real
+    // user-facing setting, not a spike/debug affordance.
+    let networkServeEnabled = false;
+    const settingsPanel = document.getElementById("settings-panel");
+    const networkServeToggle = document.getElementById("network-serve-toggle");
+    const lanAddressEl = document.getElementById("lan-address");
+
+    document.getElementById("open-settings").addEventListener("click", async () => {
+      settingsPanel.style.display = "flex";
+      try {
+        const ip = await invoke("get_lan_ip");
+        lanAddressEl.textContent = `This machine's address on your network: http://${ip}:1111`;
+      } catch (err) {
+        lanAddressEl.textContent = "Couldn't determine a network address: " + err;
+      }
+    });
+
+    document.getElementById("close-settings").addEventListener("click", () => {
+      settingsPanel.style.display = "none";
+    });
+
+    networkServeToggle.addEventListener("change", (e) => {
+      networkServeEnabled = e.target.checked;
+    });
+
     document.getElementById("preview-start").addEventListener("click", async () => {
       const status = document.getElementById("editor-status");
       zolaLog.textContent = "";
       try {
-        await invoke("zola_serve");
+        await invoke("zola_serve", { network: networkServeEnabled });
         status.textContent = "";
       } catch (err) {
         status.textContent = "ERROR: " + err;
@@ -723,7 +785,8 @@
       const placement = document.querySelector('input[name="insert-image-placement"]:checked').value;
       const alt = imageAltInput.value;
 
-      const isAlreadyBundle = activeTab.split("/").pop() === "index.md";
+      const activeBasename = activeTab.split("/").pop();
+      const isAlreadyBundle = activeBasename === "index.md" || activeBasename === "_index.md";
       if (placement === "bundle" && !isAlreadyBundle) {
         const newPath = activeTab.replace(/\.md$/, "") + "/index.md";
         const proceed = confirm(
@@ -732,7 +795,11 @@
         if (!proceed) return;
       }
 
-      imageStatus.textContent = "Inserting…";
+      const confirmBtn = document.getElementById("insert-image-confirm");
+      const cancelBtn = document.getElementById("insert-image-cancel");
+      confirmBtn.disabled = true;
+      cancelBtn.disabled = true;
+      imageStatus.innerHTML = '<span class="spinner"></span>Processing image…';
       try {
         const result = await invoke("insert_image", {
           sourcePath: pendingImagePath,
@@ -762,6 +829,9 @@
         closeInsertImagePanel();
       } catch (err) {
         imageStatus.textContent = "ERROR: " + err;
+      } finally {
+        confirmBtn.disabled = false;
+        cancelBtn.disabled = false;
       }
     });
 
