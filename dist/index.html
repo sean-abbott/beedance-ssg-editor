@@ -46,6 +46,12 @@
     </section>
   </details>
 
+  <div id="external-change-banner" style="display:none; background:#fffae0; border:1px solid #d9c56b; padding:8px; margin-bottom:8px;">
+    File changed on disk externally (pws-fgf.6).
+    <button id="banner-reload">Reload</button>
+    <button id="banner-dismiss">Ignore</button>
+  </div>
+
   <section>
     <p>
       <button id="preview-start">Start preview</button>
@@ -140,6 +146,22 @@
     });
 
     loadEditor();
+
+    const { listen } = window.__TAURI__.event;
+    const banner = document.getElementById("external-change-banner");
+
+    listen("content-file-changed", () => {
+      banner.style.display = "block";
+    });
+
+    document.getElementById("banner-reload").addEventListener("click", async () => {
+      await loadEditor();
+      banner.style.display = "none";
+    });
+
+    document.getElementById("banner-dismiss").addEventListener("click", () => {
+      banner.style.display = "none";
+    });
   </script>
 </body>
 </html>

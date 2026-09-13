@@ -3,11 +3,20 @@
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
+use tauri::{Emitter, Manager};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
 struct ServeState(Mutex<Option<CommandChild>>);
+
+/// Tracks when this app last wrote content_file() itself, so the file watcher
+/// can tell "the user clicked Save" apart from a genuine external edit and
+/// only surface the external-change banner for the latter.
+struct SelfWriteTracker(Mutex<Instant>);
+
+const SELF_WRITE_WINDOW: Duration = Duration::from_millis(750);
 
 fn sample_site_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sample-site")
@@ -51,8 +60,46 @@ fn read_content_file() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn write_content_file(content: String) -> Result<(), String> {
-    std::fs::write(content_file(), content).map_err(|e| e.to_string())
+fn write_content_file(content: String, tracker: tauri::State<SelfWriteTracker>) -> Result<(), String> {
+    std::fs::write(content_file(), content).map_err(|e| e.to_string())?;
+    *tracker.0.lock().unwrap() = Instant::now();
+    Ok(())
+}
+
+/// Watches content/ for changes and emits "content-file-changed" when the
+/// currently-open file is touched from outside the app (e.g. by an agent
+/// editing in the background, or the user in another editor). Detection
+/// only for this spike - no auto-reload or merge, that's future work.
+fn spawn_content_watcher(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut watcher: RecommendedWatcher = match notify::recommended_watcher(move |res| {
+            let _ = tx.send(res);
+        }) {
+            Ok(w) => w,
+            Err(_) => return,
+        };
+
+        let watch_dir = sample_site_dir().join("content");
+        if watcher.watch(&watch_dir, RecursiveMode::NonRecursive).is_err() {
+            return;
+        }
+
+        let target = content_file();
+        for res in rx {
+            if let Ok(event) = res {
+                if event.paths.iter().any(|p| p == &target) {
+                    let tracker = app.state::<SelfWriteTracker>();
+                    let is_self_write = tracker.0.lock().unwrap().elapsed() < SELF_WRITE_WINDOW;
+                    if !is_self_write {
+                        let _ = app.emit("content-file-changed", ());
+                    }
+                }
+            }
+        }
+    });
 }
 
 fn slugify(name: &str) -> String {
@@ -147,6 +194,13 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(ServeState(Mutex::new(None)))
+        .manage(SelfWriteTracker(Mutex::new(
+            Instant::now() - Duration::from_secs(3600),
+        )))
+        .setup(|app| {
+            spawn_content_watcher(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             zola_version,
             git_status,
