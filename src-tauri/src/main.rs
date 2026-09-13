@@ -41,6 +41,20 @@ fn ensure_site_repo() -> Result<(), String> {
     Ok(())
 }
 
+fn content_file() -> PathBuf {
+    sample_site_dir().join("content/_index.md")
+}
+
+#[tauri::command]
+fn read_content_file() -> Result<String, String> {
+    std::fs::read_to_string(content_file()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_content_file(content: String) -> Result<(), String> {
+    std::fs::write(content_file(), content).map_err(|e| e.to_string())
+}
+
 fn slugify(name: &str) -> String {
     name.trim()
         .to_lowercase()
@@ -140,7 +154,9 @@ fn main() {
             current_branch,
             start_draft,
             zola_serve,
-            zola_stop
+            zola_stop,
+            read_content_file,
+            write_content_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

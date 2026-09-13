@@ -3,46 +3,68 @@
 <head>
   <meta charset="utf-8" />
   <title>beedance-ssg-editor</title>
+  <style>
+    .row { display: flex; gap: 12px; align-items: flex-start; }
+    .col { flex: 1 1 0; min-width: 0; }
+    #editor { width: 100%; height: 500px; box-sizing: border-box; font-family: monospace; }
+    #preview-frame { width: 100%; height: 500px; border: 1px solid gray; }
+  </style>
 </head>
 <body>
   <h1>beedance-ssg-editor</h1>
 
-  <section>
-    <h2>pws-fgf.2: Zola sidecar</h2>
-    <button id="check">Run zola --version</button>
-    <pre id="result">(not run yet)</pre>
-  </section>
+  <details>
+    <summary>debug tools (pws-fgf.2 / pws-fgf.4)</summary>
+
+    <section>
+      <h3>Zola sidecar</h3>
+      <button id="check">Run zola --version</button>
+      <pre id="result">(not run yet)</pre>
+    </section>
+
+    <section>
+      <h3>git-backed content (sample-site/, its own repo)</h3>
+
+      <p>
+        Current branch:
+        <button id="branch">refresh</button>
+        <span id="branch-result">(not run yet)</span>
+      </p>
+
+      <p>
+        <input id="draft-name" type="text" placeholder="draft name" size="20" />
+        <button id="start-draft">Start a draft</button>
+        <span id="draft-result"></span>
+      </p>
+
+      <button id="status">git status</button>
+      <pre id="status-result">(not run yet)</pre>
+
+      <input id="commit-msg" type="text" placeholder="commit message" size="40" />
+      <button id="commit">git commit</button>
+      <pre id="commit-result">(not run yet)</pre>
+    </section>
+  </details>
 
   <section>
-    <h2>pws-fgf.4: git-backed content (sample-site/, its own repo)</h2>
-
     <p>
-      Current branch:
-      <button id="branch">refresh</button>
-      <span id="branch-result">(not run yet)</span>
+      <button id="preview-start">Start preview</button>
+      <button id="preview-stop">Stop preview</button>
+      <button id="reload">Reload from disk</button>
+      <button id="save">Save</button>
+      <span id="editor-status"></span>
     </p>
 
-    <p>
-      <input id="draft-name" type="text" placeholder="draft name" size="20" />
-      <button id="start-draft">Start a draft</button>
-      <span id="draft-result"></span>
-    </p>
-
-    <button id="status">git status</button>
-    <pre id="status-result">(not run yet)</pre>
-
-    <input id="commit-msg" type="text" placeholder="commit message" size="40" />
-    <button id="commit">git commit</button>
-    <pre id="commit-result">(not run yet)</pre>
-  </section>
-
-  <section>
-    <h2>pws-fgf.3: live preview (zola serve)</h2>
-    <button id="preview-start">Start preview</button>
-    <button id="preview-stop">Stop preview</button>
-    <span id="preview-result"></span>
-    <br />
-    <iframe id="preview-frame" src="about:blank" width="900" height="500" style="border: 1px solid gray; margin-top: 8px;"></iframe>
+    <div class="row">
+      <div class="col">
+        <h3>content/_index.md</h3>
+        <textarea id="editor" spellcheck="false"></textarea>
+      </div>
+      <div class="col">
+        <h3>Preview</h3>
+        <iframe id="preview-frame" src="about:blank"></iframe>
+      </div>
+    </div>
   </section>
 
   <script>
@@ -74,27 +96,50 @@
     });
 
     document.getElementById("preview-start").addEventListener("click", async () => {
-      const el = document.getElementById("preview-result");
+      const status = document.getElementById("editor-status");
       try {
-        el.textContent = await invoke("zola_serve");
-        // give the server a moment to bind before pointing the iframe at it
+        await invoke("zola_serve");
         setTimeout(() => {
           document.getElementById("preview-frame").src = "http://127.0.0.1:1111";
         }, 500);
       } catch (err) {
-        el.textContent = "ERROR: " + err;
+        status.textContent = "ERROR: " + err;
       }
     });
 
     document.getElementById("preview-stop").addEventListener("click", async () => {
-      const el = document.getElementById("preview-result");
+      const status = document.getElementById("editor-status");
       try {
-        el.textContent = await invoke("zola_stop");
+        await invoke("zola_stop");
         document.getElementById("preview-frame").src = "about:blank";
       } catch (err) {
-        el.textContent = "ERROR: " + err;
+        status.textContent = "ERROR: " + err;
       }
     });
+
+    const loadEditor = async () => {
+      const status = document.getElementById("editor-status");
+      try {
+        document.getElementById("editor").value = await invoke("read_content_file");
+        status.textContent = "";
+      } catch (err) {
+        status.textContent = "ERROR: " + err;
+      }
+    };
+
+    document.getElementById("reload").addEventListener("click", loadEditor);
+
+    document.getElementById("save").addEventListener("click", async () => {
+      const status = document.getElementById("editor-status");
+      try {
+        await invoke("write_content_file", { content: document.getElementById("editor").value });
+        status.textContent = "saved";
+      } catch (err) {
+        status.textContent = "ERROR: " + err;
+      }
+    });
+
+    loadEditor();
   </script>
 </body>
 </html>
