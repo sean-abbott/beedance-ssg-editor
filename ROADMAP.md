@@ -45,3 +45,5 @@ Real ideas, not yet ordered or scheduled.
   internal-link syntax that site's actual static site generator needs (e.g.
   Zola's content-relative paths, Hugo's `ref`/`relref` shortcodes), rather
   than requiring the author to know or hand-type SSG-specific link syntax.
+- Insert an image via clipboard paste (a screenshot, or an image copied from
+  a browser), as a third source alongside the file picker and drag/drop.
