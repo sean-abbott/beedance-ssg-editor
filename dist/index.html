@@ -36,6 +36,15 @@
     <pre id="commit-result">(not run yet)</pre>
   </section>
 
+  <section>
+    <h2>pws-fgf.3: live preview (zola serve)</h2>
+    <button id="preview-start">Start preview</button>
+    <button id="preview-stop">Stop preview</button>
+    <span id="preview-result"></span>
+    <br />
+    <iframe id="preview-frame" src="about:blank" width="900" height="500" style="border: 1px solid gray; margin-top: 8px;"></iframe>
+  </section>
+
   <script>
     const { invoke } = window.__TAURI__.core;
 
@@ -62,6 +71,29 @@
     wire("start-draft", "draft-result", () => {
       const name = document.getElementById("draft-name").value || "untitled";
       return invoke("start_draft", { name });
+    });
+
+    document.getElementById("preview-start").addEventListener("click", async () => {
+      const el = document.getElementById("preview-result");
+      try {
+        el.textContent = await invoke("zola_serve");
+        // give the server a moment to bind before pointing the iframe at it
+        setTimeout(() => {
+          document.getElementById("preview-frame").src = "http://127.0.0.1:1111";
+        }, 500);
+      } catch (err) {
+        el.textContent = "ERROR: " + err;
+      }
+    });
+
+    document.getElementById("preview-stop").addEventListener("click", async () => {
+      const el = document.getElementById("preview-result");
+      try {
+        el.textContent = await invoke("zola_stop");
+        document.getElementById("preview-frame").src = "about:blank";
+      } catch (err) {
+        el.textContent = "ERROR: " + err;
+      }
     });
   </script>
 </body>

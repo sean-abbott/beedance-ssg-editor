@@ -8,6 +8,9 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "security": {
+      "csp": null
+    },
     "windows": [
       {
         "title": "beedance-ssg-editor",
