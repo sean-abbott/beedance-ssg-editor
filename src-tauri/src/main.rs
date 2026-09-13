@@ -11,10 +11,15 @@ use tauri_plugin_shell::ShellExt;
 
 struct ServeState(Mutex<Option<CommandChild>>);
 
-/// Tracks when this app last wrote content_file() itself, so the file watcher
+/// Tracks when this app last wrote the open file itself, so the file watcher
 /// can tell "the user clicked Save" apart from a genuine external edit and
 /// only surface the external-change banner for the latter.
 struct SelfWriteTracker(Mutex<Instant>);
+
+/// The site-relative path of whatever file is currently open in the editor,
+/// so the watcher (which now covers the whole site, not just content/) knows
+/// which changed file is worth telling the frontend about.
+struct OpenFile(Mutex<Option<PathBuf>>);
 
 const SELF_WRITE_WINDOW: Duration = Duration::from_millis(750);
 
@@ -50,25 +55,38 @@ fn ensure_site_repo() -> Result<(), String> {
     Ok(())
 }
 
-fn content_file() -> PathBuf {
-    sample_site_dir().join("content/_index.md")
+/// Resolves a site-relative path (e.g. "content/_index.md",
+/// "templates/index.html") to a real path under sample-site/, rejecting
+/// anything absolute or containing ".." components. Lexical only (not
+/// canonicalize-based symlink-proof) - adequate for a local single-user spike,
+/// not a hardening guarantee.
+fn resolve_site_path(relative: &str) -> Result<PathBuf, String> {
+    let rel = Path::new(relative);
+    if rel.is_absolute() || rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return Err(format!("invalid path: {}", relative));
+    }
+    Ok(sample_site_dir().join(rel))
 }
 
 #[tauri::command]
-fn read_content_file() -> Result<String, String> {
-    std::fs::read_to_string(content_file()).map_err(|e| e.to_string())
+fn read_file(path: String, open_file: tauri::State<OpenFile>) -> Result<String, String> {
+    let full = resolve_site_path(&path)?;
+    let content = std::fs::read_to_string(&full).map_err(|e| e.to_string())?;
+    *open_file.0.lock().unwrap() = Some(full);
+    Ok(content)
 }
 
 #[tauri::command]
-fn write_content_file(content: String, tracker: tauri::State<SelfWriteTracker>) -> Result<(), String> {
-    std::fs::write(content_file(), content).map_err(|e| e.to_string())?;
+fn write_file(path: String, content: String, tracker: tauri::State<SelfWriteTracker>) -> Result<(), String> {
+    let full = resolve_site_path(&path)?;
+    std::fs::write(full, content).map_err(|e| e.to_string())?;
     *tracker.0.lock().unwrap() = Instant::now();
     Ok(())
 }
 
-/// Watches content/ for changes and emits "content-file-changed" when the
-/// currently-open file is touched from outside the app (e.g. by an agent
-/// editing in the background, or the user in another editor). Detection
+/// Watches the whole site tree and emits "content-file-changed" when whatever
+/// file is currently open (per OpenFile) is touched from outside the app
+/// (e.g. an agent editing in the background, or another editor). Detection
 /// only for this spike - no auto-reload or merge, that's future work.
 fn spawn_content_watcher(app: tauri::AppHandle) {
     std::thread::spawn(move || {
@@ -82,15 +100,15 @@ fn spawn_content_watcher(app: tauri::AppHandle) {
             Err(_) => return,
         };
 
-        let watch_dir = sample_site_dir().join("content");
-        if watcher.watch(&watch_dir, RecursiveMode::NonRecursive).is_err() {
+        if watcher.watch(&sample_site_dir(), RecursiveMode::Recursive).is_err() {
             return;
         }
 
-        let target = content_file();
         for res in rx {
             if let Ok(event) = res {
-                if event.paths.iter().any(|p| p == &target) {
+                let open_path = app.state::<OpenFile>().0.lock().unwrap().clone();
+                let Some(open_path) = open_path else { continue };
+                if event.paths.iter().any(|p| p == &open_path) {
                     let tracker = app.state::<SelfWriteTracker>();
                     let is_self_write = tracker.0.lock().unwrap().elapsed() < SELF_WRITE_WINDOW;
                     if !is_self_write {
@@ -197,6 +215,7 @@ fn main() {
         .manage(SelfWriteTracker(Mutex::new(
             Instant::now() - Duration::from_secs(3600),
         )))
+        .manage(OpenFile(Mutex::new(None)))
         .setup(|app| {
             spawn_content_watcher(app.handle().clone());
             Ok(())
@@ -209,8 +228,8 @@ fn main() {
             start_draft,
             zola_serve,
             zola_stop,
-            read_content_file,
-            write_content_file
+            read_file,
+            write_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
