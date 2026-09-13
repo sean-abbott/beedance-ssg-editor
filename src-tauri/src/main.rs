@@ -6,6 +6,7 @@ use std::process::Command as StdCommand;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{Emitter, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
@@ -27,6 +28,18 @@ struct SelfWriteTracker(Mutex<HashMap<PathBuf, Instant>>);
 struct OpenFiles(Mutex<HashSet<PathBuf>>);
 
 struct ServeState(Mutex<Option<CommandChild>>);
+
+/// The live content watcher, shared so `set_site_dir` can retarget it (unwatch
+/// the old site, watch the new one) instead of it silently continuing to
+/// watch a directory the app no longer edits.
+struct WatcherState(Mutex<Option<RecommendedWatcher>>);
+
+const CONFIG_FILE_NAME: &str = "site_dir";
+
+fn config_dir() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
+    Ok(PathBuf::from(home).join(".config/beedance-ssg-editor"))
+}
 
 const SELF_WRITE_WINDOW: Duration = Duration::from_millis(750);
 
@@ -56,6 +69,52 @@ fn site_dir() -> PathBuf {
 #[tauri::command]
 fn get_site_dir() -> String {
     site_dir().to_string_lossy().to_string()
+}
+
+/// Points the app at a different site directory from the in-app folder
+/// picker, mirroring scripts/set-site.sh (same config file, same
+/// missing-config.toml warning) but also retargeting the live content
+/// watcher, which scripts/set-site.sh never had to worry about since it only
+/// ever ran before the app started.
+#[tauri::command]
+fn set_site_dir(
+    path: String,
+    watcher_state: tauri::State<WatcherState>,
+    open_files: tauri::State<OpenFiles>,
+    tracker: tauri::State<SelfWriteTracker>,
+) -> Result<String, String> {
+    if std::env::var("BEEDANCE_SITE_DIR").is_ok() {
+        return Err("BEEDANCE_SITE_DIR env var is set and overrides this - unset it to use the site switcher".to_string());
+    }
+
+    let new_dir = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
+    if !new_dir.is_dir() {
+        return Err(format!("not a directory: {}", new_dir.display()));
+    }
+
+    let old_dir = site_dir();
+
+    let config_dir = config_dir()?;
+    std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
+    std::fs::write(config_dir.join(CONFIG_FILE_NAME), new_dir.to_string_lossy().as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    if let Some(watcher) = watcher_state.0.lock().unwrap().as_mut() {
+        let _ = watcher.unwatch(&old_dir);
+        watcher.watch(&new_dir, RecursiveMode::Recursive).map_err(|e| e.to_string())?;
+    }
+
+    // Stale entries from the old site are harmless (their paths can't collide
+    // with the new site's), but clearing them keeps these maps from growing
+    // forever across repeated site switches.
+    open_files.0.lock().unwrap().clear();
+    tracker.0.lock().unwrap().clear();
+
+    let mut message = new_dir.to_string_lossy().to_string();
+    if !new_dir.join("config.toml").exists() {
+        message.push_str(" (warning: no config.toml found there - is this actually a Zola site directory?)");
+    }
+    Ok(message)
 }
 
 fn run_git(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -174,8 +233,6 @@ fn write_file(path: String, content: String, tracker: tauri::State<SelfWriteTrac
 /// auto-reload or merge, that's future work.
 fn spawn_content_watcher(app: tauri::AppHandle) {
     std::thread::spawn(move || {
-        use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-
         let (tx, rx) = std::sync::mpsc::channel();
         let mut watcher: RecommendedWatcher = match notify::recommended_watcher(move |res| {
             let _ = tx.send(res);
@@ -187,6 +244,11 @@ fn spawn_content_watcher(app: tauri::AppHandle) {
         if watcher.watch(&site_dir(), RecursiveMode::Recursive).is_err() {
             return;
         }
+
+        // Handed off to shared state so set_site_dir (running on a command
+        // thread) can unwatch/rewatch when the edited site changes - this
+        // thread only needs `rx` from here on.
+        app.state::<WatcherState>().0.lock().unwrap().replace(watcher);
 
         for res in rx {
             let Ok(event) = res else { continue };
@@ -371,9 +433,11 @@ fn set_preview_phone_mode(app: tauri::AppHandle, phone: bool) -> Result<(), Stri
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(ServeState(Mutex::new(None)))
         .manage(SelfWriteTracker(Mutex::new(HashMap::new())))
         .manage(OpenFiles(Mutex::new(HashSet::new())))
+        .manage(WatcherState(Mutex::new(None)))
         .setup(|app| {
             spawn_content_watcher(app.handle().clone());
             Ok(())
@@ -404,6 +468,7 @@ fn main() {
             set_preview_phone_mode,
             list_editable_files,
             get_site_dir,
+            set_site_dir,
             read_file,
             close_file,
             write_file

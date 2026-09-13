@@ -188,7 +188,10 @@
 <body>
   <header>
     <h1>beedance-ssg-editor</h1>
-    <div id="site-dir" style="font-size: 12px; color: var(--muted); margin-top: 2px;">(loading...)</div>
+    <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+      <div id="site-dir" style="font-size: 12px; color: var(--muted);">(loading...)</div>
+      <button id="change-site" class="secondary" style="font-size: 11px; padding: 2px 8px;">Change site&hellip;</button>
+    </div>
   </header>
 
   <div id="external-change-banner">
@@ -530,12 +533,42 @@
       doSave(activeTab, editorEl.value);
     });
 
+    const siteDirEl = document.getElementById("site-dir");
+
     invoke("get_site_dir").then((dir) => {
-      document.getElementById("site-dir").textContent = dir;
+      siteDirEl.textContent = dir;
     });
 
     refreshFileList().then(() => {
       if (fileSelect.value) openTab(fileSelect.value);
+    });
+
+    document.getElementById("change-site").addEventListener("click", async () => {
+      try {
+        const folder = await window.__TAURI__.dialog.open({
+          directory: true,
+          multiple: false,
+          title: "Choose site directory",
+        });
+        if (!folder) return;
+
+        // Leaving the current site entirely - flush and close every open tab
+        // against it (closeTab already saves pending edits and tells the
+        // backend to stop tracking each path) before switching underneath.
+        for (const path of [...tabs.keys()]) closeTab(path);
+
+        await invoke("zola_stop");
+        document.getElementById("phone-toggle").checked = false;
+        zolaLog.textContent = "";
+
+        const result = await invoke("set_site_dir", { path: folder });
+        siteDirEl.textContent = result;
+
+        await refreshFileList();
+        if (fileSelect.value) openTab(fileSelect.value);
+      } catch (err) {
+        siteDirEl.textContent = "ERROR: " + err;
+      }
     });
 
     const { listen } = window.__TAURI__.event;
