@@ -2,3 +2,4 @@
 /src-tauri/binaries/
 /src-tauri/gen/
 /sample-site/
+/.docker-cargo-cache/

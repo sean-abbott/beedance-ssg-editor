@@ -238,7 +238,10 @@ fn write_file(path: String, content: String, tracker: tauri::State<SelfWriteTrac
 // multi-MB/high-megapixel camera original never gets committed unprocessed.
 fn tier_params(tier: &str) -> Result<(u32, u8), String> {
     match tier {
-        "web" => Ok((2000, 80)),
+        // 1600 vs. the old 2000px cap: JPEG size roughly tracks pixel area,
+        // so a 20% smaller linear dimension is ~36% smaller output - close
+        // to the "cut it by a third" ask - without touching quality.
+        "web" => Ok((1600, 80)),
         "high" => Ok((4800, 90)),
         other => Err(format!("unknown size tier: {other}")),
     }

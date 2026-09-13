@@ -47,3 +47,7 @@ Real ideas, not yet ordered or scheduled.
   than requiring the author to know or hand-type SSG-specific link syntax.
 - Insert an image via clipboard paste (a screenshot, or an image copied from
   a browser), as a third source alongside the file picker and drag/drop.
+- Windows build support: this app currently only builds on Linux/macOS. A
+  Windows build needs its own documented prerequisites (Visual Studio Build
+  Tools, WebView2, the Rust MSVC target) and a Windows-target variant of the
+  Zola sidecar fetch, plus real testing on a Windows machine.
