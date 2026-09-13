@@ -79,9 +79,11 @@ fn read_file(path: String, open_file: tauri::State<OpenFile>) -> Result<String, 
 #[tauri::command]
 fn write_file(path: String, content: String, tracker: tauri::State<SelfWriteTracker>) -> Result<(), String> {
     let full = resolve_site_path(&path)?;
-    std::fs::write(full, content).map_err(|e| e.to_string())?;
+    // Mark the self-write window BEFORE writing, not after: the watcher thread
+    // runs concurrently and must never be able to observe the resulting fs
+    // event before this timestamp is in place, or it reads as external.
     *tracker.0.lock().unwrap() = Instant::now();
-    Ok(())
+    std::fs::write(full, content).map_err(|e| e.to_string())
 }
 
 /// Watches the whole site tree and emits "content-file-changed" when whatever
