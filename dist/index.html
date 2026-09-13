@@ -785,8 +785,10 @@
       const placement = document.querySelector('input[name="insert-image-placement"]:checked').value;
       const alt = imageAltInput.value;
 
-      const activeBasename = activeTab.split("/").pop();
-      const isAlreadyBundle = activeBasename === "index.md" || activeBasename === "_index.md";
+      // Ask the backend rather than re-deriving the bundle-page convention
+      // here - a hand-copied version of this exact check (missing _index.md)
+      // is what caused the site-root-renaming bug found while testing.
+      const isAlreadyBundle = await invoke("is_bundle_page", { path: activeTab });
       if (placement === "bundle" && !isAlreadyBundle) {
         const newPath = activeTab.replace(/\.md$/, "") + "/index.md";
         const proceed = confirm(

@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod zola;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
@@ -75,6 +77,16 @@ fn get_site_dir() -> String {
     site_dir().to_string_lossy().to_string()
 }
 
+/// Lets the frontend ask whether a content path is already a Zola bundle
+/// page/section (see zola::is_bundle_page) instead of hand-copying that
+/// convention in JS - a duplicated copy of exactly this check is what caused
+/// the site-root-renaming bug found while testing image insertion.
+#[tauri::command]
+fn is_bundle_page(path: String) -> Result<bool, String> {
+    let full = resolve_site_path(&path)?;
+    Ok(zola::is_bundle_page(&full))
+}
+
 /// Points the app at a different site directory from the in-app folder
 /// picker, mirroring scripts/set-site.sh (same config file, same
 /// missing-config.toml warning) but also retargeting the live content
@@ -115,7 +127,7 @@ fn set_site_dir(
     tracker.0.lock().unwrap().clear();
 
     let mut message = new_dir.to_string_lossy().to_string();
-    if !new_dir.join("config.toml").exists() {
+    if !zola::looks_like_site(&new_dir) {
         message.push_str(" (warning: no config.toml found there - is this actually a Zola site directory?)");
     }
     Ok(message)
@@ -187,12 +199,12 @@ fn list_editable_files() -> Vec<String> {
     let dir = site_dir();
     let mut files = Vec::new();
 
-    collect_files_with_ext(&dir.join("content"), &dir, "md", &mut files);
-    collect_files_with_ext(&dir.join("templates"), &dir, "html", &mut files);
+    collect_files_with_ext(&dir.join(zola::CONTENT_DIR), &dir, zola::CONTENT_EXT, &mut files);
+    collect_files_with_ext(&dir.join(zola::TEMPLATES_DIR), &dir, zola::TEMPLATE_EXT, &mut files);
 
-    if let Ok(entries) = std::fs::read_dir(dir.join("themes")) {
+    if let Ok(entries) = std::fs::read_dir(dir.join(zola::THEMES_DIR)) {
         for entry in entries.flatten() {
-            collect_files_with_ext(&entry.path().join("templates"), &dir, "html", &mut files);
+            collect_files_with_ext(&entry.path().join(zola::TEMPLATES_DIR), &dir, zola::TEMPLATE_EXT, &mut files);
         }
     }
 
@@ -337,23 +349,13 @@ async fn insert_image(
 
     let (dest_dir, markdown_prefix) = match placement.as_str() {
         "static" => {
-            let dir = site.join("static").join("images");
+            let dir = site.join(zola::STATIC_DIR).join("images");
             std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
             (dir, "/images/".to_string())
         }
         "bundle" => {
             let current_full = resolve_site_path(&current_content_path)?;
-            // Zola has two "already has its own directory" conventions:
-            // index.md (a leaf page turned into a page bundle) and _index.md
-            // (a section index - ALWAYS already able to colocate assets in
-            // its own directory, never needs converting into a nested
-            // bundle). Treating only index.md as "already a bundle" would
-            // rename a section's _index.md into <dir>/_index/index.md,
-            // which breaks Zola's ability to find that section at all - this
-            // is exactly what happened to content/_index.md (the site root).
-            let is_already_bundle = current_full
-                .file_name()
-                .is_some_and(|f| f == "index.md" || f == "_index.md");
+            let is_already_bundle = zola::is_bundle_page(&current_full);
 
             let bundle_dir = if is_already_bundle {
                 current_full
@@ -612,7 +614,7 @@ async fn zola_serve(app: tauri::AppHandle, state: tauri::State<'_, ServeState>, 
         args.push("--interface".to_string());
         args.push("0.0.0.0".to_string());
         args.push("--base-url".to_string());
-        args.push(format!("http://{lan_ip}:1111"));
+        args.push(format!("http://{lan_ip}:{}", zola::DEFAULT_SERVE_PORT));
     }
 
     let sidecar = app.shell().sidecar("zola").map_err(|e| e.to_string())?;
@@ -650,21 +652,25 @@ async fn zola_serve(app: tauri::AppHandle, state: tauri::State<'_, ServeState>, 
     // before), so that loop used to freeze the whole app's UI for up to 5s
     // every time preview started. spawn_blocking moves it off the main
     // thread; the command staying `async fn` is what makes that possible.
-    let port_ready = tauri::async_runtime::spawn_blocking(|| wait_for_port(1111, Duration::from_secs(5)))
+    let port_ready = tauri::async_runtime::spawn_blocking(|| wait_for_port(zola::DEFAULT_SERVE_PORT, Duration::from_secs(5)))
         .await
         .map_err(|e| e.to_string())?;
     if !port_ready {
-        return Err(
-            "zola serve did not start listening on 127.0.0.1:1111 within 5s - check the log panel below for the actual error".to_string(),
-        );
+        return Err(format!(
+            "zola serve did not start listening on 127.0.0.1:{} within 5s - check the log panel below for the actual error",
+            zola::DEFAULT_SERVE_PORT
+        ));
     }
     open_or_focus_preview_window(&app)?;
 
     if network {
         let lan_ip = local_ip_address::local_ip().map_err(|e| e.to_string())?;
-        Ok(format!("zola serve started on http://127.0.0.1:1111 (also reachable on your network at http://{lan_ip}:1111)"))
+        Ok(format!(
+            "zola serve started on http://127.0.0.1:{0} (also reachable on your network at http://{lan_ip}:{0})",
+            zola::DEFAULT_SERVE_PORT
+        ))
     } else {
-        Ok("zola serve started on http://127.0.0.1:1111".to_string())
+        Ok(format!("zola serve started on http://127.0.0.1:{}", zola::DEFAULT_SERVE_PORT))
     }
 }
 
@@ -745,7 +751,8 @@ fn main() {
             write_file,
             insert_image,
             read_image_preview,
-            get_lan_ip
+            get_lan_ip,
+            is_bundle_page
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
