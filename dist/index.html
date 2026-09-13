@@ -198,6 +198,11 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+
+    #image-align-toolbar button.align-active {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
   </style>
 </head>
 <body>
@@ -312,6 +317,13 @@
       <button id="fmt-ul" class="secondary" title="Bulleted list">&bull; List</button>
       <button id="fmt-ol" class="secondary" title="Numbered list">1. List</button>
       <button id="fmt-image" class="secondary" title="Insert image">&#128247; Image</button>
+    </div>
+    <div id="image-align-toolbar" style="display: none; align-items: center; gap: 8px; padding: 6px; border: 1px solid var(--border); border-top: none; border-bottom: none; background: color-mix(in srgb, var(--panel) 96%, var(--accent)); font-size: 12px;">
+      <span style="color: var(--muted);">Image alignment:</span>
+      <button type="button" class="secondary" data-align="none">Default</button>
+      <button type="button" class="secondary" data-align="left">Left</button>
+      <button type="button" class="secondary" data-align="center">Center</button>
+      <button type="button" class="secondary" data-align="right">Right</button>
     </div>
     <div class="panel" style="border-radius: 0 0 var(--radius) var(--radius); position: relative;">
       <textarea id="editor" spellcheck="false"></textarea>
@@ -593,6 +605,7 @@
       } else {
         banner.style.display = "none";
       }
+      updateImageAlignToolbar();
     };
 
     const openTab = async (path) => {
@@ -655,6 +668,7 @@
           banner.style.display = "none";
           updateStatusForActiveTab();
           renderTabBar();
+          updateImageAlignToolbar();
         }
       } else {
         renderTabBar();
@@ -894,6 +908,7 @@
 
         insertAtCursor(`![${alt}](${result.markdownReference})`);
         closeInsertImagePanel();
+        updateImageAlignToolbar();
       } catch (err) {
         imageStatus.textContent = "ERROR: " + err;
       } finally {
@@ -909,6 +924,104 @@
       const path = event.payload.paths[0];
       if (path && looksLikeImagePath(path)) openInsertImagePanel(path);
     });
+
+    // Contextual image-alignment toolbar: shown whenever the cursor sits
+    // inside an image reference (markdown ![]() or the raw <img> this app
+    // emits once an alignment has been applied), regardless of where
+    // onscreen that reference happens to be - this toolbar lives in one
+    // fixed spot rather than following the caret. Textareas have no native
+    // "caret pixel position" API; the usual workaround (a hidden mirror div
+    // replicating font/wrapping) wasn't worth it for what this needs, and a
+    // fixed location works just as well.
+    //
+    // Plain CommonMark has no alignment concept at all, so rather than
+    // inventing bracket-attribute syntax on top of ![]() and hoping Zola's
+    // markdown renderer supports it, alignment is expressed as a raw <img>
+    // tag with an inline style - CommonMark guarantees raw HTML passthrough,
+    // so this renders correctly regardless of SSG-specific extensions.
+    const MD_IMAGE_RE = /!\[([^\]]*)\]\(([^)\s]+)\)/g;
+    const HTML_IMAGE_RE = /<img src="([^"]*)" alt="([^"]*)"(?: style="([^"]*)")?\s*\/?>/g;
+
+    const alignFromStyle = (style) => {
+      if (!style) return "none";
+      if (/float:\s*right/.test(style)) return "right";
+      if (/float:\s*left/.test(style)) return "left";
+      if (/margin:\s*0 auto/.test(style)) return "center";
+      return "none";
+    };
+
+    const styleForAlign = (align) => {
+      switch (align) {
+        case "right":
+          return "float:right; margin:0 0 1em 1em;";
+        case "left":
+          return "float:left; margin:0 1em 1em 0;";
+        case "center":
+          return "display:block; margin:0 auto 1em;";
+        default:
+          return null;
+      }
+    };
+
+    // Scans the whole textarea for image references and returns the one
+    // (markdown or this app's own <img> form) containing the current cursor
+    // position, or null if the cursor isn't inside one.
+    const findImageAtCursor = () => {
+      const value = editorEl.value;
+      const cursor = editorEl.selectionStart;
+
+      for (const re of [MD_IMAGE_RE, HTML_IMAGE_RE]) {
+        re.lastIndex = 0;
+        let match;
+        while ((match = re.exec(value))) {
+          const start = match.index;
+          const end = start + match[0].length;
+          if (cursor >= start && cursor <= end) {
+            return re === MD_IMAGE_RE
+              ? { start, end, alt: match[1], src: match[2], align: "none" }
+              : { start, end, src: match[1], alt: match[2], align: alignFromStyle(match[3]) };
+          }
+        }
+      }
+      return null;
+    };
+
+    const imageAlignToolbar = document.getElementById("image-align-toolbar");
+
+    const updateImageAlignToolbar = () => {
+      const found = activeTab ? findImageAtCursor() : null;
+      if (!found) {
+        imageAlignToolbar.style.display = "none";
+        return;
+      }
+      imageAlignToolbar.style.display = "flex";
+      imageAlignToolbar.querySelectorAll("button[data-align]").forEach((btn) => {
+        btn.classList.toggle("align-active", btn.dataset.align === found.align);
+      });
+    };
+
+    imageAlignToolbar.querySelectorAll("button[data-align]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const found = findImageAtCursor();
+        if (!found) return;
+
+        const style = styleForAlign(btn.dataset.align);
+        const replacement = style
+          ? `<img src="${found.src}" alt="${found.alt}" style="${style}">`
+          : `![${found.alt}](${found.src})`;
+
+        const value = editorEl.value;
+        editorEl.value = value.slice(0, found.start) + replacement + value.slice(found.end);
+        editorEl.focus();
+        const pos = found.start + replacement.length;
+        editorEl.setSelectionRange(pos, pos);
+        emitEdited();
+        updateImageAlignToolbar();
+      });
+    });
+
+    editorEl.addEventListener("click", updateImageAlignToolbar);
+    editorEl.addEventListener("keyup", updateImageAlignToolbar);
 
     window.addEventListener("beforeunload", () => {
       for (const path of tabs.keys()) flushTab(path);
