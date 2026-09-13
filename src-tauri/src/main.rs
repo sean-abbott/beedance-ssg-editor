@@ -28,8 +28,32 @@ struct OpenFile(Mutex<Option<PathBuf>>);
 
 const SELF_WRITE_WINDOW: Duration = Duration::from_millis(750);
 
-fn sample_site_dir() -> PathBuf {
+/// Resolves which site this app edits: $BEEDANCE_SITE_DIR env var if set (quick
+/// override for testing), else the path recorded by `just set-site` /
+/// scripts/set-site.sh at ~/.config/beedance-ssg-editor/site_dir, else the
+/// bundled sample-site/ so the existing dev/spike workflow keeps working with
+/// no setup.
+fn site_dir() -> PathBuf {
+    if let Ok(path) = std::env::var("BEEDANCE_SITE_DIR") {
+        return PathBuf::from(path);
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let config_path = PathBuf::from(home).join(".config/beedance-ssg-editor/site_dir");
+        if let Ok(contents) = std::fs::read_to_string(&config_path) {
+            let trimmed = contents.trim();
+            if !trimmed.is_empty() {
+                return PathBuf::from(trimmed);
+            }
+        }
+    }
+
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sample-site")
+}
+
+#[tauri::command]
+fn get_site_dir() -> String {
+    site_dir().to_string_lossy().to_string()
 }
 
 fn run_git(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -46,11 +70,13 @@ fn run_git(dir: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
-/// sample-site/ is its own independent git repo, separate from this app's repo -
-/// a "draft" is a branch on that repo, so cutting one must never touch (or be
-/// confused with) beedance-ssg-editor's own source-controlled branch.
+/// The site being edited is its own independent git repo, separate from this
+/// app's repo - a "draft" is a branch on that repo, so cutting one must never
+/// touch (or be confused with) beedance-ssg-editor's own source-controlled
+/// branch. Also inits a fresh repo here if the site doesn't have one yet
+/// (e.g. a brand-new site directory), so this is safe to call for either.
 fn ensure_site_repo() -> Result<(), String> {
-    let dir = sample_site_dir();
+    let dir = site_dir();
     if dir.join(".git").exists() {
         return Ok(());
     }
@@ -61,16 +87,16 @@ fn ensure_site_repo() -> Result<(), String> {
 }
 
 /// Resolves a site-relative path (e.g. "content/_index.md",
-/// "templates/index.html") to a real path under sample-site/, rejecting
-/// anything absolute or containing ".." components. Lexical only (not
-/// canonicalize-based symlink-proof) - adequate for a local single-user spike,
-/// not a hardening guarantee.
+/// "templates/index.html") to a real path under the current site directory,
+/// rejecting anything absolute or containing ".." components. Lexical only
+/// (not canonicalize-based symlink-proof) - adequate for a local single-user
+/// spike, not a hardening guarantee.
 fn resolve_site_path(relative: &str) -> Result<PathBuf, String> {
     let rel = Path::new(relative);
     if rel.is_absolute() || rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
         return Err(format!("invalid path: {}", relative));
     }
-    Ok(sample_site_dir().join(rel))
+    Ok(site_dir().join(rel))
 }
 
 fn collect_html_templates(dir: &Path, root: &Path, out: &mut Vec<String>) {
@@ -92,7 +118,7 @@ fn collect_html_templates(dir: &Path, root: &Path, out: &mut Vec<String>) {
 /// so the editor's file switcher covers real themes, not just a hardcoded pair.
 #[tauri::command]
 fn list_editable_files() -> Vec<String> {
-    let dir = sample_site_dir();
+    let dir = site_dir();
     let mut files = vec!["content/_index.md".to_string()];
 
     collect_html_templates(&dir.join("templates"), &dir, &mut files);
@@ -141,7 +167,7 @@ fn spawn_content_watcher(app: tauri::AppHandle) {
             Err(_) => return,
         };
 
-        if watcher.watch(&sample_site_dir(), RecursiveMode::Recursive).is_err() {
+        if watcher.watch(&site_dir(), RecursiveMode::Recursive).is_err() {
             return;
         }
 
@@ -188,14 +214,14 @@ async fn zola_version(app: tauri::AppHandle) -> Result<String, String> {
 #[tauri::command]
 fn git_status() -> Result<String, String> {
     ensure_site_repo()?;
-    let text = run_git(&sample_site_dir(), &["status", "--short", "."])?;
+    let text = run_git(&site_dir(), &["status", "--short", "."])?;
     Ok(if text.trim().is_empty() { "(clean)".to_string() } else { text })
 }
 
 #[tauri::command]
 fn git_commit(message: String) -> Result<String, String> {
     ensure_site_repo()?;
-    let dir = sample_site_dir();
+    let dir = site_dir();
     run_git(&dir, &["add", "."])?;
     run_git(&dir, &["commit", "-m", &message])
 }
@@ -203,7 +229,7 @@ fn git_commit(message: String) -> Result<String, String> {
 #[tauri::command]
 fn current_branch() -> Result<String, String> {
     ensure_site_repo()?;
-    let branch = run_git(&sample_site_dir(), &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let branch = run_git(&site_dir(), &["rev-parse", "--abbrev-ref", "HEAD"])?;
     Ok(branch.trim().to_string())
 }
 
@@ -211,7 +237,7 @@ fn current_branch() -> Result<String, String> {
 fn start_draft(name: String) -> Result<String, String> {
     ensure_site_repo()?;
     let branch = format!("draft/{}", slugify(&name));
-    run_git(&sample_site_dir(), &["checkout", "-b", &branch])?;
+    run_git(&site_dir(), &["checkout", "-b", &branch])?;
     Ok(format!("Switched to new branch '{}'", branch))
 }
 
@@ -257,7 +283,7 @@ fn zola_serve(app: tauri::AppHandle, state: tauri::State<ServeState>) -> Result<
 
     let sidecar = app.shell().sidecar("zola").map_err(|e| e.to_string())?;
     let (mut rx, child) = sidecar
-        .current_dir(sample_site_dir())
+        .current_dir(site_dir())
         .args(["serve"])
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -356,6 +382,7 @@ fn main() {
             zola_stop,
             set_preview_phone_mode,
             list_editable_files,
+            get_site_dir,
             read_file,
             write_file
         ])

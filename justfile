@@ -13,6 +13,10 @@ dev: fetch-zola
 build: fetch-zola
     cargo tauri build
 
-# Vendor a Zola theme from a git repo into sample-site/themes/<name>
+# Vendor a Zola theme from a git repo into <site>/themes/<name>
 add-theme name url:
     ./scripts/add-theme.sh {{name}} {{url}}
+
+# Point the app at a real site directory instead of the bundled sample-site
+set-site path:
+    ./scripts/set-site.sh {{path}}

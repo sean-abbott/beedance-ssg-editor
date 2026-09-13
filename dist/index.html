@@ -136,6 +136,7 @@
 <body>
   <header>
     <h1>beedance-ssg-editor</h1>
+    <div id="site-dir" style="font-size: 12px; color: var(--muted); margin-top: 2px;">(loading...)</div>
   </header>
 
   <div id="external-change-banner">
@@ -307,6 +308,10 @@
       } catch (err) {
         status.textContent = "ERROR: " + err;
       }
+    });
+
+    invoke("get_site_dir").then((dir) => {
+      document.getElementById("site-dir").textContent = dir;
     });
 
     refreshFileList().then(loadEditor);
