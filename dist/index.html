@@ -293,21 +293,65 @@
       }
     };
 
-    document.getElementById("reload").addEventListener("click", loadEditor);
-    document.getElementById("refresh-files").addEventListener("click", async () => {
-      await refreshFileList();
-      await loadEditor();
-    });
-    fileSelect.addEventListener("change", loadEditor);
+    // Debounced autosave: saves ~1.2s after typing stops. A pending save is
+    // flushed (not discarded) when switching files - so switching away from
+    // unsaved edits doesn't silently lose them - but is cancelled outright
+    // (not flushed) on an explicit reload, since that means "discard what's
+    // in the editor, give me what's really on disk."
+    const editorEl = document.getElementById("editor");
+    let autosaveTimer = null;
+    let autosavePendingPath = null;
 
-    document.getElementById("save").addEventListener("click", async () => {
+    const doSave = async (path, content) => {
       const status = document.getElementById("editor-status");
       try {
-        await invoke("write_file", { path: fileSelect.value, content: document.getElementById("editor").value });
+        await invoke("write_file", { path, content });
         status.textContent = "saved";
       } catch (err) {
         status.textContent = "ERROR: " + err;
       }
+    };
+
+    const flushAutosave = () => {
+      if (autosaveTimer) {
+        clearTimeout(autosaveTimer);
+        autosaveTimer = null;
+        doSave(autosavePendingPath, editorEl.value);
+      }
+    };
+
+    const cancelAutosave = () => {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+    };
+
+    editorEl.addEventListener("input", () => {
+      clearTimeout(autosaveTimer);
+      autosavePendingPath = fileSelect.value;
+      autosaveTimer = setTimeout(() => {
+        autosaveTimer = null;
+        doSave(autosavePendingPath, editorEl.value);
+      }, 1200);
+    });
+
+    window.addEventListener("beforeunload", flushAutosave);
+
+    document.getElementById("reload").addEventListener("click", () => {
+      cancelAutosave();
+      loadEditor();
+    });
+    document.getElementById("refresh-files").addEventListener("click", async () => {
+      await refreshFileList();
+      await loadEditor();
+    });
+    fileSelect.addEventListener("change", () => {
+      flushAutosave();
+      loadEditor();
+    });
+
+    document.getElementById("save").addEventListener("click", () => {
+      cancelAutosave();
+      doSave(fileSelect.value, editorEl.value);
     });
 
     invoke("get_site_dir").then((dir) => {
@@ -328,6 +372,7 @@
     });
 
     document.getElementById("banner-reload").addEventListener("click", async () => {
+      cancelAutosave();
       await loadEditor();
       banner.style.display = "none";
     });
