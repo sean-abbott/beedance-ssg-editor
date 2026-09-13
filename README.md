@@ -21,9 +21,12 @@ for trying things out). To work on a real site instead:
 just set-site /path/to/your/site
 ```
 
-Writes `~/.config/beedance-ssg-editor/site_dir`, which the app reads on every
-launch (a `BEEDANCE_SITE_DIR` env var overrides this if set). Remove that file
-to fall back to `sample-site/` again.
+Writes a `site_dir` pointer file to this platform's standard config directory
+(e.g. `~/.config/beedance-ssg-editor/` on Linux, `~/Library/Application
+Support/beedance-ssg-editor/` on macOS), which the app reads on every launch
+(a `BEEDANCE_SITE_DIR` env var overrides this if set). The same directory can
+also be switched from inside the app via the "Change site…" button. Remove
+that file to fall back to `sample-site/` again.
 
 # What's actually built
 

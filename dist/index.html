@@ -249,6 +249,17 @@
     </div>
 
     <div id="tab-bar"></div>
+    <div id="format-toolbar" class="toolbar" style="margin: 0; padding: 6px; border: 1px solid var(--border); border-bottom: none; background: color-mix(in srgb, var(--panel) 92%, var(--text));">
+      <button id="fmt-bold" class="secondary" title="Bold"><strong>B</strong></button>
+      <button id="fmt-italic" class="secondary" title="Italic"><em>I</em></button>
+      <button id="fmt-code" class="secondary" title="Inline code">{ }</button>
+      <button id="fmt-link" class="secondary" title="Link">Link</button>
+      <button id="fmt-h2" class="secondary" title="Heading">H2</button>
+      <button id="fmt-h3" class="secondary" title="Subheading">H3</button>
+      <button id="fmt-quote" class="secondary" title="Quote">&ldquo;&rdquo;</button>
+      <button id="fmt-ul" class="secondary" title="Bulleted list">&bull; List</button>
+      <button id="fmt-ol" class="secondary" title="Numbered list">1. List</button>
+    </div>
     <div class="panel" style="border-radius: 0 0 var(--radius) var(--radius);">
       <textarea id="editor" spellcheck="false"></textarea>
     </div>
@@ -497,6 +508,104 @@
         doSave(path, tab.content);
       }, AUTOSAVE_DELAY_MS);
     });
+
+    // Formatting toolbar: inserts/wraps markdown syntax at the textarea cursor
+    // so a non-technical user never has to know the syntax by hand. Operates
+    // directly on the raw text (no parser, no serialization step) - the
+    // existing "input" listener picks up the resulting value change for
+    // dirty-tracking/autosave the same as if the user had typed it.
+    const withActiveTab = (fn) => () => {
+      if (!activeTab) return;
+      fn();
+    };
+
+    const emitEdited = () => editorEl.dispatchEvent(new Event("input", { bubbles: true }));
+
+    // Wraps the current selection in prefix/suffix (bold/italic/code): with
+    // text selected, wraps it in place and keeps it selected; with nothing
+    // selected, inserts an empty pair with the cursor left in between.
+    const wrapSelection = (prefix, suffix) => {
+      const start = editorEl.selectionStart;
+      const end = editorEl.selectionEnd;
+      const value = editorEl.value;
+      const selected = value.slice(start, end);
+
+      editorEl.value = value.slice(0, start) + prefix + selected + suffix + value.slice(end);
+      editorEl.focus();
+      editorEl.setSelectionRange(start + prefix.length, start + prefix.length + selected.length);
+      emitEdited();
+    };
+
+    // Applies a per-line prefix (heading/quote/bullets) to every line touched
+    // by the selection, or just the current line if the selection is collapsed.
+    const prefixLines = (linePrefix) => {
+      const start = editorEl.selectionStart;
+      const end = editorEl.selectionEnd;
+      const value = editorEl.value;
+
+      const blockStart = value.lastIndexOf("\n", start - 1) + 1;
+      const nextBreak = value.indexOf("\n", end);
+      const blockEnd = nextBreak === -1 ? value.length : nextBreak;
+
+      const block = value.slice(blockStart, blockEnd);
+      const newBlock = block
+        .split("\n")
+        .map((line) => linePrefix + line)
+        .join("\n");
+
+      editorEl.value = value.slice(0, blockStart) + newBlock + value.slice(blockEnd);
+      editorEl.focus();
+      editorEl.setSelectionRange(blockStart, blockStart + newBlock.length);
+      emitEdited();
+    };
+
+    // Same idea as prefixLines but numbers each line sequentially (1. 2. 3. ...).
+    const numberLines = () => {
+      const start = editorEl.selectionStart;
+      const end = editorEl.selectionEnd;
+      const value = editorEl.value;
+
+      const blockStart = value.lastIndexOf("\n", start - 1) + 1;
+      const nextBreak = value.indexOf("\n", end);
+      const blockEnd = nextBreak === -1 ? value.length : nextBreak;
+
+      const block = value.slice(blockStart, blockEnd);
+      const newBlock = block
+        .split("\n")
+        .map((line, i) => `${i + 1}. ${line}`)
+        .join("\n");
+
+      editorEl.value = value.slice(0, blockStart) + newBlock + value.slice(blockEnd);
+      editorEl.focus();
+      editorEl.setSelectionRange(blockStart, blockStart + newBlock.length);
+      emitEdited();
+    };
+
+    // Wraps the selection as link text and leaves the placeholder URL
+    // selected, so typing the real URL right after clicking just replaces it.
+    const insertLink = () => {
+      const start = editorEl.selectionStart;
+      const end = editorEl.selectionEnd;
+      const value = editorEl.value;
+      const linkText = value.slice(start, end) || "link text";
+      const url = "https://";
+
+      editorEl.value = value.slice(0, start) + "[" + linkText + "](" + url + ")" + value.slice(end);
+      editorEl.focus();
+      const urlStart = start + 1 + linkText.length + 2;
+      editorEl.setSelectionRange(urlStart, urlStart + url.length);
+      emitEdited();
+    };
+
+    document.getElementById("fmt-bold").addEventListener("click", withActiveTab(() => wrapSelection("**", "**")));
+    document.getElementById("fmt-italic").addEventListener("click", withActiveTab(() => wrapSelection("_", "_")));
+    document.getElementById("fmt-code").addEventListener("click", withActiveTab(() => wrapSelection("`", "`")));
+    document.getElementById("fmt-link").addEventListener("click", withActiveTab(insertLink));
+    document.getElementById("fmt-h2").addEventListener("click", withActiveTab(() => prefixLines("## ")));
+    document.getElementById("fmt-h3").addEventListener("click", withActiveTab(() => prefixLines("### ")));
+    document.getElementById("fmt-quote").addEventListener("click", withActiveTab(() => prefixLines("> ")));
+    document.getElementById("fmt-ul").addEventListener("click", withActiveTab(() => prefixLines("- ")));
+    document.getElementById("fmt-ol").addEventListener("click", withActiveTab(numberLines));
 
     window.addEventListener("beforeunload", () => {
       for (const path of tabs.keys()) flushTab(path);

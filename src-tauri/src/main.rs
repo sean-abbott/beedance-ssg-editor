@@ -36,25 +36,27 @@ struct WatcherState(Mutex<Option<RecommendedWatcher>>);
 
 const CONFIG_FILE_NAME: &str = "site_dir";
 
-fn config_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
-    Ok(PathBuf::from(home).join(".config/beedance-ssg-editor"))
+/// Platform-correct config dir (XDG_CONFIG_HOME/.config on Linux, ~/Library/
+/// Application Support on macOS, %APPDATA% on Windows), not a hardcoded
+/// ~/.config - this app runs on all three.
+fn config_dir() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("beedance-ssg-editor"))
 }
 
 const SELF_WRITE_WINDOW: Duration = Duration::from_millis(750);
 
 /// Resolves which site this app edits: $BEEDANCE_SITE_DIR env var if set (quick
 /// override for testing), else the path recorded by `just set-site` /
-/// scripts/set-site.sh at ~/.config/beedance-ssg-editor/site_dir, else the
-/// bundled sample-site/ so the existing dev/spike workflow keeps working with
-/// no setup.
+/// scripts/set-site.sh / the in-app "Change site" picker (see config_dir()),
+/// else the bundled sample-site/ so the existing dev/spike workflow keeps
+/// working with no setup.
 fn site_dir() -> PathBuf {
     if let Ok(path) = std::env::var("BEEDANCE_SITE_DIR") {
         return PathBuf::from(path);
     }
 
-    if let Ok(home) = std::env::var("HOME") {
-        let config_path = PathBuf::from(home).join(".config/beedance-ssg-editor/site_dir");
+    if let Some(dir) = config_dir() {
+        let config_path = dir.join(CONFIG_FILE_NAME);
         if let Ok(contents) = std::fs::read_to_string(&config_path) {
             let trimmed = contents.trim();
             if !trimmed.is_empty() {
@@ -94,7 +96,7 @@ fn set_site_dir(
 
     let old_dir = site_dir();
 
-    let config_dir = config_dir()?;
+    let config_dir = config_dir().ok_or_else(|| "could not resolve a config directory for this platform".to_string())?;
     std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
     std::fs::write(config_dir.join(CONFIG_FILE_NAME), new_dir.to_string_lossy().as_bytes())
         .map_err(|e| e.to_string())?;

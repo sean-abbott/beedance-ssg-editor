@@ -9,7 +9,14 @@ set -euo pipefail
 RAW_PATH="${1:?usage: set-site.sh /path/to/site}"
 SITE_DIR="$(cd "$RAW_PATH" && pwd)"
 
-CONFIG_DIR="$HOME/.config/beedance-ssg-editor"
+# Matches the Rust app's own config_dir() (via the `dirs` crate): XDG_CONFIG_HOME
+# (or ~/.config) on Linux, ~/Library/Application Support on macOS - so this CLI
+# path and the in-app "Change site" picker always agree on where the pointer lives.
+case "$(uname -s)" in
+    Darwin) CONFIG_ROOT="$HOME/Library/Application Support" ;;
+    *) CONFIG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}" ;;
+esac
+CONFIG_DIR="$CONFIG_ROOT/beedance-ssg-editor"
 mkdir -p "$CONFIG_DIR"
 echo "$SITE_DIR" > "$CONFIG_DIR/site_dir"
 
