@@ -219,12 +219,28 @@
       </label>
       <p style="font-size: 12px; color: var(--muted); margin: 0 0 12px;">
         Makes the preview reachable from other devices on your network (e.g. a
-        phone) instead of only this machine. Takes effect next time you start
-        the preview.
+        phone) instead of only this machine. Restarts the preview if it's
+        already running.
       </p>
       <div id="lan-address" style="font-size: 12px; margin-bottom: 16px;"></div>
 
-      <div style="display: flex; justify-content: flex-end;">
+      <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
+        <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Inserted image sizes</legend>
+
+        <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 6px 10px; align-items: center; font-size: 13px;">
+          <span>Web standard</span>
+          <label>max <input type="number" id="tier-web-cap" min="1" max="10000" style="width: 70px;" /> px</label>
+          <label>quality <input type="number" id="tier-web-quality" min="1" max="100" style="width: 55px;" /></label>
+
+          <span>High detail</span>
+          <label>max <input type="number" id="tier-high-cap" min="1" max="10000" style="width: 70px;" /> px</label>
+          <label>quality <input type="number" id="tier-high-quality" min="1" max="100" style="width: 55px;" /></label>
+        </div>
+        <div id="tier-settings-status" style="font-size: 12px; color: var(--muted); margin-top: 8px;"></div>
+      </fieldset>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="save-tier-settings" class="secondary">Save sizes</button>
         <button id="close-settings" class="secondary">Close</button>
       </div>
     </div>
@@ -385,6 +401,12 @@
     const networkServeToggle = document.getElementById("network-serve-toggle");
     const lanAddressEl = document.getElementById("lan-address");
 
+    const tierWebCap = document.getElementById("tier-web-cap");
+    const tierWebQuality = document.getElementById("tier-web-quality");
+    const tierHighCap = document.getElementById("tier-high-cap");
+    const tierHighQuality = document.getElementById("tier-high-quality");
+    const tierSettingsStatus = document.getElementById("tier-settings-status");
+
     document.getElementById("open-settings").addEventListener("click", async () => {
       settingsPanel.style.display = "flex";
       try {
@@ -393,36 +415,79 @@
       } catch (err) {
         lanAddressEl.textContent = "Couldn't determine a network address: " + err;
       }
+
+      tierSettingsStatus.textContent = "";
+      try {
+        const tiers = await invoke("get_tier_settings");
+        tierWebCap.value = tiers.webCap;
+        tierWebQuality.value = tiers.webQuality;
+        tierHighCap.value = tiers.highCap;
+        tierHighQuality.value = tiers.highQuality;
+      } catch (err) {
+        tierSettingsStatus.textContent = "Couldn't load image size settings: " + err;
+      }
+    });
+
+    document.getElementById("save-tier-settings").addEventListener("click", async () => {
+      try {
+        await invoke("set_tier_settings", {
+          settings: {
+            webCap: Number(tierWebCap.value),
+            webQuality: Number(tierWebQuality.value),
+            highCap: Number(tierHighCap.value),
+            highQuality: Number(tierHighQuality.value),
+          },
+        });
+        tierSettingsStatus.textContent = "Saved.";
+      } catch (err) {
+        tierSettingsStatus.textContent = "ERROR: " + err;
+      }
     });
 
     document.getElementById("close-settings").addEventListener("click", () => {
       settingsPanel.style.display = "none";
     });
 
-    networkServeToggle.addEventListener("change", (e) => {
-      networkServeEnabled = e.target.checked;
-    });
+    let previewRunning = false;
 
-    document.getElementById("preview-start").addEventListener("click", async () => {
+    const startPreview = async () => {
       const status = document.getElementById("editor-status");
       zolaLog.textContent = "";
       try {
         await invoke("zola_serve", { network: networkServeEnabled });
+        previewRunning = true;
         status.textContent = "";
       } catch (err) {
+        previewRunning = false;
         status.textContent = "ERROR: " + err;
       }
-    });
+    };
 
-    document.getElementById("preview-stop").addEventListener("click", async () => {
+    const stopPreview = async () => {
       const status = document.getElementById("editor-status");
       try {
         await invoke("zola_stop");
+        previewRunning = false;
         document.getElementById("phone-toggle").checked = false;
       } catch (err) {
         status.textContent = "ERROR: " + err;
       }
+    };
+
+    networkServeToggle.addEventListener("change", async (e) => {
+      networkServeEnabled = e.target.checked;
+      // The network setting only takes effect at zola serve's own startup
+      // (it's a CLI flag) - if preview is already running, restart it so
+      // flipping this toggle doesn't silently do nothing until the next
+      // unrelated stop/start.
+      if (previewRunning) {
+        await stopPreview();
+        await startPreview();
+      }
     });
+
+    document.getElementById("preview-start").addEventListener("click", startPreview);
+    document.getElementById("preview-stop").addEventListener("click", stopPreview);
 
     document.getElementById("phone-toggle").addEventListener("change", async (e) => {
       const status = document.getElementById("editor-status");

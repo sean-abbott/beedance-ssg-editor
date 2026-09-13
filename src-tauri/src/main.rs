@@ -248,15 +248,74 @@ fn write_file(path: String, content: String, tracker: tauri::State<SelfWriteTrac
 // typical web photo, so "high detail" exists alongside a smaller default -
 // both still bound the output, just at different points, so a raw
 // multi-MB/high-megapixel camera original never gets committed unprocessed.
-fn tier_params(tier: &str) -> Result<(u32, u8), String> {
+// User-adjustable (see get_tier_settings/set_tier_settings) rather than
+// fixed, since the right tradeoff depends on the site's own photos.
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TierSettings {
+    web_cap: u32,
+    web_quality: u8,
+    high_cap: u32,
+    high_quality: u8,
+}
+
+impl Default for TierSettings {
+    fn default() -> Self {
+        // 1600 vs. an original 2000px cap: JPEG size roughly tracks pixel
+        // area, so a 20% smaller linear dimension is ~36% smaller output.
+        TierSettings {
+            web_cap: 1600,
+            web_quality: 80,
+            high_cap: 4800,
+            high_quality: 90,
+        }
+    }
+}
+
+const TIER_SETTINGS_FILE: &str = "image-tiers.json";
+
+struct TierSettingsState(Mutex<TierSettings>);
+
+fn load_tier_settings() -> TierSettings {
+    config_dir()
+        .and_then(|dir| std::fs::read_to_string(dir.join(TIER_SETTINGS_FILE)).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn tier_params(settings: &TierSettings, tier: &str) -> Result<(u32, u8), String> {
     match tier {
-        // 1600 vs. the old 2000px cap: JPEG size roughly tracks pixel area,
-        // so a 20% smaller linear dimension is ~36% smaller output - close
-        // to the "cut it by a third" ask - without touching quality.
-        "web" => Ok((1600, 80)),
-        "high" => Ok((4800, 90)),
+        "web" => Ok((settings.web_cap, settings.web_quality)),
+        "high" => Ok((settings.high_cap, settings.high_quality)),
         other => Err(format!("unknown size tier: {other}")),
     }
+}
+
+#[tauri::command]
+fn get_tier_settings(state: tauri::State<TierSettingsState>) -> TierSettings {
+    *state.0.lock().unwrap()
+}
+
+#[tauri::command]
+fn set_tier_settings(settings: TierSettings, state: tauri::State<TierSettingsState>) -> Result<(), String> {
+    // Sane bounds so a typo can't produce a 0px image or a multi-hundred
+    // megapixel one.
+    if settings.web_cap == 0 || settings.high_cap == 0 || settings.web_cap > 10000 || settings.high_cap > 10000 {
+        return Err("size must be between 1 and 10000px".to_string());
+    }
+    if !(1..=100).contains(&settings.web_quality) || !(1..=100).contains(&settings.high_quality) {
+        return Err("quality must be between 1 and 100".to_string());
+    }
+
+    *state.0.lock().unwrap() = settings;
+
+    if let Some(dir) = config_dir() {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join(TIER_SETTINGS_FILE), json).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }
 
 /// Appends "-1", "-2", ... before the extension until an unused filename is
@@ -320,8 +379,12 @@ async fn insert_image(
     current_content_path: String,
     tracker: tauri::State<'_, SelfWriteTracker>,
     open_files: tauri::State<'_, OpenFiles>,
+    tier_settings: tauri::State<'_, TierSettingsState>,
 ) -> Result<InsertImageResult, String> {
-    let (cap, quality) = tier_params(&tier)?;
+    let (cap, quality) = {
+        let settings = tier_settings.0.lock().unwrap();
+        tier_params(&settings, &tier)?
+    };
 
     // Format is just a header read, cheap - fine on the main thread that
     // #[tauri::command] runs synchronous work on. Decoding/resizing/encoding
@@ -715,6 +778,7 @@ fn main() {
         .manage(SelfWriteTracker(Mutex::new(HashMap::new())))
         .manage(OpenFiles(Mutex::new(HashSet::new())))
         .manage(WatcherState(Mutex::new(None)))
+        .manage(TierSettingsState(Mutex::new(load_tier_settings())))
         .setup(|app| {
             spawn_content_watcher(app.handle().clone());
             Ok(())
@@ -752,7 +816,9 @@ fn main() {
             insert_image,
             read_image_preview,
             get_lan_ip,
-            is_bundle_page
+            is_bundle_page,
+            get_tier_settings,
+            set_tier_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
