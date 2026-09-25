@@ -9,10 +9,19 @@ for the theme-compatibility and cross-backend design thinking.
 just dev
 ```
 
-Fetches the pinned Zola sidecar binary automatically on first run (and on any
-later version bump). Needs `libwebkit2gtk-4.1-dev`, `build-essential`,
-`libssl-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev` (Linux) and the
-Tauri CLI (`cargo install tauri-cli --locked`) installed first.
+Fetches the pinned Zola sidecar binary for your OS/architecture automatically
+on first run (and on any later version bump) - macOS (Intel or Apple
+Silicon), Linux (x86_64 or aarch64), and Windows under a bash environment
+(Git Bash/MSYS/WSL) are all auto-detected.
+
+Needs the Tauri CLI (`cargo install tauri-cli --locked`) and, per platform:
+
+- **Linux**: `libwebkit2gtk-4.1-dev`, `build-essential`, `libssl-dev`,
+  `libayatana-appindicator3-dev`, `librsvg2-dev`
+- **macOS**: Xcode Command Line Tools (`xcode-select --install`)
+- **Windows**: Microsoft C++ Build Tools ("Desktop development with C++"),
+  WebView2 (bundled since Windows 10 v1803+), and the MSVC Rust toolchain as
+  default host triple
 
 By default this edits the bundled `sample-site/` (a minimal Zola site, useful
 for trying things out). To work on a real site instead:

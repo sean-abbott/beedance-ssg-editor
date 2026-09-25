@@ -3,6 +3,11 @@
 A lightweight, living list of where the project is headed. Not a commitment
 or a schedule.
 
+Non-technical users are meant to install and run this app themselves, not
+just have it run on their behalf - across macOS, Windows, and Linux equally.
+That shapes what counts as "done": a feature isn't finished if it only works
+for one platform or assumes a technical operator.
+
 ## Done
 
 - Image insert pipeline: file picker and drag/drop, EXIF-stripping
@@ -53,6 +58,15 @@ In rough build order.
 6. An in-app version-control client for non-technical authors: review what
    changed and commit it, and sync with the remote, entirely through the
    app - no terminal, no separate tool to learn.
+7. Windows build verification: prerequisites (MSVC Build Tools, WebView2,
+   MSVC Rust toolchain) are documented and the Zola sidecar fetch script
+   auto-detects Windows under a bash environment (Git Bash/MSYS/WSL). Still
+   needed: a genuinely native (non-bash) fetch path, and real build+run
+   testing on an actual Windows machine.
+8. macOS build verification: mostly groundwork already in place (Tauri
+   itself, the `dirs`/`local-ip-address` crates, and the sidecar fetch script
+   all already support macOS on both Intel and Apple Silicon) - what's
+   missing is testing on a real Mac, not more development.
 
 ## Unprioritized future work
 
@@ -65,7 +79,3 @@ Real ideas, not yet ordered or scheduled.
   than requiring the author to know or hand-type SSG-specific link syntax.
 - Insert an image via clipboard paste (a screenshot, or an image copied from
   a browser), as a third source alongside the file picker and drag/drop.
-- Windows build support: this app currently only builds on Linux/macOS. A
-  Windows build needs its own documented prerequisites (Visual Studio Build
-  Tools, WebView2, the Rust MSVC target) and a Windows-target variant of the
-  Zola sidecar fetch, plus real testing on a Windows machine.
