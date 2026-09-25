@@ -18,6 +18,8 @@ dirs = "7"
 image = "0.25"
 base64 = "0.23"
 local-ip-address = "0.6"
+ureq = "3"
+rust-s3 = { version = "0.37", default-features = false, features = ["sync-rustls-tls"] }
 
 [[bin]]
 name = "beedance-ssg-editor"

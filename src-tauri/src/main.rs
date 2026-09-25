@@ -356,19 +356,22 @@ struct InsertImageResult {
     renamed_content_path: Option<String>,
 }
 
-/// Inserts an image into the site: normalizes it (downscale-only to the
-/// given width/height, re-encoded so EXIF/metadata is dropped, original
-/// format preserved) and writes it to either a site-wide static/images/
-/// folder or alongside the current page as a Zola page bundle. If the
-/// current page isn't a bundle yet, bundle placement converts it in place -
-/// the caller is expected to have already confirmed that with the user,
-/// since it's a content-structure change (a file rename+move), not just an
-/// insert. width/height/quality are whatever the frontend's insert panel
-/// ended up with (a preset, hand-typed, or a mix) - this command doesn't
-/// know or care which.
-#[tauri::command]
-async fn insert_image(
-    source_path: String,
+/// Shared core of insert_image and localize_remote_image: both end up with
+/// image bytes sitting in a local file (a directly-picked file for one, a
+/// freshly-downloaded temp file for the other) and just need it normalized
+/// and placed - normalizes (downscale-only to the given width/height,
+/// re-encoded so EXIF/metadata is dropped, original format preserved) and
+/// writes it to either a site-wide static/images/ folder or alongside the
+/// current page as a Zola page bundle. If the current page isn't a bundle
+/// yet, bundle placement converts it in place - the caller is expected to
+/// have already confirmed that with the user, since it's a content-structure
+/// change (a file rename+move), not just an insert. `source_name` drives the
+/// destination filename/extension - kept separate from `source_path` since a
+/// downloaded temp file's own path is a meaningless generated name, not
+/// something worth carrying into the site's actual file/URL.
+async fn insert_image_impl(
+    source_path: PathBuf,
+    source_name: String,
     width: u32,
     height: u32,
     quality: u8,
@@ -393,12 +396,6 @@ async fn insert_image(
     }
 
     let site = site_dir();
-    let source_name = Path::new(&source_path)
-        .file_name()
-        .ok_or_else(|| "invalid source filename".to_string())?
-        .to_string_lossy()
-        .to_string();
-
     let mut renamed_content_path = None;
 
     let (dest_dir, markdown_prefix) = match placement.as_str() {
@@ -495,6 +492,103 @@ async fn insert_image(
         markdown_reference: format!("{markdown_prefix}{dest_filename}"),
         renamed_content_path,
     })
+}
+
+#[tauri::command]
+async fn insert_image(
+    source_path: String,
+    width: u32,
+    height: u32,
+    quality: u8,
+    placement: String,
+    current_content_path: String,
+    tracker: tauri::State<'_, SelfWriteTracker>,
+    open_files: tauri::State<'_, OpenFiles>,
+) -> Result<InsertImageResult, String> {
+    let source_name = Path::new(&source_path)
+        .file_name()
+        .ok_or_else(|| "invalid source filename".to_string())?
+        .to_string_lossy()
+        .to_string();
+    insert_image_impl(
+        PathBuf::from(source_path),
+        source_name,
+        width,
+        height,
+        quality,
+        placement,
+        current_content_path,
+        tracker,
+        open_files,
+    )
+    .await
+}
+
+/// The last path segment of a URL, stripped of any query string - used as
+/// the destination filename when localizing, since a downloaded temp file's
+/// own generated name is meaningless. Falls back to a generic name if the
+/// URL has no usable segment (e.g. ends in "/").
+fn filename_from_url(url: &str) -> String {
+    let without_query = url.split(['?', '#']).next().unwrap_or(url);
+    without_query
+        .rsplit('/')
+        .find(|segment| !segment.is_empty())
+        .unwrap_or("image")
+        .to_string()
+}
+
+/// Downloads a remote image and runs it through the exact same normalize+
+/// place pipeline as a locally-picked file (see insert_image_impl) - the
+/// only difference is where the bytes come from. Existing content that
+/// points at images hosted elsewhere (e.g. easthamptonbees-ssg's WordPress-
+/// migration images) can be localized without depending on that host
+/// staying reachable.
+#[tauri::command]
+async fn localize_remote_image(
+    url: String,
+    width: u32,
+    height: u32,
+    quality: u8,
+    placement: String,
+    current_content_path: String,
+    tracker: tauri::State<'_, SelfWriteTracker>,
+    open_files: tauri::State<'_, OpenFiles>,
+) -> Result<InsertImageResult, String> {
+    let source_name = filename_from_url(&url);
+    let temp_path = std::env::temp_dir().join(format!("beedance-localize-{}-{source_name}", std::process::id()));
+
+    let download = {
+        let url = url.clone();
+        let temp_path = temp_path.clone();
+        move || -> Result<(), String> {
+            let bytes = ureq::get(&url)
+                .header("User-Agent", "Mozilla/5.0 (compatible; beedance-ssg-editor)")
+                .call()
+                .map_err(|e| e.to_string())?
+                .body_mut()
+                .read_to_vec()
+                .map_err(|e| e.to_string())?;
+            std::fs::write(&temp_path, bytes).map_err(|e| e.to_string())
+        }
+    };
+    tauri::async_runtime::spawn_blocking(download)
+        .await
+        .map_err(|e| e.to_string())??;
+
+    let result = insert_image_impl(
+        temp_path.clone(),
+        source_name,
+        width,
+        height,
+        quality,
+        placement,
+        current_content_path,
+        tracker,
+        open_files,
+    )
+    .await;
+    let _ = std::fs::remove_file(&temp_path);
+    result
 }
 
 /// Shrinks an already-inserted image file in place - destructive (overwrites
@@ -878,8 +972,40 @@ fn main() {
             get_tier_settings,
             set_tier_settings,
             resize_image_in_place,
-            get_image_dimensions
+            get_image_dimensions,
+            localize_remote_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// SPIKE (pws-vpb) - validates the rust-s3 crate's API shape and feature
+// flags against a real compile, before committing to it for the R2 upload
+// backend. Not wired into any command yet, and not tested against a real
+// bucket (needs real credentials, which this dev environment doesn't have) -
+// compiling cleanly only proves the API shape is right, not that an actual
+// upload succeeds.
+#[allow(dead_code)]
+fn r2_put_object_spike(
+    account_id: &str,
+    bucket_name: &str,
+    access_key: &str,
+    secret_key: &str,
+    object_key: &str,
+    content: &[u8],
+) -> Result<(), String> {
+    use s3::bucket::Bucket;
+    use s3::creds::Credentials;
+    use s3::region::Region;
+
+    let region = Region::Custom {
+        region: "auto".to_string(),
+        endpoint: format!("https://{account_id}.r2.cloudflarestorage.com"),
+    };
+    let credentials = Credentials::new(Some(access_key), Some(secret_key), None, None, None)
+        .map_err(|e| e.to_string())?;
+    let bucket = Bucket::new(bucket_name, region, credentials).map_err(|e| e.to_string())?;
+
+    bucket.put_object(object_key, content).map_err(|e| e.to_string())?;
+    Ok(())
 }

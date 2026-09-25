@@ -80,3 +80,19 @@ or they'll shadow the theme's own.
 ```
 just build
 ```
+
+# Admin tooling: beedance-cli
+
+A separate binary (`cli/`, its own Cargo workspace member - no GTK/webkit
+dependency, meant for an admin's terminal, not for every non-technical user
+to install) for issuing scoped per-person storage credentials, so a
+committee member never has to touch a hosting provider's own dashboard:
+
+```
+cargo run -p beedance-cli -- config set-admin-token   # your own top-level Cloudflare API token, once
+cargo run -p beedance-cli -- create-user-key           # issues one scoped R2 credential to hand off
+```
+
+Only knows how to talk to Cloudflare R2 today - see `src-tauri/src/zola.rs`
+for the same "one real implementation, named boundary, no speculative
+plugin system" reasoning applied to storage providers instead of SSGs.

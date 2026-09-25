@@ -317,6 +317,7 @@
       <button id="fmt-ul" class="secondary" title="Bulleted list">&bull; List</button>
       <button id="fmt-ol" class="secondary" title="Numbered list">1. List</button>
       <button id="fmt-image" class="secondary" title="Insert image">&#128247; Image</button>
+      <button id="fmt-image-url" class="secondary" title="Insert image from a web link">&#128279; Image URL&hellip;</button>
     </div>
     <div id="image-align-toolbar" style="display: none; align-items: center; gap: 8px; padding: 6px; border: 1px solid var(--border); border-top: none; border-bottom: none; background: color-mix(in srgb, var(--panel) 96%, var(--accent)); font-size: 12px;">
       <span style="color: var(--muted);">Image alignment:</span>
@@ -326,6 +327,7 @@
       <button type="button" class="secondary" data-align="right">Right</button>
       <span style="border-left: 1px solid var(--border); height: 16px;"></span>
       <button type="button" id="image-resize-button" class="secondary">Resize&hellip;</button>
+      <button type="button" id="image-localize-button" class="secondary" hidden>Localize&hellip;</button>
       <span id="image-align-status" style="color: var(--muted);"></span>
     </div>
     <div class="panel" style="border-radius: 0 0 var(--radius) var(--radius);">
@@ -333,7 +335,7 @@
 
       <div id="insert-image-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
         <div class="panel" style="width: min(420px, 90%); padding: 16px; background: var(--panel);">
-          <h3 style="margin: 0 0 10px; font-size: 13px; color: var(--muted);">Insert image</h3>
+          <h3 id="insert-panel-title" style="margin: 0 0 10px; font-size: 13px; color: var(--muted);">Insert image</h3>
 
           <img id="insert-image-preview" style="max-width: 100%; max-height: 200px; display: block; margin: 0 auto 12px; border-radius: var(--radius);" />
 
@@ -401,6 +403,36 @@
           <div style="display: flex; justify-content: flex-end; gap: 8px;">
             <button id="resize-cancel" class="secondary">Cancel</button>
             <button id="resize-confirm">Shrink image</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="insert-url-image-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+        <div class="panel" style="width: min(420px, 90%); padding: 16px; background: var(--panel);">
+          <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Insert image from a web link</h3>
+          <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+            Links to the image where it already lives - nothing is
+            downloaded or stored in this site. If that page ever goes away,
+            the image stops showing here too.
+          </p>
+
+          <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+            Image URL
+            <input type="url" id="url-image-url" style="width: 100%; margin-top: 4px;" placeholder="https://..." />
+          </label>
+
+          <img id="url-image-preview" style="max-width: 100%; max-height: 200px; display: none; margin: 0 auto 10px; border-radius: var(--radius);" />
+
+          <label style="display: block; margin-bottom: 8px; font-size: 13px;">
+            Alt text
+            <input id="url-image-alt" type="text" style="width: 100%; margin-top: 4px;" placeholder="Describe the image for screen readers" />
+          </label>
+
+          <div id="url-image-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 8px;">
+            <button id="url-image-cancel" class="secondary">Cancel</button>
+            <button id="url-image-confirm">Insert</button>
           </div>
         </div>
       </div>
@@ -852,8 +884,15 @@
     const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
     let pendingImagePath = null;
     let pendingImageDims = null; // {width, height} of the chosen source file
+    // The same panel doubles as the "localize a remote image" flow (reusing
+    // its alt/size/placement fields rather than building a second one) -
+    // this tracks which mode is active and, for localize, the existing
+    // reference's span in the editor to replace on success.
+    let insertMode = "file";
+    let pendingLocalizeTarget = null; // {start, end, src} of the remote reference being localized
 
     const imagePanel = document.getElementById("insert-image-panel");
+    const imagePanelTitle = document.getElementById("insert-panel-title");
     const imagePreview = document.getElementById("insert-image-preview");
     const imageAltInput = document.getElementById("insert-image-alt");
     const imageStatus = document.getElementById("insert-image-status");
@@ -906,6 +945,8 @@
     });
 
     const openInsertImagePanel = async (path) => {
+      insertMode = "file";
+      imagePanelTitle.textContent = "Insert image";
       pendingImagePath = path;
       imageAltInput.value = filenameStem(path).replace(/[-_]+/g, " ");
       imageStatus.textContent = "";
@@ -928,10 +969,43 @@
       }
     };
 
+    // A plain <img src="https://..."> loads and reports its natural size
+    // without any Tauri round-trip - unlike a local file, a URL isn't
+    // subject to the asset-protocol scope restriction that read_image_preview
+    // and get_image_dimensions exist to work around in the file-insert flow.
+    const loadRemoteImageDims = (url) =>
+      new Promise((resolve, reject) => {
+        const probe = new Image();
+        probe.onload = () => resolve({ width: probe.naturalWidth, height: probe.naturalHeight });
+        probe.onerror = () => reject(new Error("couldn't load this image"));
+        probe.src = url;
+      });
+
+    const openLocalizePanel = async (found) => {
+      insertMode = "localize";
+      imagePanelTitle.textContent = "Localize image";
+      pendingLocalizeTarget = found;
+      imageAltInput.value = found.alt;
+      imageStatus.textContent = "";
+      insertCurrentSizeEl.textContent = "";
+      imagePreview.src = found.src;
+      imagePanel.style.display = "flex";
+      try {
+        const { width, height } = await loadRemoteImageDims(found.src);
+        pendingImageDims = { width, height };
+        insertCurrentSizeEl.textContent = `Original size: ${width} x ${height}px`;
+        await applyInsertPreset("web");
+      } catch (err) {
+        pendingImageDims = null;
+        insertCurrentSizeEl.textContent = "Couldn't read this image's size: " + err;
+      }
+    };
+
     const closeInsertImagePanel = () => {
       imagePanel.style.display = "none";
       pendingImagePath = null;
       pendingImageDims = null;
+      pendingLocalizeTarget = null;
     };
 
     document.getElementById("fmt-image").addEventListener("click", withActiveTab(async () => {
@@ -951,7 +1025,9 @@
     document.getElementById("insert-image-cancel").addEventListener("click", closeInsertImagePanel);
 
     document.getElementById("insert-image-confirm").addEventListener("click", async () => {
-      if (!pendingImagePath || !activeTab) return;
+      if (!activeTab) return;
+      if (insertMode === "file" && !pendingImagePath) return;
+      if (insertMode === "localize" && !pendingLocalizeTarget) return;
       const width = Number(insertWidthInput.value);
       const height = Number(insertHeightInput.value);
       const quality = Number(insertQualityInput.value);
@@ -984,14 +1060,24 @@
       cancelBtn.disabled = true;
       imageStatus.innerHTML = '<span class="spinner"></span>Processing image…';
       try {
-        const result = await invoke("insert_image", {
-          sourcePath: pendingImagePath,
-          width,
-          height,
-          quality,
-          placement,
-          currentContentPath: activeTab,
-        });
+        const result =
+          insertMode === "localize"
+            ? await invoke("localize_remote_image", {
+                url: pendingLocalizeTarget.src,
+                width,
+                height,
+                quality,
+                placement,
+                currentContentPath: activeTab,
+              })
+            : await invoke("insert_image", {
+                sourcePath: pendingImagePath,
+                width,
+                height,
+                quality,
+                placement,
+                currentContentPath: activeTab,
+              });
 
         if (result.renamedContentPath) {
           // Bundle placement converted the current leaf page into
@@ -1010,7 +1096,21 @@
           renderTabBar();
         }
 
-        insertAtCursor(`![${alt}](${result.markdownReference})`);
+        const newReference = `![${alt}](${result.markdownReference})`;
+        if (insertMode === "localize") {
+          // Replace the original remote reference's exact span rather than
+          // inserting at the cursor, which may have moved since the panel
+          // opened - this is a replacement, not a fresh insert.
+          const { start, end } = pendingLocalizeTarget;
+          const value = editorEl.value;
+          editorEl.value = value.slice(0, start) + newReference + value.slice(end);
+          editorEl.focus();
+          const pos = start + newReference.length;
+          editorEl.setSelectionRange(pos, pos);
+          emitEdited();
+        } else {
+          insertAtCursor(newReference);
+        }
         closeInsertImagePanel();
         updateImageAlignToolbar();
       } catch (err) {
@@ -1027,6 +1127,84 @@
       if (event.payload.type !== "drop" || !activeTab) return;
       const path = event.payload.paths[0];
       if (path && looksLikeImagePath(path)) openInsertImagePanel(path);
+    });
+
+    // Insert an image by URL - deliberately does NOT go through
+    // insert_image_impl/localize_remote_image: nothing is downloaded,
+    // normalized, or stored in the site. This is for a photo that already
+    // lives somewhere on the web (e.g. cheap object storage a committee
+    // member uploaded to directly) and should just be linked to as-is. The
+    // fetch here is purely a client-side <img> load, to confirm the URL is
+    // actually a working image before committing to using it - no Rust
+    // command needed since a plain <img src> isn't subject to the asset-
+    // protocol scoping that local-file paths need read_image_preview for.
+    const urlImagePanel = document.getElementById("insert-url-image-panel");
+    const urlImageInput = document.getElementById("url-image-url");
+    const urlImagePreview = document.getElementById("url-image-preview");
+    const urlImageAltInput = document.getElementById("url-image-alt");
+    const urlImageStatus = document.getElementById("url-image-status");
+    let urlImageValid = false;
+
+    const openUrlImagePanel = () => {
+      urlImageInput.value = "";
+      urlImageAltInput.value = "";
+      urlImageStatus.textContent = "";
+      urlImagePreview.style.display = "none";
+      urlImageValid = false;
+      urlImagePanel.style.display = "flex";
+      urlImageInput.focus();
+    };
+
+    const closeUrlImagePanel = () => {
+      urlImagePanel.style.display = "none";
+    };
+
+    let urlPreviewDebounce = null;
+    urlImageInput.addEventListener("input", () => {
+      clearTimeout(urlPreviewDebounce);
+      urlImageValid = false;
+      urlImageStatus.textContent = "";
+      urlPreviewDebounce = setTimeout(() => {
+        const url = urlImageInput.value.trim();
+        if (!url) {
+          urlImagePreview.style.display = "none";
+          return;
+        }
+        urlImageStatus.textContent = "Checking…";
+        const probe = new Image();
+        probe.onload = () => {
+          if (urlImageInput.value.trim() !== url) return; // superseded by a later edit
+          urlImageValid = true;
+          urlImageStatus.textContent = "";
+          urlImagePreview.src = url;
+          urlImagePreview.style.display = "block";
+          if (!urlImageAltInput.value) {
+            urlImageAltInput.value = filenameStem(url.split("?")[0]).replace(/[-_]+/g, " ");
+          }
+        };
+        probe.onerror = () => {
+          if (urlImageInput.value.trim() !== url) return;
+          urlImageValid = false;
+          urlImageStatus.textContent = "Couldn't load an image from this URL.";
+          urlImagePreview.style.display = "none";
+        };
+        probe.src = url;
+      }, 400);
+    });
+
+    document.getElementById("fmt-image-url").addEventListener("click", withActiveTab(openUrlImagePanel));
+    document.getElementById("url-image-cancel").addEventListener("click", closeUrlImagePanel);
+
+    document.getElementById("url-image-confirm").addEventListener("click", () => {
+      if (!activeTab) return;
+      const url = urlImageInput.value.trim();
+      if (!url || !urlImageValid) {
+        urlImageStatus.textContent = "Enter a URL that successfully loads as an image first.";
+        return;
+      }
+      insertAtCursor(`![${urlImageAltInput.value}](${url})`);
+      closeUrlImagePanel();
+      updateImageAlignToolbar();
     });
 
     // Contextual image-alignment toolbar: shown whenever the cursor sits
@@ -1091,6 +1269,9 @@
     };
 
     const imageAlignToolbar = document.getElementById("image-align-toolbar");
+    const imageLocalizeButton = document.getElementById("image-localize-button");
+
+    const isRemoteUrl = (src) => /^https?:\/\//i.test(src);
 
     const updateImageAlignToolbar = () => {
       const found = activeTab ? findImageAtCursor() : null;
@@ -1102,6 +1283,11 @@
       imageAlignToolbar.querySelectorAll("button[data-align]").forEach((btn) => {
         btn.classList.toggle("align-active", btn.dataset.align === found.align);
       });
+      // Resize acts on a local file; localize is the opposite case (a
+      // reference this app doesn't own the bytes for yet) - never both.
+      const remote = isRemoteUrl(found.src);
+      imageLocalizeButton.hidden = !remote;
+      document.getElementById("image-resize-button").hidden = remote;
       imageAlignStatus.textContent = "";
     };
 
@@ -1151,6 +1337,12 @@
     const resizeStatus = document.getElementById("resize-status");
     let pendingResizePath = null; // site-relative path passed to resize_image_in_place
     let pendingResizeDims = null; // {width, height} of the image's CURRENT on-disk size
+
+    document.getElementById("image-localize-button").addEventListener("click", async () => {
+      const found = findImageAtCursor();
+      if (!found || !isRemoteUrl(found.src)) return;
+      await openLocalizePanel(found);
+    });
 
     document.getElementById("image-resize-button").addEventListener("click", async () => {
       const found = findImageAtCursor();

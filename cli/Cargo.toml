@@ -1,0 +1,18 @@
+[package]
+name = "beedance-cli"
+version = "0.1.0"
+description = "Admin tooling for beedance-ssg-editor: issue scoped per-person storage credentials"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+dialoguer = "0.11"
+dirs = "7"
+ureq = { version = "3", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[[bin]]
+name = "beedance-cli"
+path = "src/main.rs"
