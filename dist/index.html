@@ -481,10 +481,7 @@
       </div>
     </div>
 
-    <details style="margin: 12px 0 0;">
-      <summary>zola serve log</summary>
-      <pre id="zola-log">(nothing yet)</pre>
-    </details>
+    <button id="open-log-window" class="secondary" style="margin: 12px 0 0;">Preview Server Log</button>
   </main>
 
   <script>
@@ -515,7 +512,9 @@
       return invoke("start_draft", { name });
     });
 
-    const zolaLog = document.getElementById("zola-log");
+    document.getElementById("open-log-window").addEventListener("click", () => {
+      invoke("open_log_window").catch((err) => console.error("couldn't open log window:", err));
+    });
 
     // Settings panel - currently just the one network-serve toggle, but its
     // own dialog rather than living under "debug tools" since it's a real
@@ -626,7 +625,6 @@
 
     const startPreview = async () => {
       const status = document.getElementById("editor-status");
-      zolaLog.textContent = "";
       try {
         await invoke("zola_serve", { network: networkServeEnabled, currentContentPath: activeTab });
         previewRunning = true;
@@ -1595,7 +1593,6 @@
 
         await invoke("zola_stop");
         document.getElementById("phone-toggle").checked = false;
-        zolaLog.textContent = "";
 
         const result = await invoke("set_site_dir", { path: folder });
         currentSiteDir = folder;
@@ -1620,10 +1617,6 @@
         bannerMessage.textContent = path + " changed on disk externally.";
         banner.style.display = "block";
       }
-    });
-
-    listen("zola-log", (event) => {
-      zolaLog.textContent += event.payload + "\n";
     });
 
     document.getElementById("banner-reload").addEventListener("click", () => {

@@ -20,6 +20,9 @@ const PREVIEW_LABEL: &str = "preview";
 const DESKTOP_PREVIEW_SIZE: (f64, f64) = (1280.0, 800.0);
 const PHONE_PREVIEW_SIZE: (f64, f64) = (390.0, 844.0);
 
+const LOG_LABEL: &str = "log";
+const LOG_WINDOW_SIZE: (f64, f64) = (640.0, 480.0);
+
 /// Tracks when this app last wrote each path itself, per-path (not a single
 /// global timestamp - with multiple tabs open, saving one file must not
 /// suppress a genuine external-edit notification for a different one), so the
@@ -937,6 +940,25 @@ fn open_or_focus_preview_window(app: &tauri::AppHandle, target_path: Option<&str
     Ok(())
 }
 
+/// Opens the log window if it isn't already, or just focuses the existing
+/// one - the log itself lives entirely in log.html's own listener on the
+/// "zola-log" event this app already emits, so this command has nothing
+/// else to wire up.
+#[tauri::command]
+fn open_log_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(LOG_LABEL) {
+        return win.set_focus().map_err(|e| e.to_string());
+    }
+
+    WebviewWindowBuilder::new(&app, LOG_LABEL, WebviewUrl::App("log.html".into()))
+        .title("Preview Server Log")
+        .inner_size(LOG_WINDOW_SIZE.0, LOG_WINDOW_SIZE.1)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 #[tauri::command]
 async fn zola_serve(
     app: tauri::AppHandle,
@@ -948,6 +970,8 @@ async fn zola_serve(
     if let Some(child) = state.0.lock().unwrap().take() {
         let _ = child.kill();
     }
+
+    let _ = app.emit("zola-log-reset", ());
 
     let mut args = vec!["serve".to_string()];
     if network {
@@ -1087,6 +1111,9 @@ fn main() {
                 if let Some(preview) = app.get_webview_window(PREVIEW_LABEL) {
                     let _ = preview.close();
                 }
+                if let Some(log_win) = app.get_webview_window(LOG_LABEL) {
+                    let _ = log_win.close();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -1097,6 +1124,7 @@ fn main() {
             start_draft,
             zola_serve,
             zola_stop,
+            open_log_window,
             set_preview_phone_mode,
             list_editable_files,
             get_site_dir,
