@@ -499,6 +499,10 @@
     <button id="banner-dismiss" class="secondary">Ignore</button>
   </div>
 
+  <div id="external-content-banner" style="display: none; background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin: 0 20px 12px; font-size: 13px;">
+    <span id="external-content-message"></span>
+  </div>
+
   <details>
     <summary>debug tools</summary>
 
@@ -1195,6 +1199,35 @@
       }
     };
 
+    const externalContentBanner = document.getElementById("external-content-banner");
+    const externalContentMessage = document.getElementById("external-content-message");
+
+    // A page whose actual rendered content is driven by something other
+    // than what's visibly in this buffer - a custom `template` override
+    // (e.g. events/calendar.md: an empty body, the real "calendar" behavior
+    // lives entirely in events-calendar.html) or a <script> tag pasted
+    // directly into the body (e.g. plant-safari's embedded widget, real
+    // editable text but easy to break by editing it as if it were prose).
+    // Just a heads-up, not a block - both are still perfectly editable.
+    const refreshExternalContentBanner = async (content) => {
+      try {
+        const info = await invoke("detect_external_content", { content });
+        if (info.customTemplate) {
+          externalContentMessage.textContent =
+            `This page uses a custom template ("${info.customTemplate}") - its actual layout/behavior lives in the theme's code, not shown here.`;
+          externalContentBanner.style.display = "block";
+        } else if (info.hasScriptTag) {
+          externalContentMessage.textContent =
+            "This page embeds custom code (a <script> tag) - edit the surrounding text with care, don't remove it unless you mean to.";
+          externalContentBanner.style.display = "block";
+        } else {
+          externalContentBanner.style.display = "none";
+        }
+      } catch {
+        externalContentBanner.style.display = "none";
+      }
+    };
+
     const switchToTab = (path) => {
       const tab = tabs.get(path);
       if (!tab) return;
@@ -1209,6 +1242,7 @@
       } else {
         banner.style.display = "none";
       }
+      refreshExternalContentBanner(tab.content);
       updateImageAlignToolbar();
     };
 

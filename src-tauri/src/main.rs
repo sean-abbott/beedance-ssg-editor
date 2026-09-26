@@ -81,6 +81,7 @@ fn main() {
             content::list_page_sections,
             content::get_front_matter_date,
             content::get_front_matter_title,
+            content::detect_external_content,
             content::list_all_tags,
             content::get_content_tags,
             content::set_content_tags,

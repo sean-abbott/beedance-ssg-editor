@@ -43,7 +43,7 @@ impl Default for TierSettings {
     fn default() -> Self {
         // 1600 vs. an original 2000px cap: JPEG size roughly tracks pixel
         // area, so a 20% smaller linear dimension is ~36% smaller output.
-        // post_internal is a guess (480px) at "small enough for a
+        // post_internal is a guess (240px) at "small enough for a
         // meaningful left/right float", not measured against a real theme -
         // adjust once it's actually used against real content.
         TierSettings {
@@ -51,7 +51,7 @@ impl Default for TierSettings {
             web_quality: 80,
             high_cap: 4800,
             high_quality: 90,
-            post_internal_cap: 480,
+            post_internal_cap: 240,
             post_internal_quality: 82,
         }
     }

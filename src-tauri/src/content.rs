@@ -147,6 +147,37 @@ pub fn get_front_matter_title(content: String) -> Option<String> {
     front_matter_field(front_matter_block(&content)?, "title")
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalContentInfo {
+    /// Some(name) if `template` overrides Zola's own default (page.html for
+    /// a leaf page, section.html for a section index) - that template's own
+    /// code, not this file's body, drives most or all of what actually
+    /// renders (e.g. events/calendar.md: an empty body, template =
+    /// "events-calendar.html" does all the real work).
+    custom_template: Option<String>,
+    /// A <script> tag pasted directly into the body (e.g. plant-safari's
+    /// embedded widget) - real, editable text, but easy to break by editing
+    /// it as if it were just prose.
+    has_script_tag: bool,
+}
+
+/// Detects the two ways a content file's actual rendered page can be driven
+/// by something other than what's visibly in this buffer - see pws-who's
+/// investigation of events/calendar.md (empty body, all logic in its
+/// template) and plant-safari/_index.md (a real embedded HTML/JS widget) on
+/// the live site for the two real cases this covers.
+#[tauri::command]
+pub fn detect_external_content(content: String) -> ExternalContentInfo {
+    let custom_template = front_matter_block(&content)
+        .and_then(|b| front_matter_field(b, "template"))
+        .filter(|t| t != "page.html" && t != "section.html");
+    ExternalContentInfo {
+        custom_template,
+        has_script_tag: content.contains("<script"),
+    }
+}
+
 /// Zola's own date parsing is strict enough that a hand-typed value in a
 /// format Zola doesn't recognize (verified empirically: "2026-9-26",
 /// "09/26/2026", and "September 26, 2026" all fail) doesn't just break that
