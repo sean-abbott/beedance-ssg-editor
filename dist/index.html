@@ -73,6 +73,8 @@
     }
     button:hover { filter: brightness(1.08); }
     button.secondary { background: var(--panel); color: var(--text); border-color: var(--border); }
+    #save.clean { background: var(--panel); color: var(--muted); border-color: var(--border); cursor: default; }
+    #save.clean:hover { filter: none; }
 
     .row { display: flex; gap: 12px; align-items: stretch; }
     .col { flex: 1 1 0; min-width: 0; }
@@ -275,6 +277,11 @@
           <label for="r2-public-url-base">Public URL base</label>
           <input type="text" id="r2-public-url-base" placeholder="https://images.example.com" />
         </div>
+        <p style="font-size: 11px; color: var(--muted); margin: 6px 0 0;">
+          Needs the scheme (starts with "https://" or "http://") - this is
+          fetched directly by a browser, not passed through the site. If you
+          save without one, "https://" is added for you.
+        </p>
         <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px;">
           <div id="r2-settings-status" style="font-size: 12px; color: var(--muted);"></div>
           <button id="save-r2-settings" class="secondary">Save R2 settings</button>
@@ -582,8 +589,19 @@
       }
     });
 
+    // A pasted domain with no scheme (e.g. copied straight out of the
+    // Cloudflare custom-domain UI, which doesn't show one) would otherwise
+    // silently produce broken image references - default it to https://
+    // rather than rejecting the save.
+    const normalizeUrlBase = (value) => {
+      const trimmed = value.trim().replace(/\/+$/, "");
+      if (trimmed === "" || /^https?:\/\//i.test(trimmed)) return trimmed;
+      return "https://" + trimmed;
+    };
+
     document.getElementById("save-r2-settings").addEventListener("click", async () => {
       try {
+        r2PublicUrlBase.value = normalizeUrlBase(r2PublicUrlBase.value);
         await invoke("set_r2_settings", {
           settings: {
             enabled: r2Enabled.checked,
@@ -610,7 +628,7 @@
       const status = document.getElementById("editor-status");
       zolaLog.textContent = "";
       try {
-        await invoke("zola_serve", { network: networkServeEnabled });
+        await invoke("zola_serve", { network: networkServeEnabled, currentContentPath: activeTab });
         previewRunning = true;
         status.textContent = "";
       } catch (err) {
@@ -720,18 +738,23 @@
       }
     };
 
+    const saveButton = document.getElementById("save");
+
     const updateStatusForActiveTab = () => {
       statusEl.classList.remove("dirty");
       if (!activeTab) {
         statusEl.textContent = "";
+        saveButton.classList.add("clean");
         return;
       }
       const tab = tabs.get(activeTab);
       if (tab.dirty) {
         statusEl.classList.add("dirty");
         statusEl.textContent = "● unsaved changes";
+        saveButton.classList.remove("clean");
       } else {
         statusEl.textContent = "";
+        saveButton.classList.add("clean");
       }
     };
 

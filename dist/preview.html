@@ -32,6 +32,19 @@
   <script>
     const frame = document.getElementById("frame");
 
+    // Set by the Rust side's initialization_script before this page's own
+    // script runs, so the window opens straight on the page being edited
+    // instead of always landing on the site root.
+    if (window.__BEEDANCE_PREVIEW_TARGET__) {
+      frame.src = "http://127.0.0.1:1111" + window.__BEEDANCE_PREVIEW_TARGET__;
+    }
+
+    // "Start preview" clicked again while this window was already open (e.g.
+    // after switching tabs) - navigate in place instead of needing a reopen.
+    window.__TAURI__.event.listen("preview-navigate", (event) => {
+      frame.src = "http://127.0.0.1:1111" + event.payload;
+    });
+
     // history.back()/forward() are allowed cross-origin per spec even though
     // the iframe (127.0.0.1:1111) and this page (tauri's own origin) differ.
     document.getElementById("back").addEventListener("click", () => {

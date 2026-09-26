@@ -87,6 +87,75 @@ fn is_bundle_page(path: String) -> Result<bool, String> {
     Ok(zola::is_bundle_page(&full))
 }
 
+/// Best-effort front matter block (the text between the opening and closing
+/// `+++`/`---` delimiter) - not a real TOML/YAML parser, just enough to read
+/// a `slug`/`path` override for resolve_preview_path below.
+fn front_matter_block(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim_start();
+    for delim in ["+++", "---"] {
+        if let Some(after) = trimmed.strip_prefix(delim) {
+            let after = after.strip_prefix('\n').unwrap_or(after);
+            if let Some(end) = after.find(&format!("\n{delim}")) {
+                return Some(&after[..end]);
+            }
+        }
+    }
+    None
+}
+
+fn front_matter_field(block: &str, field: &str) -> Option<String> {
+    for line in block.lines() {
+        if let Some((key, value)) = line.split_once('=').or_else(|| line.split_once(':')) {
+            if key.trim() == field {
+                return Some(value.trim().trim_matches('"').trim_matches('\'').to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Guesses the URL a content file resolves to under Zola's default routing
+/// (content path mirrors the URL path, `index.md`/`_index.md` drop out of
+/// it) so "Start preview" can jump straight to the page being edited. Only
+/// handles a `slug`/`path` front matter override on top of that - not
+/// taxonomies, pagination, or a custom `[[extra]]`-driven routing scheme, so
+/// an unusual page may still land on the wrong URL. Only used internally by
+/// zola_serve - not registered as its own Tauri command.
+fn resolve_preview_path(content_path: String) -> Option<String> {
+    let content_prefix = format!("{}/", zola::CONTENT_DIR);
+    let rel = content_path.strip_prefix(&content_prefix)?;
+    let rel_path = Path::new(rel);
+
+    let file_name = rel_path.file_name()?.to_str()?;
+    let mut segments: Vec<String> = rel_path
+        .parent()
+        .map(|p| p.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect())
+        .unwrap_or_default();
+
+    if file_name != "index.md" && file_name != "_index.md" {
+        segments.push(rel_path.file_stem()?.to_str()?.to_string());
+    }
+
+    if let Ok(full) = resolve_site_path(&content_path) {
+        if let Ok(raw) = std::fs::read_to_string(&full) {
+            if let Some(block) = front_matter_block(&raw) {
+                if let Some(path_override) = front_matter_field(block, "path") {
+                    return Some(format!("/{}/", path_override.trim_matches('/')));
+                }
+                if let Some(slug) = front_matter_field(block, "slug") {
+                    if let Some(last) = segments.last_mut() {
+                        *last = slug;
+                    } else {
+                        segments.push(slug);
+                    }
+                }
+            }
+        }
+    }
+
+    Some(if segments.is_empty() { "/".to_string() } else { format!("/{}/", segments.join("/")) })
+}
+
 /// Points the app at a different site directory from the in-app folder
 /// picker, mirroring scripts/set-site.sh (same config file, same
 /// missing-config.toml warning) but also retargeting the live content
@@ -842,23 +911,39 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
-fn open_or_focus_preview_window(app: &tauri::AppHandle) -> Result<(), String> {
+fn open_or_focus_preview_window(app: &tauri::AppHandle, target_path: Option<&str>) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(PREVIEW_LABEL) {
         win.set_focus().map_err(|e| e.to_string())?;
+        // Window's already open (e.g. hitting "Start preview" again after
+        // switching tabs) - navigate its iframe rather than needing it
+        // reopened, since the initial nav script below only runs on creation.
+        if let Some(target) = target_path {
+            let _ = win.emit("preview-navigate", target);
+        }
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(app, PREVIEW_LABEL, WebviewUrl::App("preview.html".into()))
-    .title("Preview")
-    .inner_size(DESKTOP_PREVIEW_SIZE.0, DESKTOP_PREVIEW_SIZE.1)
-    .build()
-    .map_err(|e| e.to_string())?;
+    let mut builder = WebviewWindowBuilder::new(app, PREVIEW_LABEL, WebviewUrl::App("preview.html".into()))
+        .title("Preview")
+        .inner_size(DESKTOP_PREVIEW_SIZE.0, DESKTOP_PREVIEW_SIZE.1);
+
+    if let Some(target) = target_path {
+        let target_json = serde_json::to_string(target).map_err(|e| e.to_string())?;
+        builder = builder.initialization_script(&format!("window.__BEEDANCE_PREVIEW_TARGET__ = {target_json};"));
+    }
+
+    builder.build().map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
 #[tauri::command]
-async fn zola_serve(app: tauri::AppHandle, state: tauri::State<'_, ServeState>, network: bool) -> Result<String, String> {
+async fn zola_serve(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ServeState>,
+    network: bool,
+    current_content_path: Option<String>,
+) -> Result<String, String> {
     // Stop any previous instance first so repeated clicks don't fight over the port.
     if let Some(child) = state.0.lock().unwrap().take() {
         let _ = child.kill();
@@ -921,7 +1006,8 @@ async fn zola_serve(app: tauri::AppHandle, state: tauri::State<'_, ServeState>, 
             zola::DEFAULT_SERVE_PORT
         ));
     }
-    open_or_focus_preview_window(&app)?;
+    let target_path = current_content_path.and_then(resolve_preview_path);
+    open_or_focus_preview_window(&app, target_path.as_deref())?;
 
     if network {
         let lan_ip = local_ip_address::local_ip().map_err(|e| e.to_string())?;
