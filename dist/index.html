@@ -328,10 +328,17 @@
         date can fail the entire site's build, not just this page.
       </p>
 
-      <label style="display: block; font-size: 13px; margin-bottom: 10px;">
-        Date &amp; time
-        <input type="datetime-local" id="date-panel-input" style="width: 100%; margin-top: 4px;" />
-      </label>
+      <div style="font-size: 13px; margin-bottom: 10px;">
+        <div style="display: flex; gap: 8px; margin-bottom: 6px;">
+          <label>Year <input type="number" id="date-panel-year" min="1970" max="9999" style="width: 70px;" /></label>
+          <label>Month <input type="number" id="date-panel-month" min="1" max="12" style="width: 55px;" /></label>
+          <label>Day <input type="number" id="date-panel-day" min="1" max="31" style="width: 55px;" /></label>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <label>Hour (24h) <input type="number" id="date-panel-hour" min="0" max="23" style="width: 55px;" /></label>
+          <label>Minute <input type="number" id="date-panel-minute" min="0" max="59" style="width: 55px;" /></label>
+        </div>
+      </div>
 
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px;">
         <button type="button" id="date-panel-now" class="secondary">Set to now</button>
@@ -1509,22 +1516,47 @@
       }, 400);
     });
 
-    // Converts whatever's actually in the front matter's `date` field
-    // (bare "2026-06-17", a full "2026-09-26T14:30:00", TOML-quoted, or a
-    // space instead of "T") into the "YYYY-MM-DDTHH:MM" a
-    // datetime-local input needs. Best-effort: an unparseable value just
-    // leaves the input empty rather than guessing wrong.
-    const zolaDateToInputValue = (raw) => {
-      if (!raw) return "";
+    // Plain number inputs, not <input type="datetime-local"> - that input
+    // type is a known weak spot in WebKitGTK (this app's Linux webview
+    // engine), historically with no real native picker and unreliable
+    // keyboard input, and this app has to work identically across Mac/
+    // Windows/Linux. Number inputs are universally supported everywhere.
+
+    // Parses whatever's actually in the front matter's `date` field (bare
+    // "2026-06-17", a full "2026-09-26T14:30:00", TOML-quoted, or a space
+    // instead of "T") into {year, month, day, hour, minute} - hour/minute
+    // default to 0 if the value has no time component. Best-effort: an
+    // unparseable value returns null rather than guessing wrong.
+    const zolaDateToParts = (raw) => {
+      if (!raw) return null;
       const unquoted = raw.trim().replace(/^["'](.*)["']$/, "$1").replace(" ", "T");
-      if (/^\d{4}-\d{2}-\d{2}$/.test(unquoted)) return unquoted + "T00:00";
-      const match = unquoted.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
-      return match ? match[1] : "";
+      const m = unquoted.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
+      if (!m) return null;
+      return {
+        year: Number(m[1]),
+        month: Number(m[2]),
+        day: Number(m[3]),
+        hour: m[4] !== undefined ? Number(m[4]) : 0,
+        minute: m[5] !== undefined ? Number(m[5]) : 0,
+      };
     };
 
     const datePanel = document.getElementById("date-panel");
-    const datePanelInput = document.getElementById("date-panel-input");
+    const datePanelYear = document.getElementById("date-panel-year");
+    const datePanelMonth = document.getElementById("date-panel-month");
+    const datePanelDay = document.getElementById("date-panel-day");
+    const datePanelHour = document.getElementById("date-panel-hour");
+    const datePanelMinute = document.getElementById("date-panel-minute");
+    const datePanelFields = [datePanelYear, datePanelMonth, datePanelDay, datePanelHour, datePanelMinute];
     const datePanelStatus = document.getElementById("date-panel-status");
+
+    const fillDatePanel = (parts) => {
+      datePanelYear.value = parts ? parts.year : "";
+      datePanelMonth.value = parts ? parts.month : "";
+      datePanelDay.value = parts ? parts.day : "";
+      datePanelHour.value = parts ? parts.hour : "";
+      datePanelMinute.value = parts ? parts.minute : "";
+    };
 
     document.getElementById("fmt-date").addEventListener(
       "click",
@@ -1532,7 +1564,7 @@
         datePanelStatus.textContent = "";
         try {
           const current = await invoke("get_front_matter_date", { content: editorEl.value });
-          datePanelInput.value = zolaDateToInputValue(current);
+          fillDatePanel(zolaDateToParts(current));
         } catch (err) {
           datePanelStatus.textContent = "ERROR: " + err;
         }
@@ -1541,11 +1573,29 @@
     );
 
     document.getElementById("date-panel-now").addEventListener("click", () => {
-      datePanelInput.value = nowForZola().slice(0, 16);
+      const d = new Date();
+      fillDatePanel({
+        year: d.getFullYear(),
+        month: d.getMonth() + 1,
+        day: d.getDate(),
+        hour: d.getHours(),
+        minute: d.getMinutes(),
+      });
     });
 
-    document.getElementById("date-panel-clear").addEventListener("click", () => {
-      datePanelInput.value = "";
+    // Removing the date is immediate, not deferred to Save - with five
+    // separate fields there's no clean single "this means remove" state to
+    // leave them in.
+    document.getElementById("date-panel-clear").addEventListener("click", async () => {
+      if (!activeTab) return;
+      try {
+        const updated = await invoke("remove_front_matter_date", { content: editorEl.value });
+        editorEl.value = updated;
+        emitEdited();
+        datePanel.style.display = "none";
+      } catch (err) {
+        datePanelStatus.textContent = "ERROR: " + err;
+      }
     });
 
     document.getElementById("date-panel-cancel").addEventListener("click", () => {
@@ -1554,10 +1604,15 @@
 
     document.getElementById("date-panel-confirm").addEventListener("click", async () => {
       if (!activeTab) return;
+      if (datePanelFields.some((f) => f.value === "")) {
+        datePanelStatus.textContent = 'Fill in all fields (or use "Remove date" to clear it).';
+        return;
+      }
+      const datetime =
+        `${String(datePanelYear.value).padStart(4, "0")}-${pad2(datePanelMonth.value)}-${pad2(datePanelDay.value)}` +
+        `T${pad2(datePanelHour.value)}:${pad2(datePanelMinute.value)}:00`;
       try {
-        const updated = datePanelInput.value
-          ? await invoke("set_front_matter_date", { content: editorEl.value, datetime: datePanelInput.value + ":00" })
-          : await invoke("remove_front_matter_date", { content: editorEl.value });
+        const updated = await invoke("set_front_matter_date", { content: editorEl.value, datetime });
         editorEl.value = updated;
         emitEdited();
         datePanel.style.display = "none";
