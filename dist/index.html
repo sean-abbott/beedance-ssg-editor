@@ -319,6 +319,34 @@
     </div>
   </div>
 
+  <div id="date-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(340px, 90%); padding: 16px; background: var(--panel);">
+      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Page date &amp; time</h3>
+      <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+        Controls sort order for dated content (like blog posts). Use this
+        instead of typing a date by hand in the text - a badly-formatted
+        date can fail the entire site's build, not just this page.
+      </p>
+
+      <label style="display: block; font-size: 13px; margin-bottom: 10px;">
+        Date &amp; time
+        <input type="datetime-local" id="date-panel-input" style="width: 100%; margin-top: 4px;" />
+      </label>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px;">
+        <button type="button" id="date-panel-now" class="secondary">Set to now</button>
+        <button type="button" id="date-panel-clear" class="secondary">Remove date</button>
+      </div>
+
+      <div id="date-panel-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="date-panel-cancel" class="secondary">Cancel</button>
+        <button id="date-panel-confirm">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div id="external-change-banner">
     <span id="external-change-message">File changed on disk externally.</span>
     <button id="banner-reload" class="secondary">Reload</button>
@@ -389,6 +417,7 @@
       <button id="fmt-ol" class="secondary" title="Numbered list">1. List</button>
       <button id="fmt-image" class="secondary" title="Insert image">&#128247; Image</button>
       <button id="fmt-image-url" class="secondary" title="Insert image from a web link">&#128279; Image URL&hellip;</button>
+      <button id="fmt-date" class="secondary" title="Set this page's date/time">&#128197; Date&hellip;</button>
     </div>
     <div id="image-align-toolbar" style="display: none; align-items: center; gap: 8px; padding: 6px; border: 1px solid var(--border); border-top: none; border-bottom: none; background: color-mix(in srgb, var(--panel) 96%, var(--accent)); font-size: 12px;">
       <span style="color: var(--muted);">Image alignment:</span>
@@ -647,6 +676,20 @@
       settingsPanel.style.display = "none";
     });
 
+    // Zola's `date` field is naive (no timezone) and this app's users are a
+    // single local group, so "now" means the browser's own local wall-clock
+    // time, formatted the same way whether it's an auto-stamp (create_post)
+    // or a manual edit (the date panel below) - one shared source of truth
+    // instead of the two drifting apart.
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const nowForZola = () => {
+      const d = new Date();
+      return (
+        `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` +
+        `T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+      );
+    };
+
     // "New post"/"New page" share one small modal (title field, kind-specific
     // help text) rather than two near-identical dialogs - the only real
     // difference is which Rust command runs and what the help text says.
@@ -720,7 +763,8 @@
       newContentStatus.textContent = "Creating...";
       try {
         const command = newContentKind === "post" ? "create_post" : "create_page";
-        const args = newContentKind === "post" ? { title } : { title, section: newContentSection.value };
+        const args =
+          newContentKind === "post" ? { title, datetime: nowForZola() } : { title, section: newContentSection.value };
         const path = await invoke(command, args);
         newContentPanel.style.display = "none";
         await refreshFileList();
@@ -1463,6 +1507,63 @@
         };
         probe.src = url;
       }, 400);
+    });
+
+    // Converts whatever's actually in the front matter's `date` field
+    // (bare "2026-06-17", a full "2026-09-26T14:30:00", TOML-quoted, or a
+    // space instead of "T") into the "YYYY-MM-DDTHH:MM" a
+    // datetime-local input needs. Best-effort: an unparseable value just
+    // leaves the input empty rather than guessing wrong.
+    const zolaDateToInputValue = (raw) => {
+      if (!raw) return "";
+      const unquoted = raw.trim().replace(/^["'](.*)["']$/, "$1").replace(" ", "T");
+      if (/^\d{4}-\d{2}-\d{2}$/.test(unquoted)) return unquoted + "T00:00";
+      const match = unquoted.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
+      return match ? match[1] : "";
+    };
+
+    const datePanel = document.getElementById("date-panel");
+    const datePanelInput = document.getElementById("date-panel-input");
+    const datePanelStatus = document.getElementById("date-panel-status");
+
+    document.getElementById("fmt-date").addEventListener(
+      "click",
+      withActiveTab(async () => {
+        datePanelStatus.textContent = "";
+        try {
+          const current = await invoke("get_front_matter_date", { content: editorEl.value });
+          datePanelInput.value = zolaDateToInputValue(current);
+        } catch (err) {
+          datePanelStatus.textContent = "ERROR: " + err;
+        }
+        datePanel.style.display = "flex";
+      })
+    );
+
+    document.getElementById("date-panel-now").addEventListener("click", () => {
+      datePanelInput.value = nowForZola().slice(0, 16);
+    });
+
+    document.getElementById("date-panel-clear").addEventListener("click", () => {
+      datePanelInput.value = "";
+    });
+
+    document.getElementById("date-panel-cancel").addEventListener("click", () => {
+      datePanel.style.display = "none";
+    });
+
+    document.getElementById("date-panel-confirm").addEventListener("click", async () => {
+      if (!activeTab) return;
+      try {
+        const updated = datePanelInput.value
+          ? await invoke("set_front_matter_date", { content: editorEl.value, datetime: datePanelInput.value + ":00" })
+          : await invoke("remove_front_matter_date", { content: editorEl.value });
+        editorEl.value = updated;
+        emitEdited();
+        datePanel.style.display = "none";
+      } catch (err) {
+        datePanelStatus.textContent = "ERROR: " + err;
+      }
     });
 
     document.getElementById("fmt-image-url").addEventListener("click", withActiveTab(openUrlImagePanel));

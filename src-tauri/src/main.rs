@@ -220,17 +220,123 @@ fn find_post_section() -> Option<PathBuf> {
     found
 }
 
-fn today_toml_date() -> String {
-    let today = time::OffsetDateTime::now_utc().date();
-    format!("{:04}-{:02}-{:02}", today.year(), today.month() as u8, today.day())
+/// Reads the `date` front-matter field straight out of the given text (the
+/// live editor buffer, not necessarily what's on disk) - used to prefill the
+/// date/time picker with whatever's actually in the tab right now, including
+/// unsaved edits.
+#[tauri::command]
+fn get_front_matter_date(content: String) -> Option<String> {
+    front_matter_field(front_matter_block(&content)?, "date")
+}
+
+/// Sets (or inserts, if absent) the `date` front-matter field, returning the
+/// updated text for the frontend to load back into the editor buffer.
+///
+/// Zola's own date parsing is strict enough that a hand-typed value in a
+/// format Zola doesn't recognize (verified empirically: "2026-9-26",
+/// "09/26/2026", and "September 26, 2026" all fail) doesn't just break that
+/// one page - it fails the ENTIRE site build, so nothing new deploys until
+/// it's fixed. That's the whole reason this exists as a real command instead
+/// of leaving date-editing to raw front-matter text: the frontend only ever
+/// feeds this a value from a native `<input type="datetime-local">`, which
+/// can't produce a malformed string in the first place.
+/// Splits `content` into owned lines plus the reassembly newline style, and
+/// finds the front matter block's opening delimiter and closing line index -
+/// the shared groundwork set_front_matter_date/remove_front_matter_date both
+/// need before they touch the `date` line specifically.
+fn front_matter_lines(content: &str) -> Result<(Vec<String>, &'static str, usize), String> {
+    let newline = if content.contains("\r\n") { "\r\n" } else { "\n" };
+    let lines: Vec<String> = content.lines().map(str::to_string).collect();
+
+    let opening = lines.first().map(|l| l.trim().to_string()).unwrap_or_default();
+    if opening != "+++" && opening != "---" {
+        return Err("This file has no front matter block to set a date in.".to_string());
+    }
+
+    let closing_idx = lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find(|(_, l)| l.trim() == opening)
+        .map(|(i, _)| i)
+        .ok_or_else(|| "Front matter block has no closing delimiter.".to_string())?;
+
+    Ok((lines, newline, closing_idx))
+}
+
+fn reassemble(lines: Vec<String>, newline: &str, original: &str) -> String {
+    let mut result = lines.join(newline);
+    if original.ends_with('\n') {
+        result.push('\n');
+    }
+    result
+}
+
+/// Zola's own date parsing is strict enough that a hand-typed value in a
+/// format Zola doesn't recognize (verified empirically: "2026-9-26",
+/// "09/26/2026", and "September 26, 2026" all fail) doesn't just break that
+/// one page - it fails the ENTIRE site build, so nothing new deploys until
+/// it's fixed. That's the whole reason this exists as a real command instead
+/// of leaving date-editing to raw front-matter text: the frontend only ever
+/// feeds this a value from a native `<input type="datetime-local">`, which
+/// can't produce a malformed string in the first place.
+#[tauri::command]
+fn set_front_matter_date(content: String, datetime: String) -> Result<String, String> {
+    let (mut lines, newline, closing_idx) = front_matter_lines(&content)?;
+
+    let date_line = format!("date = {datetime}");
+    let existing = lines
+        .iter_mut()
+        .take(closing_idx)
+        .skip(1)
+        .find(|l| l.split_once('=').map(|(k, _)| k.trim()) == Some("date"));
+
+    match existing {
+        Some(line) => *line = date_line,
+        // Right after the opening delimiter (like title) - no need to
+        // understand TOML table nesting since this is always a top-level key.
+        None => lines.insert(1, date_line),
+    }
+
+    Ok(reassemble(lines, newline, &content))
+}
+
+/// Drops the `date` front-matter field entirely (a no-op if there wasn't
+/// one) - for a page that shouldn't be dated at all rather than dated
+/// "now" by mistake.
+#[tauri::command]
+fn remove_front_matter_date(content: String) -> Result<String, String> {
+    let (mut lines, newline, closing_idx) = front_matter_lines(&content)?;
+
+    let date_idx = lines
+        .iter()
+        .enumerate()
+        .take(closing_idx)
+        .skip(1)
+        .find(|(_, l)| l.split_once('=').map(|(k, _)| k.trim()) == Some("date"))
+        .map(|(i, _)| i);
+
+    if let Some(i) = date_idx {
+        lines.remove(i);
+    }
+
+    Ok(reassemble(lines, newline, &content))
 }
 
 /// Creates a new dated post in whichever section find_post_section finds -
 /// see that function's doc comment for why "the posts section" is
 /// determined by a `sort_by = "date"` front-matter convention rather than a
 /// hardcoded folder name.
+///
+/// `datetime` comes from the frontend's own local clock (see nowForZola in
+/// index.html), not computed here - Rust getting the local timezone offset
+/// safely needs the `time` crate's "local-offset" feature, which that crate
+/// itself warns is unsound to enable in a multi-threaded process (which a
+/// Tauri app always is). The browser has no such problem, and this also
+/// keeps auto-stamped and manually-set (see set_front_matter_date) dates
+/// consistent with each other.
 #[tauri::command]
-fn create_post(title: String) -> Result<String, String> {
+fn create_post(title: String, datetime: String) -> Result<String, String> {
     let section_dir = find_post_section().ok_or_else(|| {
         "No section is marked as the posts section yet - add `sort_by = \"date\"` to a section's \
          _index.md front matter (e.g. content/blog/_index.md) to mark it as where posts go."
@@ -247,11 +353,7 @@ fn create_post(title: String) -> Result<String, String> {
         return Err(format!("A post already exists at \"{slug}.md\" - choose a different title."));
     }
 
-    let front_matter = format!(
-        "+++\ntitle = \"{}\"\ndate = {}\n+++\n\n",
-        title.replace('"', "\\\""),
-        today_toml_date()
-    );
+    let front_matter = format!("+++\ntitle = \"{}\"\ndate = {datetime}\n+++\n\n", title.replace('"', "\\\""));
     std::fs::write(&full, front_matter).map_err(|e| e.to_string())?;
 
     full.strip_prefix(site_dir())
@@ -1388,6 +1490,9 @@ fn main() {
             create_post,
             create_page,
             list_page_sections,
+            get_front_matter_date,
+            set_front_matter_date,
+            remove_front_matter_date,
             get_site_dir,
             set_site_dir,
             read_file,
