@@ -88,6 +88,51 @@ pub fn stamp_top_level_field(content: &str, field: &str, value: &str) -> Option<
     Some(reassemble(lines, newline, content))
 }
 
+/// Like stamp_top_level_field, but for a key that belongs INSIDE a specific
+/// TOML table (e.g. `tags` under `[taxonomies]`, or `created_by` under
+/// `[extra]`) rather than at the top level. A table's lines run from its
+/// `[name]` header until the next `[`-prefixed header line or the closing
+/// delimiter, whichever comes first - creates the table (appended right
+/// before the closing delimiter, since TOML doesn't care about table order)
+/// if it doesn't exist yet.
+pub fn stamp_table_field(content: &str, table: &str, field: &str, value: &str) -> Option<String> {
+    let (mut lines, newline, closing_idx) = front_matter_lines(content).ok()?;
+
+    let table_header = format!("[{table}]");
+    let table_start = lines.iter().take(closing_idx).position(|l| l.trim() == table_header);
+
+    match table_start {
+        Some(start) => {
+            let table_end = lines
+                .iter()
+                .enumerate()
+                .skip(start + 1)
+                .take(closing_idx - start - 1)
+                .find(|(_, l)| l.trim_start().starts_with('['))
+                .map(|(i, _)| i)
+                .unwrap_or(closing_idx);
+
+            let new_line = format!("{field} = {value}");
+            let existing = lines
+                .iter_mut()
+                .take(table_end)
+                .skip(start + 1)
+                .find(|l| l.split_once('=').map(|(k, _)| k.trim()) == Some(field));
+
+            match existing {
+                Some(line) => *line = new_line,
+                None => lines.insert(table_end, new_line),
+            }
+        }
+        None => {
+            lines.insert(closing_idx, format!("{field} = {value}"));
+            lines.insert(closing_idx, table_header);
+        }
+    }
+
+    Some(reassemble(lines, newline, content))
+}
+
 /// A URL/filename-safe slug: unlike `slugify` (git.rs - used for git branch
 /// names, where a run of dashes or a trailing one doesn't matter), this
 /// collapses consecutive separators and trims the ends so it reads cleanly

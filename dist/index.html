@@ -130,6 +130,27 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .tag-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: color-mix(in srgb, var(--accent) 15%, var(--panel));
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px 4px 2px 10px;
+      font-size: 12px;
+    }
+    .tag-chip button {
+      border: none;
+      background: none;
+      color: inherit;
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 999px;
+    }
+    .tag-chip button:hover { background: color-mix(in srgb, var(--text) 12%, transparent); }
     .tab .tab-dot { color: #b8860b; flex-shrink: 0; }
     .tab .tab-external-dot { color: #c0392b; flex-shrink: 0; }
     .tab .tab-close {
@@ -376,6 +397,38 @@
     </div>
   </div>
 
+  <div id="confirm-panel" style="position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(360px, 90%); padding: 16px; background: var(--panel);">
+      <h3 id="confirm-panel-title" style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Are you sure?</h3>
+      <p id="confirm-panel-message" style="font-size: 13px; margin: 0 0 14px;"></p>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="confirm-panel-cancel" class="secondary">Cancel</button>
+        <button id="confirm-panel-confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tags-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(380px, 90%); padding: 16px; background: var(--panel);">
+      <h3 style="margin: 0 0 10px; font-size: 13px; color: var(--muted);">Tags</h3>
+
+      <div id="tags-panel-chips" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; min-height: 24px;"></div>
+
+      <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+        <input type="text" id="tags-panel-input" list="tags-panel-datalist" placeholder="Add a tag" style="flex: 1;" />
+        <button type="button" id="tags-panel-add" class="secondary">Add</button>
+      </div>
+      <datalist id="tags-panel-datalist"></datalist>
+
+      <div id="tags-panel-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="tags-panel-cancel" class="secondary">Cancel</button>
+        <button id="tags-panel-confirm">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div id="external-change-banner">
     <span id="external-change-message">File changed on disk externally.</span>
     <button id="banner-reload" class="secondary">Reload</button>
@@ -449,6 +502,7 @@
       <button id="fmt-image" class="secondary" title="Insert image">&#128247; Image</button>
       <button id="fmt-image-url" class="secondary" title="Insert image from a web link">&#128279; Image URL&hellip;</button>
       <button id="fmt-date" class="secondary" title="Set this page's date/time">&#128197; Date&hellip;</button>
+      <button id="fmt-tags" class="secondary" title="Add/remove tags">&#127991;&#65039; Tags&hellip;</button>
     </div>
     <div id="image-align-toolbar" style="display: none; align-items: center; gap: 8px; padding: 6px; border: 1px solid var(--border); border-top: none; border-bottom: none; background: color-mix(in srgb, var(--panel) 96%, var(--accent)); font-size: 12px;">
       <span style="color: var(--muted);">Image alignment:</span>
@@ -1132,6 +1186,37 @@
       fn();
     };
 
+    // A styled confirmation dialog (matching every other panel in this app)
+    // instead of a native browser confirm() popup, which looks out of place
+    // next to everything else here. Resolves true/false; only one at a time
+    // (a second call while one's already open replaces its resolver, which
+    // is fine since nothing in this app opens two confirmations at once).
+    const confirmPanel = document.getElementById("confirm-panel");
+    const confirmPanelTitle = document.getElementById("confirm-panel-title");
+    const confirmPanelMessage = document.getElementById("confirm-panel-message");
+    let confirmPanelResolve = null;
+
+    const askConfirm = (title, message, confirmLabel = "Confirm") =>
+      new Promise((resolve) => {
+        confirmPanelTitle.textContent = title;
+        confirmPanelMessage.textContent = message;
+        document.getElementById("confirm-panel-confirm").textContent = confirmLabel;
+        confirmPanelResolve = resolve;
+        confirmPanel.style.display = "flex";
+      });
+
+    document.getElementById("confirm-panel-cancel").addEventListener("click", () => {
+      confirmPanel.style.display = "none";
+      if (confirmPanelResolve) confirmPanelResolve(false);
+      confirmPanelResolve = null;
+    });
+
+    document.getElementById("confirm-panel-confirm").addEventListener("click", () => {
+      confirmPanel.style.display = "none";
+      if (confirmPanelResolve) confirmPanelResolve(true);
+      confirmPanelResolve = null;
+    });
+
     const emitEdited = () => editorEl.dispatchEvent(new Event("input", { bubbles: true }));
 
     // Same tab-switching logic as closeTab, but skips flushTab - used after
@@ -1166,7 +1251,8 @@
       "click",
       withActiveTab(async () => {
         const path = activeTab;
-        if (!confirm(`Delete "${path}"? This can't be undone.`)) return;
+        const proceed = await askConfirm("Delete this page?", `Delete "${path}"? This can't be undone.`, "Delete");
+        if (!proceed) return;
         try {
           await invoke("delete_content", { path });
           closeTabQuietly(path);
@@ -1180,6 +1266,7 @@
     const renamePanel = document.getElementById("rename-panel");
     const renamePanelInput = document.getElementById("rename-panel-input");
     const renamePanelStatus = document.getElementById("rename-panel-status");
+    let renamePanelOriginalTitle = "";
 
     document.getElementById("rename-content").addEventListener(
       "click",
@@ -1187,7 +1274,8 @@
         renamePanelStatus.textContent = "";
         try {
           const title = await invoke("get_front_matter_title", { content: editorEl.value });
-          renamePanelInput.value = title || "";
+          renamePanelOriginalTitle = title || "";
+          renamePanelInput.value = renamePanelOriginalTitle;
         } catch (err) {
           renamePanelStatus.textContent = "ERROR: " + err;
         }
@@ -1207,6 +1295,12 @@
         renamePanelStatus.textContent = "Enter a title first.";
         return;
       }
+      const proceed = await askConfirm(
+        "Rename this page?",
+        `Rename "${renamePanelOriginalTitle}" to "${newTitle}"? Its web address changes too.`,
+        "Rename"
+      );
+      if (!proceed) return;
       const oldPath = activeTab;
       renamePanelStatus.textContent = "Renaming...";
       try {
@@ -1761,6 +1855,106 @@
         datePanel.style.display = "none";
       } catch (err) {
         datePanelStatus.textContent = "ERROR: " + err;
+      }
+    });
+
+    // Tags: chips (add via a text input + native <datalist> autocomplete
+    // against every tag already used anywhere on the site, remove via each
+    // chip's own × ) rather than hand-editing the raw
+    // `tags = ["a", "b"]` TOML array line - and the autocomplete nudges
+    // toward reusing an existing tag instead of minting a near-duplicate
+    // (this site's real content already has both "Newsletter" and
+    // "newsletter" as separate tags).
+    let tagsPanelTags = [];
+    const tagsPanel = document.getElementById("tags-panel");
+    const tagsPanelChips = document.getElementById("tags-panel-chips");
+    const tagsPanelInput = document.getElementById("tags-panel-input");
+    const tagsPanelDatalist = document.getElementById("tags-panel-datalist");
+    const tagsPanelStatus = document.getElementById("tags-panel-status");
+
+    const renderTagsPanelChips = () => {
+      tagsPanelChips.innerHTML = "";
+      for (const tag of tagsPanelTags) {
+        const chip = document.createElement("span");
+        chip.className = "tag-chip";
+        const label = document.createElement("span");
+        label.textContent = tag;
+        chip.appendChild(label);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.setAttribute("aria-label", "Remove " + tag);
+        remove.textContent = "×";
+        remove.addEventListener("click", () => {
+          tagsPanelTags = tagsPanelTags.filter((t) => t !== tag);
+          renderTagsPanelChips();
+        });
+        chip.appendChild(remove);
+        tagsPanelChips.appendChild(chip);
+      }
+    };
+
+    const addTagFromInput = () => {
+      const tag = tagsPanelInput.value.trim();
+      tagsPanelInput.value = "";
+      if (!tag) return;
+      // Case-insensitive de-dupe within THIS page's own tag list, matching
+      // list_all_tags' site-wide de-dupe logic - adding "Newsletter" when
+      // "newsletter" is already on this same page shouldn't produce two.
+      if (tagsPanelTags.some((t) => t.toLowerCase() === tag.toLowerCase())) return;
+      tagsPanelTags.push(tag);
+      renderTagsPanelChips();
+    };
+
+    document.getElementById("fmt-tags").addEventListener(
+      "click",
+      withActiveTab(async () => {
+        tagsPanelStatus.textContent = "";
+        try {
+          const [current, allTags] = await Promise.all([
+            invoke("get_content_tags", { content: editorEl.value }),
+            invoke("list_all_tags"),
+          ]);
+          tagsPanelTags = [...current];
+          renderTagsPanelChips();
+          tagsPanelDatalist.innerHTML = "";
+          for (const tag of allTags) {
+            const opt = document.createElement("option");
+            opt.value = tag;
+            tagsPanelDatalist.appendChild(opt);
+          }
+        } catch (err) {
+          tagsPanelStatus.textContent = "ERROR: " + err;
+        }
+        tagsPanelInput.value = "";
+        tagsPanel.style.display = "flex";
+        tagsPanelInput.focus();
+      })
+    );
+
+    document.getElementById("tags-panel-add").addEventListener("click", addTagFromInput);
+    tagsPanelInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addTagFromInput();
+      }
+    });
+
+    document.getElementById("tags-panel-cancel").addEventListener("click", () => {
+      tagsPanel.style.display = "none";
+    });
+
+    document.getElementById("tags-panel-confirm").addEventListener("click", async () => {
+      if (!activeTab) return;
+      // A tag still sitting in the text box (typed but not confirmed with
+      // Enter/Add) shouldn't silently vanish on Save.
+      addTagFromInput();
+      try {
+        const updated = await invoke("set_content_tags", { content: editorEl.value, tags: tagsPanelTags });
+        editorEl.value = updated;
+        emitEdited();
+        tagsPanel.style.display = "none";
+      } catch (err) {
+        tagsPanelStatus.textContent = "ERROR: " + err;
       }
     });
 

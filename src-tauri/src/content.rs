@@ -2,13 +2,15 @@
 //! guess - the layer that combines frontmatter.rs's text parsing with
 //! site.rs's knowledge of where the site actually lives.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::frontmatter::{
-    content_slug, front_matter_block, front_matter_field, front_matter_lines, reassemble, stamp_top_level_field,
+    content_slug, front_matter_block, front_matter_field, front_matter_lines, reassemble, stamp_table_field,
+    stamp_top_level_field,
 };
-use crate::site::{resolve_site_path, site_dir, OpenFiles, SelfWriteTracker};
+use crate::site::{collect_files_with_ext, resolve_site_path, site_dir, OpenFiles, SelfWriteTracker};
 use crate::zola;
 
 /// Guesses the URL a content file resolves to under Zola's default routing
@@ -372,4 +374,70 @@ pub fn rename_content(
         .strip_prefix(site_dir())
         .map(|rel| rel.to_string_lossy().replace('\\', "/"))
         .map_err(|e| e.to_string())
+}
+
+/// A single-line TOML string array (`["a", "b"]`) is all the tags/taxonomy
+/// front matter this app ever writes actually uses - not a general TOML
+/// value parser, just enough to round-trip that one shape.
+fn parse_toml_string_array(raw: &str) -> Vec<String> {
+    let inner = raw.trim().trim_start_matches('[').trim_end_matches(']');
+    inner
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn format_toml_string_array(items: &[String]) -> String {
+    let quoted: Vec<String> = items.iter().map(|s| format!("\"{}\"", s.replace('"', "\\\""))).collect();
+    format!("[{}]", quoted.join(", "))
+}
+
+/// Every distinct tag currently used anywhere on the site, so the tag picker
+/// can suggest reusing an existing one instead of inviting a near-duplicate
+/// - this site's real content already has both "Newsletter" and "newsletter"
+/// as separate tags. Case-preserving but de-duplicated case-INsensitively -
+/// first-seen casing wins.
+#[tauri::command]
+pub fn list_all_tags() -> Vec<String> {
+    let dir = site_dir();
+    let mut content_paths = Vec::new();
+    collect_files_with_ext(&dir.join(zola::CONTENT_DIR), &dir, zola::CONTENT_EXT, &mut content_paths);
+    content_paths.sort();
+
+    let mut seen_lower = HashSet::new();
+    let mut tags = Vec::new();
+    for rel in content_paths {
+        let Ok(raw) = std::fs::read_to_string(dir.join(&rel)) else { continue };
+        let Some(block) = front_matter_block(&raw) else { continue };
+        let Some(raw_tags) = front_matter_field(block, "tags") else { continue };
+        for tag in parse_toml_string_array(&raw_tags) {
+            if seen_lower.insert(tag.to_lowercase()) {
+                tags.push(tag);
+            }
+        }
+    }
+    tags.sort_by_key(|t| t.to_lowercase());
+    tags
+}
+
+/// Reads the current page's tags straight out of the given text (the live
+/// editor buffer) - same "operate on the buffer, not disk" reasoning as
+/// get_front_matter_date/get_front_matter_title.
+#[tauri::command]
+pub fn get_content_tags(content: String) -> Vec<String> {
+    front_matter_block(&content)
+        .and_then(|b| front_matter_field(b, "tags"))
+        .map(|raw| parse_toml_string_array(&raw))
+        .unwrap_or_default()
+}
+
+/// Sets the current page's tags, replacing whatever's there. An empty list
+/// still writes `tags = []` rather than removing the field entirely - one
+/// code path for "has tags" and "has none" instead of two, since Zola treats
+/// an empty taxonomy array the same as not having the field at all.
+#[tauri::command]
+pub fn set_content_tags(content: String, tags: Vec<String>) -> Result<String, String> {
+    stamp_table_field(&content, "taxonomies", "tags", &format_toml_string_array(&tags))
+        .ok_or_else(|| "This file has no front matter block to set tags in.".to_string())
 }
