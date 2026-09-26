@@ -772,7 +772,9 @@
       try {
         const command = newContentKind === "post" ? "create_post" : "create_page";
         const args =
-          newContentKind === "post" ? { title, datetime: nowForZola() } : { title, section: newContentSection.value };
+          newContentKind === "post"
+            ? { title, datetime: nowForZola() }
+            : { title, section: newContentSection.value, datetime: nowForZola() };
         const path = await invoke(command, args);
         newContentPanel.style.display = "none";
         await refreshFileList();
@@ -873,8 +875,15 @@
       for (const groupName of groupNames) {
         const optgroup = document.createElement("optgroup");
         optgroup.label = groupName;
-        const items = [...groups.get(groupName)].sort((a, b) => {
+        const groupItems = groups.get(groupName);
+        // A "blog heading" group (Blog) orders the same way the real site
+        // does - newest first by date - rather than alphabetically by
+        // title, which would scatter posts in a different order than
+        // they'll actually appear once published.
+        const isBlogHeading = groupItems.some((e) => e.isBlogHeading);
+        const items = [...groupItems].sort((a, b) => {
           if (a.isSectionIndex !== b.isSectionIndex) return a.isSectionIndex ? -1 : 1;
+          if (isBlogHeading) return (b.date || "").localeCompare(a.date || "");
           return a.label.localeCompare(b.label);
         });
         for (const e of items) {
@@ -1005,8 +1014,26 @@
     const doSave = async (path, content) => {
       const tab = tabs.get(path);
       try {
-        await invoke("write_file", { path, content });
-        if (tab) tab.dirty = false;
+        const written = await invoke("write_file", { path, content, datetime: nowForZola() });
+        if (tab) {
+          tab.dirty = false;
+          // write_file stamps an `updated` front-matter field, which changes
+          // what's actually on disk from what was submitted - reflect that
+          // back into the buffer, but only if nothing's changed since this
+          // exact save started. If the user kept typing during the
+          // round-trip, tab.content has already moved past `content`, and
+          // overwriting it here would silently discard those newer
+          // keystrokes.
+          if (tab.content === content) {
+            tab.content = written;
+            if (path === activeTab) {
+              const selStart = editorEl.selectionStart;
+              const selEnd = editorEl.selectionEnd;
+              editorEl.value = written;
+              editorEl.setSelectionRange(selStart, selEnd);
+            }
+          }
+        }
         if (path === activeTab) updateStatusForActiveTab();
         renderTabBar();
       } catch (err) {

@@ -178,6 +178,24 @@ pub fn read_title(full: &Path) -> Option<String> {
     front_matter_field(block, "title")
 }
 
+fn read_date(full: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(full).ok()?;
+    let block = front_matter_block(&raw)?;
+    front_matter_field(block, "date")
+}
+
+/// Whether the section at `section_index` (its _index.md) is a "blog
+/// heading" - the same sort_by = "date" convention content.rs's
+/// find_post_section/list_page_sections use to tell a dated, chronological
+/// section (like Blog) apart from a free-form one (like Biodiversity).
+fn section_is_blog_heading(section_index: &Path) -> bool {
+    std::fs::read_to_string(section_index)
+        .ok()
+        .and_then(|raw| front_matter_block(&raw).and_then(|b| front_matter_field(b, "sort_by")))
+        .as_deref()
+        == Some("date")
+}
+
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EditableFile {
@@ -187,6 +205,11 @@ pub struct EditableFile {
     label: String,
     group: String,
     is_section_index: bool,
+    date: Option<String>,
+    /// True if this entry's section is a "blog heading" - the frontend uses
+    /// this to sort a blog-heading group by date (matching the real site's
+    /// own order) instead of alphabetically by title like every other group.
+    is_blog_heading: bool,
 }
 
 /// Same files as list_editable_files, but with a friendly label (the page's
@@ -212,12 +235,13 @@ pub fn list_editable_files_detailed() -> Vec<EditableFile> {
 
         let rel_to_content = Path::new(rel).strip_prefix(zola::CONTENT_DIR).unwrap_or(Path::new(rel));
         let parent = rel_to_content.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        let section_index = content_dir.join(&parent).join("_index.md");
 
         let (group, label) = if is_section_index {
             let group = if parent.is_empty() { "Home".to_string() } else { title.clone().unwrap_or_else(|| parent.clone()) };
             (group, title.unwrap_or_else(|| format!("({parent})")))
         } else {
-            let section_title = read_title(&content_dir.join(&parent).join("_index.md"));
+            let section_title = read_title(&section_index);
             let group = section_title.unwrap_or_else(|| if parent.is_empty() { "Home".to_string() } else { parent.clone() });
             let label = title.unwrap_or_else(|| {
                 Path::new(rel).file_stem().map(|s| s.to_string_lossy().replace(['-', '_'], " ")).unwrap_or_else(|| rel.clone())
@@ -225,7 +249,14 @@ pub fn list_editable_files_detailed() -> Vec<EditableFile> {
             (group, label)
         };
 
-        out.push(EditableFile { path: rel.clone(), label, group, is_section_index });
+        out.push(EditableFile {
+            path: rel.clone(),
+            label,
+            group,
+            is_section_index,
+            date: read_date(&full),
+            is_blog_heading: section_is_blog_heading(&section_index),
+        });
     }
 
     let mut template_paths = Vec::new();
@@ -237,7 +268,14 @@ pub fn list_editable_files_detailed() -> Vec<EditableFile> {
     }
     template_paths.sort();
     for rel in template_paths {
-        out.push(EditableFile { label: rel.clone(), path: rel, group: "Templates".to_string(), is_section_index: false });
+        out.push(EditableFile {
+            label: rel.clone(),
+            path: rel,
+            group: "Templates".to_string(),
+            is_section_index: false,
+            date: None,
+            is_blog_heading: false,
+        });
     }
 
     out
@@ -261,16 +299,30 @@ pub fn close_file(path: String, open_files: tauri::State<OpenFiles>) -> Result<(
     Ok(())
 }
 
+/// `datetime` (the frontend's local clock, same as create_post/
+/// set_front_matter_date) stamps a Zola-native `updated` front-matter field
+/// on every save - a silent no-op via stamp_top_level_field if the file has
+/// no front matter block at all (e.g. a template), since this command saves
+/// both content and template files. Returns the actual bytes written so the
+/// frontend can reflect the stamp back into its buffer.
 #[tauri::command]
-pub fn write_file(path: String, content: String, tracker: tauri::State<SelfWriteTracker>) -> Result<(), String> {
+pub fn write_file(
+    path: String,
+    content: String,
+    datetime: String,
+    tracker: tauri::State<SelfWriteTracker>,
+) -> Result<String, String> {
     let full = resolve_site_path(&path)?;
+    let content = crate::frontmatter::stamp_top_level_field(&content, "updated", &datetime).unwrap_or(content);
+
     // Mark the self-write window for THIS path BEFORE writing, not after: the
     // watcher thread runs concurrently and must never be able to observe the
     // resulting fs event before this timestamp is in place, or it reads as
     // external. Keyed per-path so saving one open tab never suppresses a
     // genuine external-edit notification for a different one.
     tracker.0.lock().unwrap().insert(full.clone(), Instant::now());
-    std::fs::write(full, content).map_err(|e| e.to_string())
+    std::fs::write(&full, &content).map_err(|e| e.to_string())?;
+    Ok(content)
 }
 
 /// Watches the whole site tree and emits "content-file-changed" (with the

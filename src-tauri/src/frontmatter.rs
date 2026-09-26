@@ -62,6 +62,32 @@ pub fn reassemble(lines: Vec<String>, newline: &str, original: &str) -> String {
     result
 }
 
+/// Sets (or inserts right after the opening delimiter) a top-level
+/// `field = value` line within the front matter block. None if there's no
+/// front matter block at all (e.g. a template file) - a silent "can't do
+/// this" signal for a caller like write_file's auto-`updated` stamp, which
+/// covers both content and template saves and must not fail the whole write
+/// just because a template has nothing to stamp.
+pub fn stamp_top_level_field(content: &str, field: &str, value: &str) -> Option<String> {
+    let (mut lines, newline, closing_idx) = front_matter_lines(content).ok()?;
+
+    let new_line = format!("{field} = {value}");
+    let existing = lines
+        .iter_mut()
+        .take(closing_idx)
+        .skip(1)
+        .find(|l| l.split_once('=').map(|(k, _)| k.trim()) == Some(field));
+
+    match existing {
+        Some(line) => *line = new_line,
+        // Right after the opening delimiter (like title) - no need to
+        // understand TOML table nesting since this is always a top-level key.
+        None => lines.insert(1, new_line),
+    }
+
+    Some(reassemble(lines, newline, content))
+}
+
 /// A URL/filename-safe slug: unlike `slugify` (git.rs - used for git branch
 /// names, where a run of dashes or a trailing one doesn't matter), this
 /// collapses consecutive separators and trims the ends so it reads cleanly

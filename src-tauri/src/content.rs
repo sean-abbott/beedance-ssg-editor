@@ -4,7 +4,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::frontmatter::{content_slug, front_matter_block, front_matter_field, front_matter_lines, reassemble};
+use crate::frontmatter::{
+    content_slug, front_matter_block, front_matter_field, front_matter_lines, reassemble, stamp_top_level_field,
+};
 use crate::site::{resolve_site_path, site_dir};
 use crate::zola;
 
@@ -102,23 +104,8 @@ pub fn get_front_matter_date(content: String) -> Option<String> {
 /// malformed string in the first place.
 #[tauri::command]
 pub fn set_front_matter_date(content: String, datetime: String) -> Result<String, String> {
-    let (mut lines, newline, closing_idx) = front_matter_lines(&content)?;
-
-    let date_line = format!("date = {datetime}");
-    let existing = lines
-        .iter_mut()
-        .take(closing_idx)
-        .skip(1)
-        .find(|l| l.split_once('=').map(|(k, _)| k.trim()) == Some("date"));
-
-    match existing {
-        Some(line) => *line = date_line,
-        // Right after the opening delimiter (like title) - no need to
-        // understand TOML table nesting since this is always a top-level key.
-        None => lines.insert(1, date_line),
-    }
-
-    Ok(reassemble(lines, newline, &content))
+    stamp_top_level_field(&content, "date", &datetime)
+        .ok_or_else(|| "This file has no front matter block to set a date in.".to_string())
 }
 
 /// Drops the `date` front-matter field entirely (a no-op if there wasn't
@@ -229,8 +216,15 @@ pub fn list_page_sections() -> Vec<ContentSection> {
 /// the base template, instead of literal `<a>` tags). Nesting under an
 /// existing section instead works today: the default section.html template
 /// already lists section.pages automatically.
+///
+/// Stamps `date` as a creation timestamp the same way create_post does, even
+/// though a page's section isn't a "blog heading" - safe to do because
+/// whether that date actually gets DISPLAYED in a section listing is
+/// controlled separately (section.extra.show_dates in templates/
+/// section.html), so a page picking up a creation date here doesn't make
+/// non-blog sections start showing dates they shouldn't.
 #[tauri::command]
-pub fn create_page(title: String, section: String) -> Result<String, String> {
+pub fn create_page(title: String, section: String, datetime: String) -> Result<String, String> {
     let slug = content_slug(&title);
     if slug.is_empty() {
         return Err("Title can't be empty".to_string());
@@ -246,7 +240,7 @@ pub fn create_page(title: String, section: String) -> Result<String, String> {
         return Err("A page already exists at this location - choose a different title.".to_string());
     }
 
-    let front_matter = format!("+++\ntitle = \"{}\"\n+++\n\n", title.replace('"', "\\\""));
+    let front_matter = format!("+++\ntitle = \"{}\"\ndate = {datetime}\n+++\n\n", title.replace('"', "\\\""));
     std::fs::write(&full, front_matter).map_err(|e| e.to_string())?;
 
     full.strip_prefix(site_dir())
