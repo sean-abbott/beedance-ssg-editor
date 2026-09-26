@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the main window",
-  "windows": ["main"],
+  "description": "Capabilities for the main window, plus the preview and log windows it opens (which only need core:event to receive their live updates)",
+  "windows": ["main", "preview", "log"],
   "permissions": [
     "core:default",
     "dialog:allow-open",

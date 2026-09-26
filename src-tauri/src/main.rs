@@ -36,6 +36,15 @@ struct OpenFiles(Mutex<HashSet<PathBuf>>);
 
 struct ServeState(Mutex<Option<CommandChild>>);
 
+/// Backlog of the current zola serve run's log lines, so the log window
+/// shows what already happened when opened after the fact - "zola-log" is a
+/// plain event with no history, so a window that starts listening late would
+/// otherwise see nothing until the next line comes in (which may be never,
+/// if the server started cleanly and nothing has triggered a rebuild since).
+/// Bounded so a long-running preview session doesn't grow this forever.
+const LOG_BACKLOG_LIMIT: usize = 500;
+struct LogBacklog(Mutex<Vec<String>>);
+
 /// The live content watcher, shared so `set_site_dir` can retarget it (unwatch
 /// the old site, watch the new one) instead of it silently continuing to
 /// watch a directory the app no longer edits.
@@ -941,18 +950,22 @@ fn open_or_focus_preview_window(app: &tauri::AppHandle, target_path: Option<&str
 }
 
 /// Opens the log window if it isn't already, or just focuses the existing
-/// one - the log itself lives entirely in log.html's own listener on the
-/// "zola-log" event this app already emits, so this command has nothing
-/// else to wire up.
+/// one. Live updates come from log.html's own listener on the "zola-log"
+/// event this app already emits - the backlog replay here only covers lines
+/// that arrived before this window existed to hear them (e.g. preview was
+/// already running when this button was clicked).
 #[tauri::command]
-fn open_log_window(app: tauri::AppHandle) -> Result<(), String> {
+fn open_log_window(app: tauri::AppHandle, backlog: tauri::State<LogBacklog>) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(LOG_LABEL) {
         return win.set_focus().map_err(|e| e.to_string());
     }
 
+    let backlog_json = serde_json::to_string(&*backlog.0.lock().unwrap()).map_err(|e| e.to_string())?;
+
     WebviewWindowBuilder::new(&app, LOG_LABEL, WebviewUrl::App("log.html".into()))
         .title("Preview Server Log")
         .inner_size(LOG_WINDOW_SIZE.0, LOG_WINDOW_SIZE.1)
+        .initialization_script(&format!("window.__BEEDANCE_LOG_BACKLOG__ = {backlog_json};"))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -963,6 +976,7 @@ fn open_log_window(app: tauri::AppHandle) -> Result<(), String> {
 async fn zola_serve(
     app: tauri::AppHandle,
     state: tauri::State<'_, ServeState>,
+    backlog: tauri::State<'_, LogBacklog>,
     network: bool,
     current_content_path: Option<String>,
 ) -> Result<String, String> {
@@ -971,6 +985,7 @@ async fn zola_serve(
         let _ = child.kill();
     }
 
+    backlog.0.lock().unwrap().clear();
     let _ = app.emit("zola-log-reset", ());
 
     let mut args = vec!["serve".to_string()];
@@ -1011,6 +1026,14 @@ async fn zola_serve(
                 _ => None,
             };
             if let Some(line) = line {
+                if let Some(backlog) = log_app.try_state::<LogBacklog>() {
+                    let mut lines = backlog.0.lock().unwrap();
+                    lines.push(line.clone());
+                    if lines.len() > LOG_BACKLOG_LIMIT {
+                        let excess = lines.len() - LOG_BACKLOG_LIMIT;
+                        lines.drain(..excess);
+                    }
+                }
                 let _ = log_app.emit("zola-log", line);
             }
         }
@@ -1089,6 +1112,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(ServeState(Mutex::new(None)))
+        .manage(LogBacklog(Mutex::new(Vec::new())))
         .manage(SelfWriteTracker(Mutex::new(HashMap::new())))
         .manage(OpenFiles(Mutex::new(HashSet::new())))
         .manage(WatcherState(Mutex::new(None)))

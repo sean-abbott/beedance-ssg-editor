@@ -49,6 +49,15 @@
   <script>
     const logEl = document.getElementById("log");
 
+    // Set by the Rust side's initialization_script before this page's own
+    // script runs, with whatever lines already arrived before this window
+    // existed to hear them (e.g. the preview server was already running
+    // when "Preview Server Log" was clicked).
+    if (window.__BEEDANCE_LOG_BACKLOG__ && window.__BEEDANCE_LOG_BACKLOG__.length) {
+      logEl.textContent = window.__BEEDANCE_LOG_BACKLOG__.join("\n") + "\n";
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
     window.__TAURI__.event.listen("zola-log", (event) => {
       logEl.textContent += event.payload + "\n";
       logEl.scrollTop = logEl.scrollHeight;
