@@ -543,6 +543,31 @@
     </div>
   </div>
 
+  <div id="local-drafts-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(440px, 90%); padding: 16px; background: var(--panel);">
+      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Local drafts</h3>
+      <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+        A draft is a local branch - its own independent copy of the site to
+        edit without touching the live site until you're ready.
+      </p>
+
+      <div id="local-drafts-drift-status" style="font-size: 12px; margin-bottom: 10px;"></div>
+
+      <div id="local-drafts-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin-bottom: 12px;"></div>
+
+      <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+        <input type="text" id="local-drafts-new-name" placeholder="New draft name" style="flex: 1;" />
+        <button type="button" id="local-drafts-new-confirm" class="secondary">New draft</button>
+      </div>
+
+      <div id="local-drafts-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="local-drafts-close" class="secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="review-changes-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
     <div class="panel" style="width: min(900px, 95%); height: min(640px, 85vh); padding: 16px; background: var(--panel); display: flex; flex-direction: column;">
       <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted); flex-shrink: 0;">Review changes</h3>
@@ -629,6 +654,7 @@
       <label><input type="checkbox" id="phone-toggle" /> Phone preview</label>
       <button id="rename-content" class="secondary">Rename&hellip;</button>
       <button id="delete-content" class="secondary">Delete&hellip;</button>
+      <button id="local-drafts-button" class="secondary" title="Switch drafts, or start a new one">Branch: &hellip;</button>
       <button id="review-changes" class="secondary">Review changes&hellip;</button>
       <button id="reload" class="secondary">Reload from disk</button>
       <button id="save">Save</button>
@@ -1600,6 +1626,159 @@
         await openTab(newPath);
       } catch (err) {
         renamePanelStatus.textContent = "ERROR: " + err;
+      }
+    });
+
+    // Local drafts: a "draft" is a local git branch, framed for someone who
+    // doesn't otherwise need to know git exists. Deliberately no merge/
+    // conflict-resolution UI here or anywhere else - if a real divergence
+    // ever needs resolving, that's handled by someone who knows git well
+    // enough to do it directly, for the foreseeable future. This just
+    // surfaces drift against the live site so that's a known, visible
+    // state rather than a surprise.
+    const localDraftsPanel = document.getElementById("local-drafts-panel");
+    const localDraftsList = document.getElementById("local-drafts-list");
+    const localDraftsDriftStatus = document.getElementById("local-drafts-drift-status");
+    const localDraftsNewName = document.getElementById("local-drafts-new-name");
+    const localDraftsStatus = document.getElementById("local-drafts-status");
+    const localDraftsButton = document.getElementById("local-drafts-button");
+
+    const closeAllTabsQuietly = () => {
+      for (const path of [...tabs.keys()]) {
+        closeTabQuietly(path);
+      }
+    };
+
+    const describeDrift = (drift) => {
+      if (!drift.liveBranch) return "No live-site branch detected yet.";
+      if (!drift.hasRemote) {
+        return `Live site (${drift.liveBranch}): no remote connected yet - set one up in Settings → GitHub sync.`;
+      }
+      if (drift.ahead === 0 && drift.behind === 0) {
+        return `Live site (${drift.liveBranch}): up to date with the remote.`;
+      }
+      const parts = [];
+      if (drift.behind > 0) parts.push(`${drift.behind} commit${drift.behind === 1 ? "" : "s"} behind`);
+      if (drift.ahead > 0) parts.push(`${drift.ahead} commit${drift.ahead === 1 ? "" : "s"} ahead of`);
+      return `Live site (${drift.liveBranch}): ${parts.join(" and ")} the remote.`;
+    };
+
+    const updateBranchIndicator = (branches) => {
+      const current = branches.find((b) => b.isCurrent);
+      localDraftsButton.textContent = "Branch: " + (current ? (current.isLive ? "Live site" : current.name) : "…");
+    };
+
+    const renderLocalDraftsList = (branches) => {
+      localDraftsList.innerHTML = "";
+      for (const branch of branches) {
+        const row = document.createElement("div");
+        row.className = "review-row" + (branch.isCurrent ? " active" : "");
+        const label = document.createElement("span");
+        label.className = "review-row-path";
+        label.textContent = branch.isLive ? `Live site (${branch.name})` : branch.name;
+        const status = document.createElement("span");
+        status.className = "review-row-status";
+        status.textContent = branch.isCurrent ? "current" : "";
+        row.appendChild(label);
+        row.appendChild(status);
+        if (!branch.isCurrent) {
+          row.addEventListener("click", () => switchDraft(branch.name));
+        }
+        localDraftsList.appendChild(row);
+      }
+    };
+
+    const refreshLocalDrafts = async () => {
+      try {
+        const branches = await invoke("git_list_local_branches");
+        renderLocalDraftsList(branches);
+        updateBranchIndicator(branches);
+      } catch (err) {
+        localDraftsStatus.textContent = "ERROR: " + err;
+      }
+      localDraftsDriftStatus.textContent = "Checking the live site for updates...";
+      try {
+        const drift = await invoke("git_check_main_drift");
+        localDraftsDriftStatus.textContent = describeDrift(drift);
+      } catch (err) {
+        localDraftsDriftStatus.textContent = "Couldn't check the live site for updates: " + err;
+      }
+    };
+
+    // Flushes the active tab's in-progress edits to disk first (matching
+    // rename_content's own flush-before-operating pattern) - otherwise
+    // switching branches would either silently carry uncommitted edits onto
+    // the new draft or lose them, depending on whether the target file
+    // happens to differ.
+    const switchDraft = async (name) => {
+      const proceed = await askConfirm(
+        "Switch drafts?",
+        `Switch to "${name}"? Open tabs close and reload from that draft.`,
+        "Switch"
+      );
+      if (!proceed) return;
+      localDraftsStatus.textContent = "Switching...";
+      try {
+        if (activeTab) {
+          await invoke("write_file", {
+            path: activeTab,
+            content: editorEl.value,
+            datetime: nowForZola(),
+            author: currentAuthorName,
+          });
+        }
+        await invoke("git_checkout_branch", { branch: name });
+        closeAllTabsQuietly();
+        await refreshFileList();
+        localDraftsStatus.textContent = `Switched to "${name}".`;
+        await refreshLocalDrafts();
+      } catch (err) {
+        localDraftsStatus.textContent = "ERROR: " + err;
+      }
+    };
+
+    document.getElementById("local-drafts-button").addEventListener("click", async () => {
+      localDraftsStatus.textContent = "";
+      localDraftsPanel.style.display = "flex";
+      await refreshLocalDrafts();
+    });
+
+    document.getElementById("local-drafts-close").addEventListener("click", () => {
+      localDraftsPanel.style.display = "none";
+    });
+
+    const createNewDraft = async () => {
+      const name = localDraftsNewName.value.trim();
+      if (!name) {
+        localDraftsStatus.textContent = "Enter a name for the new draft first.";
+        return;
+      }
+      localDraftsStatus.textContent = "Creating...";
+      try {
+        if (activeTab) {
+          await invoke("write_file", {
+            path: activeTab,
+            content: editorEl.value,
+            datetime: nowForZola(),
+            author: currentAuthorName,
+          });
+        }
+        await invoke("start_draft", { name });
+        localDraftsNewName.value = "";
+        closeAllTabsQuietly();
+        await refreshFileList();
+        localDraftsStatus.textContent = "New draft created.";
+        await refreshLocalDrafts();
+      } catch (err) {
+        localDraftsStatus.textContent = "ERROR: " + err;
+      }
+    };
+
+    document.getElementById("local-drafts-new-confirm").addEventListener("click", createNewDraft);
+    localDraftsNewName.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        createNewDraft();
       }
     });
 
@@ -2649,6 +2828,11 @@
       })
       .catch(() => {});
 
+    // Startup drift check, per pws-y8t's design - a network call (fetch
+    // against origin) when a remote's configured, so this runs in the
+    // background rather than blocking the rest of startup on it.
+    refreshLocalDrafts();
+
     document.getElementById("change-site").addEventListener("click", async () => {
       try {
         const folder = await window.__TAURI__.dialog.open({
@@ -2734,6 +2918,7 @@
     wirePanelKeys(tagsPanel, null, "tags-panel-cancel");
     wirePanelKeys(settingsPanel, null, "close-settings");
     wirePanelKeys(reviewChangesPanel, "review-changes-commit", "review-changes-close");
+    wirePanelKeys(localDraftsPanel, null, "local-drafts-close");
   </script>
 </body>
 </html>

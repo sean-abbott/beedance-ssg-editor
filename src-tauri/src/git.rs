@@ -216,6 +216,116 @@ pub fn start_draft(name: String) -> Result<String, String> {
     Ok(format!("Switched to new branch '{}'", branch))
 }
 
+fn local_branch_names(dir: &Path) -> Result<Vec<String>, String> {
+    let raw = run_git(dir, &["branch", "--format=%(refname:short)"])?;
+    Ok(raw.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+}
+
+/// Which local branch is "the live site" - the one a push eventually reaches
+/// the real deployed site from. Doesn't ask the remote (that needs a network
+/// round trip - see git_check_main_drift for that): "main"/"master" is the
+/// overwhelming real-world convention, and a brand new site with only one
+/// branch has nothing else it could mean. Anything more ambiguous than that
+/// (multiple branches, neither named main/master) returns None rather than
+/// guessing wrong - the UI just shows no branch as "live" in that case.
+fn guess_live_branch(dir: &Path) -> Option<String> {
+    let branches = local_branch_names(dir).ok()?;
+    for candidate in ["main", "master"] {
+        if branches.iter().any(|b| b == candidate) {
+            return Some(candidate.to_string());
+        }
+    }
+    if branches.len() == 1 {
+        return Some(branches[0].clone());
+    }
+    None
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBranch {
+    name: String,
+    is_current: bool,
+    is_live: bool,
+}
+
+#[tauri::command]
+pub fn git_list_local_branches() -> Result<Vec<LocalBranch>, String> {
+    ensure_site_repo()?;
+    let dir = site_dir();
+    let current = run_git(&dir, &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
+    let live = guess_live_branch(&dir);
+    let names = local_branch_names(&dir)?;
+    Ok(names
+        .into_iter()
+        .map(|name| {
+            let is_current = name == current;
+            let is_live = live.as_deref() == Some(name.as_str());
+            LocalBranch { name, is_current, is_live }
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn git_checkout_branch(branch: String) -> Result<String, String> {
+    ensure_site_repo()?;
+    run_git(&site_dir(), &["checkout", &branch])
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MainDriftStatus {
+    // None when there's no live branch to compare (no remote configured
+    // yet, or which branch is "live" is genuinely ambiguous - see
+    // guess_live_branch). Not an error: a brand new, not-yet-connected site
+    // is a normal state.
+    live_branch: Option<String>,
+    has_remote: bool,
+    // Only meaningful when live_branch AND has_remote are both set - counts
+    // of commits your local copy of that branch has that the remote doesn't
+    // (ahead) and vice versa (behind).
+    ahead: u32,
+    behind: u32,
+}
+
+/// Checks whether the local copy of the live/main branch has drifted from
+/// its remote counterpart - run at startup and whenever the drafts dialog
+/// opens, per pws-y8t's design. Deliberately doesn't attempt to resolve a
+/// real divergence itself (no merge/rebase UI, no conflict resolution) -
+/// that's an explicit, discussed non-goal for the foreseeable future;
+/// surfacing that drift exists is enough for someone who knows git to take
+/// it from there.
+#[tauri::command]
+pub fn git_check_main_drift(auth: State<GitAuthConfigState>) -> Result<MainDriftStatus, String> {
+    ensure_site_repo()?;
+    let dir = site_dir();
+
+    let has_remote = !run_git(&dir, &["remote", "get-url", "origin"]).unwrap_or_default().trim().is_empty();
+    let Some(live) = guess_live_branch(&dir) else {
+        return Ok(MainDriftStatus { live_branch: None, has_remote, ahead: 0, behind: 0 });
+    };
+    if !has_remote {
+        return Ok(MainDriftStatus { live_branch: Some(live), has_remote, ahead: 0, behind: 0 });
+    }
+
+    let branches = local_branch_names(&dir)?;
+    if !branches.iter().any(|b| b == &live) {
+        // Remote presumably has it, but nothing to diff it against locally.
+        return Ok(MainDriftStatus { live_branch: Some(live), has_remote, ahead: 0, behind: 0 });
+    }
+
+    let cfg = auth.0.lock().unwrap().clone();
+    let refspec = format!("+refs/heads/{live}:refs/remotes/origin/{live}");
+    run_git_authed(&dir, &["fetch", "origin", &refspec], &cfg)?;
+
+    let range = format!("{live}...origin/{live}");
+    let counts = run_git(&dir, &["rev-list", "--left-right", "--count", &range])?;
+    let mut parts = counts.split_whitespace();
+    let ahead: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let behind: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    Ok(MainDriftStatus { live_branch: Some(live), has_remote, ahead, behind })
+}
+
 /// Empty string (not an error) means no remote is configured yet - a brand
 /// new site directory that was never cloned from anywhere, which is a normal
 /// state, not a failure.
