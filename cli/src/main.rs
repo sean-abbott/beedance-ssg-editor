@@ -91,6 +91,12 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn main() {
+    // Both ureq and rust-s3 pull in rustls transitively; with more than one
+    // in the dependency graph, rustls refuses to guess which crypto backend
+    // to use and panics on first TLS use unless told explicitly, once, up
+    // front - this must run before any HTTPS request anywhere in this binary.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Config { action } => match action {

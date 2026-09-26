@@ -923,6 +923,13 @@ fn set_preview_phone_mode(app: tauri::AppHandle, phone: bool) -> Result<(), Stri
 }
 
 fn main() {
+    // Both ureq and rust-s3 pull in rustls transitively; with more than one
+    // in the dependency graph, rustls refuses to guess which crypto backend
+    // to use and panics on first TLS use unless told explicitly, once, up
+    // front - this must run before any HTTPS request anywhere in this app
+    // (found the hard way via beedance-cli's own real-world test-upload run).
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())

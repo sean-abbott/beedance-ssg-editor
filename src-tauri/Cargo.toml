@@ -20,6 +20,7 @@ base64 = "0.23"
 local-ip-address = "0.6"
 ureq = "3"
 rust-s3 = { version = "0.37", default-features = false, features = ["sync-rustls-tls"] }
+rustls = { version = "0.23", features = ["ring"] }
 
 [[bin]]
 name = "beedance-ssg-editor"
