@@ -53,12 +53,11 @@ enum ConfigAction {
     SetAccountId,
     /// Set the R2 bucket to issue credentials against
     SetBucket,
-    /// Set the Access Key ID to use for test-upload, without re-running
-    /// create-user-key (e.g. one generated before this cache existed)
-    SetAccessKeyId,
-    /// Set the Secret Access Key to use for test-upload, same reason as
-    /// set-access-key-id
-    SetSecretAccessKey,
+    /// Set the Access Key ID + Secret Access Key to use for test-upload,
+    /// without re-running create-user-key (e.g. a pair generated before this
+    /// cache existed) - prompts for both together, since they're never used
+    /// separately
+    SetAccessKey,
     /// Show current configuration (secrets redacted)
     Show,
 }
@@ -116,8 +115,7 @@ fn main() {
             ConfigAction::SetAdminToken => set_admin_token(),
             ConfigAction::SetAccountId => set_account_id(),
             ConfigAction::SetBucket => set_bucket(),
-            ConfigAction::SetAccessKeyId => set_access_key_id(),
-            ConfigAction::SetSecretAccessKey => set_secret_access_key(),
+            ConfigAction::SetAccessKey => set_access_key(),
             ConfigAction::Show => show_config(),
         },
         Command::CreateUserKey => create_user_key(),
@@ -175,26 +173,18 @@ fn set_bucket() -> Result<(), String> {
     Ok(())
 }
 
-fn set_access_key_id() -> Result<(), String> {
+fn set_access_key() -> Result<(), String> {
     let access_key_id: String = dialoguer::Input::new()
         .with_prompt("Access Key ID")
         .interact_text()
         .map_err(|e| e.to_string())?;
-
-    let mut config = load_config();
-    config.access_key_id = Some(access_key_id);
-    save_config(&config)?;
-    println!("Saved.");
-    Ok(())
-}
-
-fn set_secret_access_key() -> Result<(), String> {
     let secret_access_key: String = dialoguer::Password::new()
         .with_prompt("Secret Access Key")
         .interact()
         .map_err(|e| e.to_string())?;
 
     let mut config = load_config();
+    config.access_key_id = Some(access_key_id);
     config.secret_access_key = Some(secret_access_key);
     save_config(&config)?;
     println!("Saved.");
