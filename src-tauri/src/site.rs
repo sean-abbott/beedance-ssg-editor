@@ -322,14 +322,26 @@ pub fn close_file(path: String, open_files: tauri::State<OpenFiles>) -> Result<(
 
 /// `datetime` (the frontend's local clock, same as create_post/
 /// set_front_matter_date) stamps a Zola-native `updated` front-matter field
-/// on every save - a silent no-op via stamp_top_level_field if the file has
-/// no front matter block at all (e.g. a template), since this command saves
-/// both content and template files. `author`, if a display name is
+/// on every REAL save - a silent no-op via stamp_top_level_field if the file
+/// has no front matter block at all (e.g. a template), since this command
+/// saves both content and template files. `author`, if a display name is
 /// configured (see content::AuthorSettings), gets appended to
 /// `extra.authors` if they're not already listed on this page (see
 /// frontmatter::append_author) - None/empty is also a silent no-op. Returns
 /// the actual bytes written so the frontend can reflect the stamp back into
 /// its buffer.
+///
+/// "REAL save" - a flush that hands back exactly what's already on disk
+/// (nothing was actually typed; a tab was just opened to read it, or closed/
+/// switched away from untouched) skips stamping AND writing entirely, rather
+/// than re-touching `updated`/authorship for no actual change. Several
+/// call sites flush unconditionally (closing a tab, switching branches,
+/// switching sites) without knowing whether the buffer was really edited -
+/// this is the one place that can know for certain, by comparing against
+/// what's actually on disk. Found the hard way: switching branches was
+/// dirtying every open (but unedited) file with an author stamp, which then
+/// blocked the branch switch itself, and merely opening a page to review it
+/// was silently attributing that page to the reviewer.
 #[tauri::command]
 pub fn write_file(
     path: String,
@@ -339,6 +351,11 @@ pub fn write_file(
     tracker: tauri::State<SelfWriteTracker>,
 ) -> Result<String, String> {
     let full = resolve_site_path(&path)?;
+
+    if std::fs::read_to_string(&full).ok().as_deref() == Some(content.as_str()) {
+        return Ok(content);
+    }
+
     let content = crate::frontmatter::stamp_top_level_field(&content, "updated", &datetime).unwrap_or(content);
     let content = crate::frontmatter::append_author(&content, author);
 

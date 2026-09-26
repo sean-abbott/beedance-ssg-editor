@@ -1720,6 +1720,12 @@
       localDraftsStatus.textContent = "Switching...";
       try {
         if (activeTab) {
+          // Cancels any pending debounced autosave for this tab first - it
+          // would otherwise fire ~1.2s from now, after the checkout below,
+          // and land on whatever branch happens to be checked out by then.
+          // write_file itself is a no-op if nothing was actually typed (see
+          // its own doc comment), so this is safe to call unconditionally.
+          cancelTabAutosave(activeTab);
           await invoke("write_file", {
             path: activeTab,
             content: editorEl.value,
@@ -1730,6 +1736,7 @@
         await invoke("git_checkout_branch", { branch: name });
         closeAllTabsQuietly();
         await refreshFileList();
+        if (fileSelect.value) await openTab(fileSelect.value);
         localDraftsStatus.textContent = `Switched to "${name}".`;
         await refreshLocalDrafts();
       } catch (err) {
@@ -1756,6 +1763,7 @@
       localDraftsStatus.textContent = "Creating...";
       try {
         if (activeTab) {
+          cancelTabAutosave(activeTab);
           await invoke("write_file", {
             path: activeTab,
             content: editorEl.value,
@@ -1767,6 +1775,7 @@
         localDraftsNewName.value = "";
         closeAllTabsQuietly();
         await refreshFileList();
+        if (fileSelect.value) await openTab(fileSelect.value);
         localDraftsStatus.textContent = "New draft created.";
         await refreshLocalDrafts();
       } catch (err) {
