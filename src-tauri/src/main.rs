@@ -280,11 +280,19 @@ fn list_page_sections() -> Vec<ContentSection> {
         if !path.is_dir() || !index.exists() {
             continue;
         }
+        let raw = std::fs::read_to_string(&index).ok();
+        let block = raw.as_deref().and_then(front_matter_block);
+
+        // A "blog heading" (a dated, chronological section like Blog) isn't
+        // a valid destination for a free-form page - only "page headings"
+        // are offered here. Posts still go through create_post/
+        // find_post_section, which uses this same sort_by convention.
+        if block.and_then(|b| front_matter_field(b, "sort_by")).as_deref() == Some("date") {
+            continue;
+        }
+
         let slug = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
-        let title = std::fs::read_to_string(&index)
-            .ok()
-            .and_then(|raw| front_matter_block(&raw).and_then(|b| front_matter_field(b, "title")))
-            .unwrap_or_else(|| slug.clone());
+        let title = block.and_then(|b| front_matter_field(b, "title")).unwrap_or_else(|| slug.clone());
         sections.push(ContentSection { slug, title });
     }
     sections.sort_by(|a, b| a.title.cmp(&b.title));
@@ -446,6 +454,76 @@ fn list_editable_files() -> Vec<String> {
 
     files.sort();
     files
+}
+
+fn read_title(full: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(full).ok()?;
+    let block = front_matter_block(&raw)?;
+    front_matter_field(block, "title")
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditableFile {
+    /// Site-relative path (unchanged) - what read_file/write_file/openTab
+    /// actually use. The friendly label/group below are display-only.
+    path: String,
+    label: String,
+    group: String,
+    is_section_index: bool,
+}
+
+/// Same files as list_editable_files, but with a friendly label (the page's
+/// own title, falling back to its filename) and a group (its section's
+/// title, or "Templates") for the file browser's "page titles" view - see
+/// pws-mu6. Raw-path mode still uses list_editable_files directly; this is
+/// purely additive.
+#[tauri::command]
+fn list_editable_files_detailed() -> Vec<EditableFile> {
+    let dir = site_dir();
+    let content_dir = dir.join(zola::CONTENT_DIR);
+
+    let mut content_paths = Vec::new();
+    collect_files_with_ext(&content_dir, &dir, zola::CONTENT_EXT, &mut content_paths);
+    content_paths.sort();
+
+    let mut out = Vec::with_capacity(content_paths.len());
+    for rel in &content_paths {
+        let full = dir.join(rel);
+        let is_section_index = Path::new(rel).file_name().is_some_and(|f| f == "_index.md");
+        let title = read_title(&full);
+
+        let rel_to_content = Path::new(rel).strip_prefix(zola::CONTENT_DIR).unwrap_or(Path::new(rel));
+        let parent = rel_to_content.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+
+        let (group, label) = if is_section_index {
+            let group = if parent.is_empty() { "Home".to_string() } else { title.clone().unwrap_or_else(|| parent.clone()) };
+            (group, title.unwrap_or_else(|| format!("({parent})")))
+        } else {
+            let section_title = read_title(&content_dir.join(&parent).join("_index.md"));
+            let group = section_title.unwrap_or_else(|| if parent.is_empty() { "Home".to_string() } else { parent.clone() });
+            let label = title.unwrap_or_else(|| {
+                Path::new(rel).file_stem().map(|s| s.to_string_lossy().replace(['-', '_'], " ")).unwrap_or_else(|| rel.clone())
+            });
+            (group, label)
+        };
+
+        out.push(EditableFile { path: rel.clone(), label, group, is_section_index });
+    }
+
+    let mut template_paths = Vec::new();
+    collect_files_with_ext(&dir.join(zola::TEMPLATES_DIR), &dir, zola::TEMPLATE_EXT, &mut template_paths);
+    if let Ok(entries) = std::fs::read_dir(dir.join(zola::THEMES_DIR)) {
+        for entry in entries.flatten() {
+            collect_files_with_ext(&entry.path().join(zola::TEMPLATES_DIR), &dir, zola::TEMPLATE_EXT, &mut template_paths);
+        }
+    }
+    template_paths.sort();
+    for rel in template_paths {
+        out.push(EditableFile { label: rel.clone(), path: rel, group: "Templates".to_string(), is_section_index: false });
+    }
+
+    out
 }
 
 #[tauri::command]
@@ -1306,6 +1384,7 @@ fn main() {
             open_log_window,
             set_preview_phone_mode,
             list_editable_files,
+            list_editable_files_detailed,
             create_post,
             create_page,
             list_page_sections,

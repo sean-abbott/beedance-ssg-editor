@@ -367,6 +367,7 @@
       <label>
         Open file:
         <select id="file-select"></select>
+        <button id="file-list-mode-toggle" class="secondary" title="Switch between page titles and raw file paths">Show: Titles</button>
         <button id="refresh-files" class="secondary" title="Rescan for template files (e.g. after just add-theme)">rescan</button>
       </label>
       <label><input type="checkbox" id="phone-toggle" /> Phone preview</label>
@@ -793,18 +794,71 @@
     let activeTab = null;
     const AUTOSAVE_DELAY_MS = 1200;
 
+    // "Titles" mode groups files by their site section (using each page's
+    // own front-matter title) so browsing feels like the site's real
+    // structure instead of raw content/ paths - see pws-mu6. "Paths" mode
+    // is the original flat, raw-path list, for technical use.
+    let fileListMode = "titles";
+    const fileListModeToggle = document.getElementById("file-list-mode-toggle");
+
+    const GROUP_ORDER_FIRST = "Home";
+    const GROUP_ORDER_LAST = "Templates";
+
+    const populateFileSelectGrouped = (entries) => {
+      const groups = new Map();
+      for (const e of entries) {
+        if (!groups.has(e.group)) groups.set(e.group, []);
+        groups.get(e.group).push(e);
+      }
+      const groupNames = [...groups.keys()].sort((a, b) => {
+        if (a === b) return 0;
+        if (a === GROUP_ORDER_FIRST) return -1;
+        if (b === GROUP_ORDER_FIRST) return 1;
+        if (a === GROUP_ORDER_LAST) return 1;
+        if (b === GROUP_ORDER_LAST) return -1;
+        return a.localeCompare(b);
+      });
+      for (const groupName of groupNames) {
+        const optgroup = document.createElement("optgroup");
+        optgroup.label = groupName;
+        const items = [...groups.get(groupName)].sort((a, b) => {
+          if (a.isSectionIndex !== b.isSectionIndex) return a.isSectionIndex ? -1 : 1;
+          return a.label.localeCompare(b.label);
+        });
+        for (const e of items) {
+          const opt = document.createElement("option");
+          opt.value = e.path;
+          opt.textContent = e.isSectionIndex ? e.label : "  " + e.label;
+          optgroup.appendChild(opt);
+        }
+        fileSelect.appendChild(optgroup);
+      }
+    };
+
     const refreshFileList = async () => {
       const previous = fileSelect.value;
-      const files = await invoke("list_editable_files");
       fileSelect.innerHTML = "";
-      for (const f of files) {
-        const opt = document.createElement("option");
-        opt.value = f;
-        opt.textContent = f;
-        fileSelect.appendChild(opt);
+      if (fileListMode === "paths") {
+        const files = await invoke("list_editable_files");
+        for (const f of files) {
+          const opt = document.createElement("option");
+          opt.value = f;
+          opt.textContent = f;
+          fileSelect.appendChild(opt);
+        }
+        if (files.includes(previous)) fileSelect.value = previous;
+      } else {
+        const entries = await invoke("list_editable_files_detailed");
+        populateFileSelectGrouped(entries);
+        if (entries.some((e) => e.path === previous)) fileSelect.value = previous;
       }
-      if (files.includes(previous)) fileSelect.value = previous;
     };
+
+    fileListModeToggle.addEventListener("click", async () => {
+      fileListMode = fileListMode === "titles" ? "paths" : "titles";
+      fileListModeToggle.textContent = fileListMode === "titles" ? "Show: Titles" : "Show: Paths";
+      await refreshFileList();
+    });
 
     const renderTabBar = () => {
       tabBar.innerHTML = "";
