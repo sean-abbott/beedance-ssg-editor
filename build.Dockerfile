@@ -8,15 +8,25 @@
 #   docker build -t beedance-tauri-check -f build.Dockerfile .
 #
 # Run cargo check or cargo build against this repo's src-tauri/, with a
-# persistent cache so repeated runs don't re-fetch/re-build every dependency:
+# persistent cache so repeated runs don't re-fetch/re-build every dependency.
+# --user matches the invoking host user's uid:gid - the container's default
+# user is root, and without this flag every file cargo writes under target/
+# and .docker-cargo-cache/ (including target/debug/.cargo-build-lock) ends up
+# root-owned, which then blocks that same user from running a plain host-side
+# `cargo check` afterward (Permission denied on the lock file) until someone
+# manually chowns the directory back:
 #   mkdir -p .docker-cargo-cache/registry .docker-cargo-cache/git
 #   docker run --rm \
+#     --user "$(id -u):$(id -g)" \
 #     -v "$(pwd):/work" \
 #     -v "$(pwd)/.docker-cargo-cache/registry:/usr/local/cargo/registry" \
 #     -v "$(pwd)/.docker-cargo-cache/git:/usr/local/cargo/git" \
 #     -w /work/src-tauri \
 #     beedance-tauri-check \
 #     cargo check
+#
+# (Prefer `just docker-check` / `just docker-build`, which run this exact
+# command with --user already baked in.)
 #
 # Swap `cargo check` for `cargo build` to also verify linking. Either way, the
 # Zola sidecar must already be fetched first (`just fetch-zola`) - the build

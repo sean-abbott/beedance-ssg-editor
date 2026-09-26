@@ -157,6 +157,26 @@
       padding: 2px 6px;
       border-radius: 999px;
     }
+    .review-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 5px 8px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .review-row:hover { background: var(--bg); }
+    .review-row.active {
+      background: color-mix(in srgb, var(--accent) 15%, var(--panel));
+      border: 1px solid var(--border);
+    }
+    .review-row .review-row-path {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .review-row .review-row-status { color: var(--muted); flex-shrink: 0; }
     .tag-chip button:hover { background: color-mix(in srgb, var(--text) 12%, transparent); }
     .tab .tab-dot { color: #b8860b; flex-shrink: 0; }
     .tab .tab-external-dot { color: #c0392b; flex-shrink: 0; }
@@ -493,6 +513,29 @@
     </div>
   </div>
 
+  <div id="review-changes-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(900px, 95%); height: min(640px, 85vh); padding: 16px; background: var(--panel); display: flex; flex-direction: column;">
+      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted); flex-shrink: 0;">Review changes</h3>
+      <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px; flex-shrink: 0;">
+        Everything changed since the last save point. Committing saves this
+        as a checkpoint you can always come back to.
+      </p>
+
+      <div style="display: flex; gap: 12px; flex: 1; min-height: 0;">
+        <div id="review-changes-list" style="width: 260px; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px;"></div>
+        <pre id="review-changes-diff" style="flex: 1; margin: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word;">Select a file to see its changes.</pre>
+      </div>
+
+      <div id="review-changes-status" style="font-size: 12px; color: var(--muted); margin: 10px 0 6px; flex-shrink: 0;"></div>
+
+      <div style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
+        <input type="text" id="review-changes-commit-msg" placeholder="Describe what changed" style="flex: 1;" />
+        <button id="review-changes-close" class="secondary">Close</button>
+        <button id="review-changes-commit">Commit</button>
+      </div>
+    </div>
+  </div>
+
   <div id="external-change-banner">
     <span id="external-change-message">File changed on disk externally.</span>
     <button id="banner-reload" class="secondary">Reload</button>
@@ -551,6 +594,7 @@
       <label><input type="checkbox" id="phone-toggle" /> Phone preview</label>
       <button id="rename-content" class="secondary">Rename&hellip;</button>
       <button id="delete-content" class="secondary">Delete&hellip;</button>
+      <button id="review-changes" class="secondary">Review changes&hellip;</button>
       <button id="reload" class="secondary">Reload from disk</button>
       <button id="save">Save</button>
       <span id="editor-status" class="status"></span>
@@ -1492,6 +1536,102 @@
         await openTab(newPath);
       } catch (err) {
         renamePanelStatus.textContent = "ERROR: " + err;
+      }
+    });
+
+    // Review changes: a real changed-file list (from git_changed_files)
+    // instead of the raw "git status" text the debug tools section already
+    // shows - a non-technical author has no reason to read porcelain codes.
+    const reviewChangesPanel = document.getElementById("review-changes-panel");
+    const reviewChangesList = document.getElementById("review-changes-list");
+    const reviewChangesDiff = document.getElementById("review-changes-diff");
+    const reviewChangesStatus = document.getElementById("review-changes-status");
+    const reviewChangesCommitMsg = document.getElementById("review-changes-commit-msg");
+    let reviewChangesFiles = [];
+    let reviewChangesSelected = null;
+
+    const REVIEW_STATUS_LABELS = {
+      modified: "Modified",
+      added: "Added",
+      deleted: "Deleted",
+      renamed: "Renamed",
+      untracked: "New",
+    };
+
+    const renderReviewChangesList = () => {
+      reviewChangesList.innerHTML = "";
+      if (reviewChangesFiles.length === 0) {
+        const empty = document.createElement("div");
+        empty.style.cssText = "font-size: 12px; color: var(--muted); padding: 6px;";
+        empty.textContent = "No changes since the last commit.";
+        reviewChangesList.appendChild(empty);
+        return;
+      }
+      for (const file of reviewChangesFiles) {
+        const row = document.createElement("div");
+        row.className = "review-row" + (file.path === reviewChangesSelected ? " active" : "");
+        const pathSpan = document.createElement("span");
+        pathSpan.className = "review-row-path";
+        pathSpan.textContent = file.path;
+        const statusSpan = document.createElement("span");
+        statusSpan.className = "review-row-status";
+        statusSpan.textContent = REVIEW_STATUS_LABELS[file.status] || file.status;
+        row.appendChild(pathSpan);
+        row.appendChild(statusSpan);
+        row.addEventListener("click", () => selectReviewChangesFile(file.path));
+        reviewChangesList.appendChild(row);
+      }
+    };
+
+    const selectReviewChangesFile = async (path) => {
+      reviewChangesSelected = path;
+      renderReviewChangesList();
+      reviewChangesDiff.textContent = "Loading...";
+      try {
+        reviewChangesDiff.textContent = await invoke("git_diff_for_file", { path });
+      } catch (err) {
+        reviewChangesDiff.textContent = "ERROR: " + err;
+      }
+    };
+
+    const refreshReviewChanges = async () => {
+      reviewChangesFiles = await invoke("git_changed_files");
+      if (!reviewChangesFiles.some((f) => f.path === reviewChangesSelected)) {
+        reviewChangesSelected = null;
+        reviewChangesDiff.textContent = "Select a file to see its changes.";
+      }
+      renderReviewChangesList();
+    };
+
+    document.getElementById("review-changes").addEventListener("click", async () => {
+      reviewChangesStatus.textContent = "";
+      reviewChangesCommitMsg.value = "";
+      reviewChangesPanel.style.display = "flex";
+      try {
+        await refreshReviewChanges();
+      } catch (err) {
+        reviewChangesStatus.textContent = "ERROR: " + err;
+      }
+    });
+
+    document.getElementById("review-changes-close").addEventListener("click", () => {
+      reviewChangesPanel.style.display = "none";
+    });
+
+    document.getElementById("review-changes-commit").addEventListener("click", async () => {
+      const message = reviewChangesCommitMsg.value.trim();
+      if (!message) {
+        reviewChangesStatus.textContent = "Describe what changed first.";
+        return;
+      }
+      reviewChangesStatus.textContent = "Committing...";
+      try {
+        await invoke("git_commit", { message });
+        reviewChangesCommitMsg.value = "";
+        reviewChangesStatus.textContent = "Committed.";
+        await refreshReviewChanges();
+      } catch (err) {
+        reviewChangesStatus.textContent = "ERROR: " + err;
       }
     });
 
@@ -2504,6 +2644,7 @@
     wirePanelKeys(resizePanel, "resize-confirm", "resize-cancel");
     wirePanelKeys(tagsPanel, null, "tags-panel-cancel");
     wirePanelKeys(settingsPanel, null, "close-settings");
+    wirePanelKeys(reviewChangesPanel, "review-changes-commit", "review-changes-close");
   </script>
 </body>
 </html>
