@@ -726,7 +726,8 @@
       // under "Biodiversity") rather than minting its own top-level section -
       // this site's nav is hardcoded in the template, so a brand-new
       // top-level section wouldn't be reachable from the menu at all until
-      // the site-structure-editing work (pws-08j) exists to wire that up.
+      // the nav is rebuilt on a data-driven convention that supports adding
+      // new top-level entries from here.
       if (kind === "page") {
         newContentSectionRow.style.display = "block";
         newContentSection.innerHTML = "<option>(loading...)</option>";
@@ -847,7 +848,7 @@
 
     // "Titles" mode groups files by their site section (using each page's
     // own front-matter title) so browsing feels like the site's real
-    // structure instead of raw content/ paths - see pws-mu6. "Paths" mode
+    // structure instead of raw content/ paths. "Paths" mode
     // is the original flat, raw-path list, for technical use.
     let fileListMode = "titles";
     const fileListModeToggle = document.getElementById("file-list-mode-toggle");
