@@ -379,6 +379,7 @@ async fn insert_image_impl(
     current_content_path: String,
     tracker: tauri::State<'_, SelfWriteTracker>,
     open_files: tauri::State<'_, OpenFiles>,
+    r2_settings: tauri::State<'_, R2SettingsState>,
 ) -> Result<InsertImageResult, String> {
     // Format is just a header read, cheap - fine on the main thread that
     // #[tauri::command] runs synchronous work on. Decoding/resizing/encoding
@@ -398,7 +399,17 @@ async fn insert_image_impl(
     let site = site_dir();
     let mut renamed_content_path = None;
 
+    // R2 stands in for "static" specifically (a shared, site-wide images
+    // location - the same conceptual slot, just a different implementation)
+    // when it's configured and enabled. "bundle" always stays local - a
+    // page-bundle image is inherently tied to one specific page/commit, not
+    // a shared asset, so diverting it to a shared bucket wouldn't make sense
+    // even with R2 turned on.
+    let r2 = r2_settings.0.lock().unwrap().clone();
+    let use_r2 = placement == "static" && r2.fully_configured();
+
     let (dest_dir, markdown_prefix) = match placement.as_str() {
+        "static" if use_r2 => (PathBuf::new(), String::new()), // unused in this branch, see below
         "static" => {
             let dir = site.join(zola::STATIC_DIR).join("images");
             std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -454,13 +465,13 @@ async fn insert_image_impl(
         other => return Err(format!("unknown placement: {other}")),
     };
 
-    let dest_path = unique_dest(&dest_dir, &source_name);
-    let dest_filename = dest_path.file_name().unwrap().to_string_lossy().to_string();
-
-    let decode_resize_encode = {
+    // Encodes into memory regardless of destination - R2 needs bytes to PUT,
+    // and a local write is just as happy taking bytes as a path, so this one
+    // path serves both rather than duplicating the decode/resize/encode
+    // logic per destination.
+    let encode_image = {
         let source_path = source_path.clone();
-        let dest_path = dest_path.clone();
-        move || -> Result<(), String> {
+        move || -> Result<Vec<u8>, String> {
             let img = ImageReader::open(&source_path)
                 .map_err(|e| e.to_string())?
                 .decode()
@@ -471,25 +482,55 @@ async fn insert_image_impl(
                 img
             };
 
+            let mut buffer = Vec::new();
             match format {
                 ImageFormat::Jpeg => {
-                    let mut out = std::fs::File::create(&dest_path).map_err(|e| e.to_string())?;
-                    let mut encoder = JpegEncoder::new_with_quality(&mut out, quality);
+                    let mut encoder = JpegEncoder::new_with_quality(&mut buffer, quality);
                     encoder.encode_image(&resized).map_err(|e| e.to_string())?;
                 }
                 _ => {
-                    resized.save_with_format(&dest_path, format).map_err(|e| e.to_string())?;
+                    resized
+                        .write_to(&mut std::io::Cursor::new(&mut buffer), format)
+                        .map_err(|e| e.to_string())?;
                 }
             }
-            Ok(())
+            Ok(buffer)
         }
     };
-    tauri::async_runtime::spawn_blocking(decode_resize_encode)
+    let encoded_bytes = tauri::async_runtime::spawn_blocking(encode_image)
         .await
         .map_err(|e| e.to_string())??;
 
+    let markdown_reference = if use_r2 {
+        // Timestamp prefix avoids collisions between different people's
+        // same-named uploads - R2 has no equivalent to unique_dest's local
+        // existence check, it would just silently overwrite a same-key object.
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_millis();
+        let key = format!("images/{timestamp}-{source_name}");
+
+        let upload = {
+            let r2 = r2.clone();
+            let key = key.clone();
+            let encoded_bytes = encoded_bytes.clone();
+            move || upload_to_r2(&r2, &key, &encoded_bytes)
+        };
+        tauri::async_runtime::spawn_blocking(upload)
+            .await
+            .map_err(|e| e.to_string())??;
+
+        format!("{}/{key}", r2.public_url_base.trim_end_matches('/'))
+    } else {
+        let dest_path = unique_dest(&dest_dir, &source_name);
+        let dest_filename = dest_path.file_name().unwrap().to_string_lossy().to_string();
+        std::fs::write(&dest_path, &encoded_bytes).map_err(|e| e.to_string())?;
+        format!("{markdown_prefix}{dest_filename}")
+    };
+
     Ok(InsertImageResult {
-        markdown_reference: format!("{markdown_prefix}{dest_filename}"),
+        markdown_reference,
         renamed_content_path,
     })
 }
@@ -504,6 +545,7 @@ async fn insert_image(
     current_content_path: String,
     tracker: tauri::State<'_, SelfWriteTracker>,
     open_files: tauri::State<'_, OpenFiles>,
+    r2_settings: tauri::State<'_, R2SettingsState>,
 ) -> Result<InsertImageResult, String> {
     let source_name = Path::new(&source_path)
         .file_name()
@@ -520,6 +562,7 @@ async fn insert_image(
         current_content_path,
         tracker,
         open_files,
+        r2_settings,
     )
     .await
 }
@@ -553,6 +596,7 @@ async fn localize_remote_image(
     current_content_path: String,
     tracker: tauri::State<'_, SelfWriteTracker>,
     open_files: tauri::State<'_, OpenFiles>,
+    r2_settings: tauri::State<'_, R2SettingsState>,
 ) -> Result<InsertImageResult, String> {
     let source_name = filename_from_url(&url);
     let temp_path = std::env::temp_dir().join(format!("beedance-localize-{}-{source_name}", std::process::id()));
@@ -585,6 +629,7 @@ async fn localize_remote_image(
         current_content_path,
         tracker,
         open_files,
+        r2_settings,
     )
     .await;
     let _ = std::fs::remove_file(&temp_path);
@@ -938,6 +983,7 @@ fn main() {
         .manage(OpenFiles(Mutex::new(HashSet::new())))
         .manage(WatcherState(Mutex::new(None)))
         .manage(TierSettingsState(Mutex::new(load_tier_settings())))
+        .manage(R2SettingsState(Mutex::new(load_r2_settings())))
         .setup(|app| {
             spawn_content_watcher(app.handle().clone());
             Ok(())
@@ -980,39 +1026,93 @@ fn main() {
             set_tier_settings,
             resize_image_in_place,
             get_image_dimensions,
-            localize_remote_image
+            localize_remote_image,
+            get_r2_settings,
+            set_r2_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
-// SPIKE (pws-vpb) - validates the rust-s3 crate's API shape and feature
-// flags against a real compile, before committing to it for the R2 upload
-// backend. Not wired into any command yet, and not tested against a real
-// bucket (needs real credentials, which this dev environment doesn't have) -
-// compiling cleanly only proves the API shape is right, not that an actual
-// upload succeeds.
-#[allow(dead_code)]
-fn r2_put_object_spike(
-    account_id: &str,
-    bucket_name: &str,
-    access_key: &str,
-    secret_key: &str,
-    object_key: &str,
-    content: &[u8],
-) -> Result<(), String> {
+// R2 (or any S3-compatible store, in principle) as an ADDITIONAL image
+// placement alongside "static"/"bundle", not a replacement - see pws-vpb.
+// Real, tested against a live account (not just a compile spike): put_object
+// only correctly returns Err on a bad request when rust-s3's "fail-on-err"
+// feature is enabled - found the hard way when a corrupted credential
+// silently "succeeded" with fail-on-err missing from the feature set.
+#[derive(Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct R2Settings {
+    enabled: bool,
+    account_id: String,
+    bucket: String,
+    access_key_id: String,
+    secret_access_key: String,
+    // The URL a browser actually fetches the image from (a custom domain or
+    // the bucket's r2.dev dev URL) - NOT the same host as the S3-compatible
+    // API endpoint (<account>.r2.cloudflarestorage.com), which only accepts
+    // authenticated requests.
+    public_url_base: String,
+}
+
+impl R2Settings {
+    fn fully_configured(&self) -> bool {
+        self.enabled
+            && !self.account_id.is_empty()
+            && !self.bucket.is_empty()
+            && !self.access_key_id.is_empty()
+            && !self.secret_access_key.is_empty()
+            && !self.public_url_base.is_empty()
+    }
+}
+
+const R2_SETTINGS_FILE: &str = "r2-settings.json";
+
+struct R2SettingsState(Mutex<R2Settings>);
+
+fn load_r2_settings() -> R2Settings {
+    config_dir()
+        .and_then(|dir| std::fs::read_to_string(dir.join(R2_SETTINGS_FILE)).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn get_r2_settings(state: tauri::State<R2SettingsState>) -> R2Settings {
+    state.0.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_r2_settings(settings: R2Settings, state: tauri::State<R2SettingsState>) -> Result<(), String> {
+    *state.0.lock().unwrap() = settings.clone();
+
+    if let Some(dir) = config_dir() {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join(R2_SETTINGS_FILE), json).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn upload_to_r2(settings: &R2Settings, key: &str, content: &[u8]) -> Result<(), String> {
     use s3::bucket::Bucket;
     use s3::creds::Credentials;
     use s3::region::Region;
 
     let region = Region::Custom {
         region: "auto".to_string(),
-        endpoint: format!("https://{account_id}.r2.cloudflarestorage.com"),
+        endpoint: format!("https://{}.r2.cloudflarestorage.com", settings.account_id),
     };
-    let credentials = Credentials::new(Some(access_key), Some(secret_key), None, None, None)
-        .map_err(|e| e.to_string())?;
-    let bucket = Bucket::new(bucket_name, region, credentials).map_err(|e| e.to_string())?;
+    let credentials = Credentials::new(
+        Some(&settings.access_key_id),
+        Some(&settings.secret_access_key),
+        None,
+        None,
+        None,
+    )
+    .map_err(|e| e.to_string())?;
+    let bucket = Bucket::new(&settings.bucket, region, credentials).map_err(|e| e.to_string())?;
 
-    bucket.put_object(object_key, content).map_err(|e| e.to_string())?;
+    bucket.put_object(key, content).map_err(|e| e.to_string())?;
     Ok(())
 }

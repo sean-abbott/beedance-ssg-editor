@@ -244,8 +244,40 @@
         <div id="tier-settings-status" style="font-size: 12px; color: var(--muted); margin-top: 8px;"></div>
       </fieldset>
 
+      <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
+        <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Image uploads (Cloudflare R2)</legend>
+        <p style="font-size: 12px; color: var(--muted); margin: 0 0 8px;">
+          When enabled, images inserted into the shared images folder upload
+          to R2 and are referenced by their public URL instead of being
+          copied into this site's own files.
+        </p>
+
+        <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+          <input type="checkbox" id="r2-enabled" /> Upload shared images to R2
+        </label>
+
+        <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; font-size: 13px;">
+          <label for="r2-account-id">Account ID</label>
+          <input type="text" id="r2-account-id" placeholder="Cloudflare account ID" />
+
+          <label for="r2-bucket">Bucket</label>
+          <input type="text" id="r2-bucket" placeholder="bucket name" />
+
+          <label for="r2-access-key-id">Access key ID</label>
+          <input type="text" id="r2-access-key-id" placeholder="from beedance-cli create-user-key" />
+
+          <label for="r2-secret-access-key">Secret access key</label>
+          <input type="password" id="r2-secret-access-key" placeholder="from beedance-cli create-user-key" />
+
+          <label for="r2-public-url-base">Public URL base</label>
+          <input type="text" id="r2-public-url-base" placeholder="https://images.example.com" />
+        </div>
+        <div id="r2-settings-status" style="font-size: 12px; color: var(--muted); margin-top: 8px;"></div>
+      </fieldset>
+
       <div style="display: flex; justify-content: flex-end; gap: 8px;">
         <button id="save-tier-settings" class="secondary">Save sizes</button>
+        <button id="save-r2-settings" class="secondary">Save R2 settings</button>
         <button id="close-settings" class="secondary">Close</button>
       </div>
     </div>
@@ -488,6 +520,14 @@
     const tierHighQuality = document.getElementById("tier-high-quality");
     const tierSettingsStatus = document.getElementById("tier-settings-status");
 
+    const r2Enabled = document.getElementById("r2-enabled");
+    const r2AccountId = document.getElementById("r2-account-id");
+    const r2Bucket = document.getElementById("r2-bucket");
+    const r2AccessKeyId = document.getElementById("r2-access-key-id");
+    const r2SecretAccessKey = document.getElementById("r2-secret-access-key");
+    const r2PublicUrlBase = document.getElementById("r2-public-url-base");
+    const r2SettingsStatus = document.getElementById("r2-settings-status");
+
     document.getElementById("open-settings").addEventListener("click", async () => {
       settingsPanel.style.display = "flex";
       try {
@@ -507,6 +547,19 @@
       } catch (err) {
         tierSettingsStatus.textContent = "Couldn't load image size settings: " + err;
       }
+
+      r2SettingsStatus.textContent = "";
+      try {
+        const r2 = await invoke("get_r2_settings");
+        r2Enabled.checked = r2.enabled;
+        r2AccountId.value = r2.accountId;
+        r2Bucket.value = r2.bucket;
+        r2AccessKeyId.value = r2.accessKeyId;
+        r2SecretAccessKey.value = r2.secretAccessKey;
+        r2PublicUrlBase.value = r2.publicUrlBase;
+      } catch (err) {
+        r2SettingsStatus.textContent = "Couldn't load R2 settings: " + err;
+      }
     });
 
     document.getElementById("save-tier-settings").addEventListener("click", async () => {
@@ -522,6 +575,24 @@
         tierSettingsStatus.textContent = "Saved.";
       } catch (err) {
         tierSettingsStatus.textContent = "ERROR: " + err;
+      }
+    });
+
+    document.getElementById("save-r2-settings").addEventListener("click", async () => {
+      try {
+        await invoke("set_r2_settings", {
+          settings: {
+            enabled: r2Enabled.checked,
+            accountId: r2AccountId.value,
+            bucket: r2Bucket.value,
+            accessKeyId: r2AccessKeyId.value,
+            secretAccessKey: r2SecretAccessKey.value,
+            publicUrlBase: r2PublicUrlBase.value,
+          },
+        });
+        r2SettingsStatus.textContent = "Saved.";
+      } catch (err) {
+        r2SettingsStatus.textContent = "ERROR: " + err;
       }
     });
 
