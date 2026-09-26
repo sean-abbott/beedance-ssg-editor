@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 use content::AuthorSettingsState;
+use git::GitAuthConfigState;
 use images::TierSettingsState;
 use preview::{LogBacklog, ServeState, LOG_LABEL, PREVIEW_LABEL};
 use r2::{R2PersonalConfigState, R2SiteConfigState};
@@ -40,6 +41,7 @@ fn main() {
         .manage(R2SiteConfigState(Mutex::new(r2::load_r2_site_config())))
         .manage(R2PersonalConfigState(Mutex::new(r2::load_r2_personal_config())))
         .manage(AuthorSettingsState(Mutex::new(content::load_author_settings())))
+        .manage(GitAuthConfigState(Mutex::new(git::load_git_auth_config())))
         .setup(|app| {
             site::spawn_content_watcher(app.handle().clone());
             Ok(())
@@ -70,6 +72,12 @@ fn main() {
             git::git_commit,
             git::current_branch,
             git::start_draft,
+            git::get_git_auth_config,
+            git::set_git_auth_config,
+            git::git_get_remote_url,
+            git::git_set_remote_url,
+            git::git_push,
+            git::git_pull,
             preview::zola_serve,
             preview::zola_stop,
             preview::open_log_window,

@@ -391,6 +391,36 @@
               <button id="save-r2-personal-settings" class="secondary">Save credentials</button>
             </div>
           </fieldset>
+
+          <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
+            <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">GitHub sync</legend>
+            <p style="font-size: 12px; color: var(--muted); margin: 0 0 8px;">
+              Personal to this installation - never shared or committed with
+              the site. Leave the token blank to sync using whatever's already
+              set up on this machine (an SSH key, for example); set one to
+              sync over HTTPS instead.
+            </p>
+
+            <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+              Repository URL
+              <input type="text" id="git-remote-url" style="width: 100%; margin-top: 4px;" placeholder="git@github.com:you/your-site.git" />
+            </label>
+
+            <label style="display: block; font-size: 13px; margin-bottom: 4px;">
+              Personal access token (optional)
+              <input type="password" id="git-token" style="width: 100%; margin-top: 4px;" placeholder="only needed for HTTPS sync" />
+            </label>
+            <p style="font-size: 11px; color: var(--muted); margin: 4px 0 0;">
+              Create a fine-grained token scoped to just this repository, with
+              "Contents" read and write access, from
+              <a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens" target="_blank" rel="noopener">GitHub's own token settings help</a>.
+            </p>
+
+            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px;">
+              <div id="git-auth-settings-status" style="font-size: 12px; color: var(--muted);"></div>
+              <button id="save-git-auth-settings" class="secondary">Save</button>
+            </div>
+          </fieldset>
         </div>
       </div>
 
@@ -532,6 +562,11 @@
         <input type="text" id="review-changes-commit-msg" placeholder="Describe what changed" style="flex: 1;" />
         <button id="review-changes-close" class="secondary">Close</button>
         <button id="review-changes-commit">Commit</button>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; align-items: center; margin-top: 8px; flex-shrink: 0;">
+        <span style="font-size: 12px; color: var(--muted);">Sync with the shared copy (set up in Settings &rarr; GitHub sync):</span>
+        <button id="review-changes-pull" class="secondary">Get latest</button>
+        <button id="review-changes-push" class="secondary">Send changes</button>
       </div>
     </div>
   </div>
@@ -819,6 +854,10 @@
     const r2SecretAccessKey = document.getElementById("r2-secret-access-key");
     const r2PersonalSettingsStatus = document.getElementById("r2-personal-settings-status");
 
+    const gitRemoteUrlInput = document.getElementById("git-remote-url");
+    const gitTokenInput = document.getElementById("git-token");
+    const gitAuthSettingsStatus = document.getElementById("git-auth-settings-status");
+
     document.getElementById("open-settings").addEventListener("click", async () => {
       settingsPanel.style.display = "flex";
       try {
@@ -868,6 +907,18 @@
         r2SecretAccessKey.value = r2Personal.secretAccessKey;
       } catch (err) {
         r2PersonalSettingsStatus.textContent = "Couldn't load R2 credentials: " + err;
+      }
+
+      gitAuthSettingsStatus.textContent = "";
+      try {
+        const [remoteUrl, gitAuth] = await Promise.all([
+          invoke("git_get_remote_url"),
+          invoke("get_git_auth_config"),
+        ]);
+        gitRemoteUrlInput.value = remoteUrl;
+        gitTokenInput.value = gitAuth.token;
+      } catch (err) {
+        gitAuthSettingsStatus.textContent = "Couldn't load GitHub sync settings: " + err;
       }
     });
 
@@ -938,6 +989,19 @@
         r2PersonalSettingsStatus.textContent = "Saved.";
       } catch (err) {
         r2PersonalSettingsStatus.textContent = "ERROR: " + err;
+      }
+    });
+
+    document.getElementById("save-git-auth-settings").addEventListener("click", async () => {
+      try {
+        const url = gitRemoteUrlInput.value.trim();
+        if (url) {
+          await invoke("git_set_remote_url", { url });
+        }
+        await invoke("set_git_auth_config", { token: gitTokenInput.value });
+        gitAuthSettingsStatus.textContent = "Saved.";
+      } catch (err) {
+        gitAuthSettingsStatus.textContent = "ERROR: " + err;
       }
     });
 
@@ -1630,6 +1694,31 @@
         reviewChangesCommitMsg.value = "";
         reviewChangesStatus.textContent = "Committed.";
         await refreshReviewChanges();
+      } catch (err) {
+        reviewChangesStatus.textContent = "ERROR: " + err;
+      }
+    });
+
+    document.getElementById("review-changes-pull").addEventListener("click", async () => {
+      reviewChangesStatus.textContent = "Getting the latest changes...";
+      try {
+        await invoke("git_pull");
+        await refreshReviewChanges();
+        await refreshFileList();
+        // Picks up anything the pull changed in the file currently open -
+        // reload's own click handler is a no-op with nothing open.
+        document.getElementById("reload").click();
+        reviewChangesStatus.textContent = "Up to date.";
+      } catch (err) {
+        reviewChangesStatus.textContent = "ERROR: " + err;
+      }
+    });
+
+    document.getElementById("review-changes-push").addEventListener("click", async () => {
+      reviewChangesStatus.textContent = "Sending changes...";
+      try {
+        await invoke("git_push");
+        reviewChangesStatus.textContent = "Sent.";
       } catch (err) {
         reviewChangesStatus.textContent = "ERROR: " + err;
       }

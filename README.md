@@ -49,9 +49,13 @@ split into matching tabs:
   actually is.
 - **Personal config** (this platform's standard config directory, same one
   `site_dir` lives in, above) - per-installation, never committed: your
-  display name, the network-serve toggle, and your own R2 credentials
+  display name, the network-serve toggle, your own R2 credentials
   (including the account ID, which grants no access by itself but still
-  isn't something to commit).
+  isn't something to commit), and your own GitHub personal access token for
+  syncing the site (a fine-grained token, scoped to just that one
+  repository, with Contents read/write - each collaborator creates their own
+  via GitHub's own token settings UI, since unlike R2 credentials one person
+  can't mint a GitHub token for someone else).
 
 # What's actually built
 
