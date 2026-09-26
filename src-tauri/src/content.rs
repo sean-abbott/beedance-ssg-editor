@@ -3,11 +3,12 @@
 //! site.rs's knowledge of where the site actually lives.
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use crate::frontmatter::{
     content_slug, front_matter_block, front_matter_field, front_matter_lines, reassemble, stamp_top_level_field,
 };
-use crate::site::{resolve_site_path, site_dir};
+use crate::site::{resolve_site_path, site_dir, OpenFiles, SelfWriteTracker};
 use crate::zola;
 
 /// Guesses the URL a content file resolves to under Zola's default routing
@@ -92,6 +93,14 @@ fn find_post_section() -> Option<PathBuf> {
 #[tauri::command]
 pub fn get_front_matter_date(content: String) -> Option<String> {
     front_matter_field(front_matter_block(&content)?, "date")
+}
+
+/// Reads the `title` front-matter field straight out of the given text - used
+/// to prefill the rename dialog with the page's actual current title rather
+/// than guessing from its filename.
+#[tauri::command]
+pub fn get_front_matter_title(content: String) -> Option<String> {
+    front_matter_field(front_matter_block(&content)?, "title")
 }
 
 /// Zola's own date parsing is strict enough that a hand-typed value in a
@@ -244,6 +253,123 @@ pub fn create_page(title: String, section: String, datetime: String) -> Result<S
     std::fs::write(&full, front_matter).map_err(|e| e.to_string())?;
 
     full.strip_prefix(site_dir())
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .map_err(|e| e.to_string())
+}
+
+/// Deletes a content file (or, for a page bundle, its whole directory - a
+/// bundle's co-located assets have nowhere else to go). Refuses to delete a
+/// section index (_index.md): that would take every page nested under it
+/// with it, a much bigger blast radius than "delete this one page" implies -
+/// not supported here, a real "delete section" action would need its own,
+/// more deliberate confirmation flow.
+#[tauri::command]
+pub fn delete_content(path: String, tracker: tauri::State<SelfWriteTracker>, open_files: tauri::State<OpenFiles>) -> Result<(), String> {
+    let full = resolve_site_path(&path)?;
+    if !full.exists() {
+        return Err("That file doesn't exist.".to_string());
+    }
+
+    let file_name = full.file_name().and_then(|f| f.to_str()).unwrap_or_default();
+    if file_name == "_index.md" {
+        return Err(
+            "Deleting a whole section isn't supported yet - delete its individual pages first.".to_string(),
+        );
+    }
+
+    tracker.0.lock().unwrap().insert(full.clone(), Instant::now());
+    open_files.0.lock().unwrap().remove(&full);
+
+    if file_name == "index.md" {
+        // A page bundle - the directory IS the page, co-located assets and all.
+        let dir = full.parent().ok_or_else(|| "invalid content path".to_string())?;
+        std::fs::remove_dir_all(dir).map_err(|e| e.to_string())
+    } else {
+        std::fs::remove_file(&full).map_err(|e| e.to_string())
+    }
+}
+
+/// Renames a content file's slug (and, for a bundle or section, its whole
+/// directory) in place, WITHOUT moving it to a different section - that's a
+/// separate, bigger operation than a rename, not offered here. Registers the
+/// old and new paths as self-writes before the actual rename the same way
+/// images.rs's bundle-conversion rename does, so the live content watcher
+/// doesn't mistake this app's own rename for an external edit landing on a
+/// tab that's still open under its old path.
+#[tauri::command]
+pub fn rename_content(
+    path: String,
+    new_title: String,
+    tracker: tauri::State<SelfWriteTracker>,
+    open_files: tauri::State<OpenFiles>,
+) -> Result<String, String> {
+    let full = resolve_site_path(&path)?;
+    if !full.exists() {
+        return Err("That file doesn't exist.".to_string());
+    }
+
+    let new_slug = content_slug(&new_title);
+    if new_slug.is_empty() {
+        return Err("Title can't be empty".to_string());
+    }
+
+    let file_name = full.file_name().and_then(|f| f.to_str()).unwrap_or_default();
+    let is_bundle_or_section = file_name == "index.md" || file_name == "_index.md";
+
+    let new_full = if is_bundle_or_section {
+        // The directory IS the page/section - renaming it carries every
+        // co-located asset (and, for a section, every nested page) along for
+        // free, as one atomic move.
+        let dir = full.parent().ok_or_else(|| "invalid content path".to_string())?;
+        let new_dir = dir
+            .parent()
+            .ok_or_else(|| "invalid content path".to_string())?
+            .join(&new_slug);
+        if new_dir.exists() {
+            return Err("Something already exists at that name - choose a different title.".to_string());
+        }
+        std::fs::rename(dir, &new_dir).map_err(|e| e.to_string())?;
+        new_dir.join(file_name)
+    } else {
+        let new_path = full
+            .parent()
+            .ok_or_else(|| "invalid content path".to_string())?
+            .join(format!("{new_slug}.md"));
+        if new_path.exists() {
+            return Err("A page already exists at that name - choose a different title.".to_string());
+        }
+
+        {
+            let mut t = tracker.0.lock().unwrap();
+            t.insert(full.clone(), Instant::now());
+            t.insert(new_path.clone(), Instant::now());
+        }
+        std::fs::rename(&full, &new_path).map_err(|e| e.to_string())?;
+        new_path
+    };
+
+    if is_bundle_or_section {
+        // The directory rename above already moved index.md/_index.md itself
+        // (and everything else in the directory) - only the tracker/open-tab
+        // bookkeeping is still needed, keyed on the file's final path.
+        let mut t = tracker.0.lock().unwrap();
+        t.insert(full.clone(), Instant::now());
+        t.insert(new_full.clone(), Instant::now());
+    }
+    open_files.0.lock().unwrap().remove(&full);
+
+    // The file/directory move above only changes the slug - the front
+    // matter's own `title` field is a separate piece of text that has to be
+    // rewritten to match, or the page would show its old title everywhere
+    // (nav listings, the browser tab, etc.) despite having a "renamed" URL.
+    let raw = std::fs::read_to_string(&new_full).map_err(|e| e.to_string())?;
+    let quoted_title = format!("\"{}\"", new_title.replace('"', "\\\""));
+    if let Some(updated) = stamp_top_level_field(&raw, "title", &quoted_title) {
+        std::fs::write(&new_full, updated).map_err(|e| e.to_string())?;
+    }
+
+    new_full
+        .strip_prefix(site_dir())
         .map(|rel| rel.to_string_lossy().replace('\\', "/"))
         .map_err(|e| e.to_string())
 }

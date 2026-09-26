@@ -354,6 +354,28 @@
     </div>
   </div>
 
+  <div id="rename-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(380px, 90%); padding: 16px; background: var(--panel);">
+      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Rename page</h3>
+      <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+        Changes this page's title and web address. Doesn't move it to a
+        different section.
+      </p>
+
+      <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+        Title
+        <input type="text" id="rename-panel-input" style="width: 100%; margin-top: 4px;" />
+      </label>
+
+      <div id="rename-panel-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="rename-panel-cancel" class="secondary">Cancel</button>
+        <button id="rename-panel-confirm">Rename</button>
+      </div>
+    </div>
+  </div>
+
   <div id="external-change-banner">
     <span id="external-change-message">File changed on disk externally.</span>
     <button id="banner-reload" class="secondary">Reload</button>
@@ -406,6 +428,8 @@
         <button id="refresh-files" class="secondary" title="Rescan for template files (e.g. after just add-theme)">rescan</button>
       </label>
       <label><input type="checkbox" id="phone-toggle" /> Phone preview</label>
+      <button id="rename-content" class="secondary">Rename&hellip;</button>
+      <button id="delete-content" class="secondary">Delete&hellip;</button>
       <button id="reload" class="secondary">Reload from disk</button>
       <button id="save">Save</button>
       <span id="editor-status" class="status"></span>
@@ -1109,6 +1133,97 @@
     };
 
     const emitEdited = () => editorEl.dispatchEvent(new Event("input", { bubbles: true }));
+
+    // Same tab-switching logic as closeTab, but skips flushTab - used after
+    // rename_content/delete_content, where the file this tab pointed at has
+    // already been moved or removed on disk, so saving it would either
+    // recreate what was just deleted or write into a path that no longer
+    // exists.
+    const closeTabQuietly = (path) => {
+      cancelTabAutosave(path);
+      invoke("close_file", { path }).catch(() => {});
+      tabs.delete(path);
+
+      if (activeTab === path) {
+        const remaining = [...tabs.keys()];
+        if (remaining.length > 0) {
+          switchToTab(remaining[remaining.length - 1]);
+        } else {
+          activeTab = null;
+          editorEl.value = "";
+          editorEl.disabled = true;
+          banner.style.display = "none";
+          updateStatusForActiveTab();
+          renderTabBar();
+          updateImageAlignToolbar();
+        }
+      } else {
+        renderTabBar();
+      }
+    };
+
+    document.getElementById("delete-content").addEventListener(
+      "click",
+      withActiveTab(async () => {
+        const path = activeTab;
+        if (!confirm(`Delete "${path}"? This can't be undone.`)) return;
+        try {
+          await invoke("delete_content", { path });
+          closeTabQuietly(path);
+          await refreshFileList();
+        } catch (err) {
+          statusEl.textContent = "ERROR: " + err;
+        }
+      })
+    );
+
+    const renamePanel = document.getElementById("rename-panel");
+    const renamePanelInput = document.getElementById("rename-panel-input");
+    const renamePanelStatus = document.getElementById("rename-panel-status");
+
+    document.getElementById("rename-content").addEventListener(
+      "click",
+      withActiveTab(async () => {
+        renamePanelStatus.textContent = "";
+        try {
+          const title = await invoke("get_front_matter_title", { content: editorEl.value });
+          renamePanelInput.value = title || "";
+        } catch (err) {
+          renamePanelStatus.textContent = "ERROR: " + err;
+        }
+        renamePanel.style.display = "flex";
+        renamePanelInput.focus();
+      })
+    );
+
+    document.getElementById("rename-panel-cancel").addEventListener("click", () => {
+      renamePanel.style.display = "none";
+    });
+
+    document.getElementById("rename-panel-confirm").addEventListener("click", async () => {
+      if (!activeTab) return;
+      const newTitle = renamePanelInput.value.trim();
+      if (!newTitle) {
+        renamePanelStatus.textContent = "Enter a title first.";
+        return;
+      }
+      const oldPath = activeTab;
+      renamePanelStatus.textContent = "Renaming...";
+      try {
+        // rename_content works directly against what's on disk and this tab
+        // gets reloaded from disk afterward - flush any unsaved edits first,
+        // or they'd be silently discarded.
+        await invoke("write_file", { path: oldPath, content: editorEl.value, datetime: nowForZola() });
+        const newPath = await invoke("rename_content", { path: oldPath, newTitle });
+        closeTabQuietly(oldPath);
+        renamePanel.style.display = "none";
+        await refreshFileList();
+        fileSelect.value = newPath;
+        await openTab(newPath);
+      } catch (err) {
+        renamePanelStatus.textContent = "ERROR: " + err;
+      }
+    });
 
     // Wraps the current selection in prefix/suffix (bold/italic/code): with
     // text selected, wraps it in place and keeps it selected; with nothing
