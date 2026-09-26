@@ -36,6 +36,10 @@ enum Command {
     /// Create a new scoped R2 credential for one person, to hand off for
     /// them to paste into beedance's Settings
     CreateUserKey,
+    /// Upload one small test object using a scoped credential (e.g. one just
+    /// issued by create-user-key), to confirm it actually works before
+    /// wiring anything into the real app
+    TestUpload,
 }
 
 #[derive(Subcommand)]
@@ -96,6 +100,7 @@ fn main() {
             ConfigAction::Show => show_config(),
         },
         Command::CreateUserKey => create_user_key(),
+        Command::TestUpload => test_upload(),
     };
 
     if let Err(err) = result {
@@ -266,6 +271,61 @@ fn create_user_key() -> Result<(), String> {
     println!("  Secret Access Key: {secret_access_key}");
     println!();
     println!("This is shown once - Cloudflare doesn't let you retrieve the secret again after this.");
+
+    Ok(())
+}
+
+/// Uploads one small, fixed test object with a scoped credential (the kind
+/// create-user-key issues), to validate the whole chain - CLI-issued token
+/// -> derived S3 credentials -> a real R2 PUT succeeding - before wiring any
+/// of this into the actual app. account_id/bucket default to whatever's in
+/// config (same account, just used here as a regular scoped user rather than
+/// the admin) since re-typing them would be pointless; the Access Key ID and
+/// Secret are always asked fresh, since those are the actual thing under test.
+fn test_upload() -> Result<(), String> {
+    use s3::bucket::Bucket;
+    use s3::creds::Credentials;
+    use s3::region::Region;
+
+    let config = load_config();
+
+    let account_id: String = dialoguer::Input::new()
+        .with_prompt("Cloudflare account ID")
+        .with_initial_text(config.account_id.unwrap_or_default())
+        .interact_text()
+        .map_err(|e| e.to_string())?;
+    let bucket_name: String = dialoguer::Input::new()
+        .with_prompt("R2 bucket name")
+        .with_initial_text(config.bucket.unwrap_or_default())
+        .interact_text()
+        .map_err(|e| e.to_string())?;
+    let access_key: String = dialoguer::Input::new()
+        .with_prompt("Access Key ID (from create-user-key)")
+        .interact_text()
+        .map_err(|e| e.to_string())?;
+    let secret_key: String = dialoguer::Password::new()
+        .with_prompt("Secret Access Key")
+        .interact()
+        .map_err(|e| e.to_string())?;
+
+    let region = Region::Custom {
+        region: "auto".to_string(),
+        endpoint: format!("https://{account_id}.r2.cloudflarestorage.com"),
+    };
+    let credentials = Credentials::new(Some(&access_key), Some(&secret_key), None, None, None).map_err(|e| e.to_string())?;
+    let bucket = Bucket::new(&bucket_name, region, credentials).map_err(|e| e.to_string())?;
+
+    let test_key = "beedance-test/hello.txt";
+    let content = format!("beedance-cli test upload - {}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs());
+
+    println!("Uploading a test object to {bucket_name}/{test_key}...");
+    bucket.put_object(test_key, content.as_bytes()).map_err(|e| e.to_string())?;
+
+    println!("Success. If the bucket's public dev URL is enabled, it should be reachable at:");
+    println!("  https://pub-<your-bucket-hash>.r2.dev/{test_key}");
+    println!("(check the bucket's \"Public Development URL\" settings tab for the real pub-<hash> value)");
+    println!();
+    println!("Delete it when you're done (DeleteObject is a free operation): beedance-cli test-upload doesn't clean up after itself.");
 
     Ok(())
 }

@@ -326,6 +326,7 @@ dependencies = [
  "clap",
  "dialoguer",
  "dirs 7.0.0",
+ "rust-s3",
  "serde",
  "serde_json",
  "sha2",
