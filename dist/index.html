@@ -2885,6 +2885,25 @@
       }
     });
 
+    // Someone switched branches from outside the app (a terminal `git
+    // checkout`, most likely) - every open tab's content may now belong to a
+    // different branch entirely, so those get closed without an attempted
+    // save (saving now would write the OLD branch's buffer onto the NEW
+    // branch's files) rather than just flagged, unlike a single file's
+    // external-edit banner above.
+    listen("branch-changed", async () => {
+      try {
+        closeAllTabsQuietly();
+        await refreshFileList();
+        if (fileSelect.value) await openTab(fileSelect.value);
+        await refreshLocalDrafts();
+        bannerMessage.textContent = "The checked-out branch changed outside the app - reloaded.";
+        banner.style.display = "block";
+      } catch (err) {
+        console.error("couldn't refresh after an external branch change:", err);
+      }
+    });
+
     document.getElementById("banner-reload").addEventListener("click", () => {
       document.getElementById("reload").click();
     });

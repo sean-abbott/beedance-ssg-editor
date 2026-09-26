@@ -19,12 +19,23 @@ use std::fs;
 use std::path::Path;
 use std::process::Command as StdCommand;
 use std::sync::Mutex;
+use std::time::Instant;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use tauri::State;
 
-use crate::site::{config_dir, site_dir};
+use crate::site::{config_dir, site_dir, SelfWriteTracker};
+
+/// Records that THIS app is about to change which branch is checked out, so
+/// the content watcher (site.rs) can tell that apart from someone switching
+/// branches from a terminal - reuses the exact same self-write-window
+/// mechanism already used for file saves, keyed on .git/HEAD instead of a
+/// content path.
+fn mark_head_self_write(tracker: &State<SelfWriteTracker>) {
+    let head_path = site_dir().join(".git").join("HEAD");
+    tracker.0.lock().unwrap().insert(head_path, Instant::now());
+}
 
 fn run_git(dir: &Path, args: &[&str]) -> Result<String, String> {
     let output = StdCommand::new("git")
@@ -209,9 +220,10 @@ pub fn current_branch() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn start_draft(name: String) -> Result<String, String> {
+pub fn start_draft(name: String, tracker: State<SelfWriteTracker>) -> Result<String, String> {
     ensure_site_repo()?;
     let branch = format!("draft/{}", slugify(&name));
+    mark_head_self_write(&tracker);
     run_git(&site_dir(), &["checkout", "-b", &branch])?;
     Ok(format!("Switched to new branch '{}'", branch))
 }
@@ -267,8 +279,9 @@ pub fn git_list_local_branches() -> Result<Vec<LocalBranch>, String> {
 }
 
 #[tauri::command]
-pub fn git_checkout_branch(branch: String) -> Result<String, String> {
+pub fn git_checkout_branch(branch: String, tracker: State<SelfWriteTracker>) -> Result<String, String> {
     ensure_site_repo()?;
+    mark_head_self_write(&tracker);
     run_git(&site_dir(), &["checkout", &branch])
 }
 

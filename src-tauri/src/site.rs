@@ -374,6 +374,17 @@ pub fn write_file(
 /// OpenFiles) is touched from outside the app (e.g. an agent editing in the
 /// background, or another editor). Detection only for this spike - no
 /// auto-reload or merge, that's future work.
+///
+/// Also emits "branch-changed" (no payload) whenever `.git/HEAD` changes from
+/// outside this app - e.g. someone runs `git checkout` from a terminal while
+/// the app is open. Found the hard way: switching branches outside the app
+/// left every bit of branch-aware UI (the toolbar's branch label, the Local
+/// Drafts dialog, open tabs whose content may now belong to a different
+/// branch entirely) silently stale, since nothing was watching for it. Git
+/// checkouts done THROUGH this app's own commands (git_checkout_branch,
+/// start_draft) mark a self-write on this same path first, exactly like
+/// write_file already does for content, so this only fires for a change this
+/// app didn't itself make.
 pub fn spawn_content_watcher(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
@@ -396,6 +407,21 @@ pub fn spawn_content_watcher(app: tauri::AppHandle) {
         for res in rx {
             let Ok(event) = res else { continue };
 
+            let tracker = app.state::<SelfWriteTracker>();
+
+            let head_path = site_dir().join(".git").join("HEAD");
+            if event.paths.iter().any(|p| p == &head_path) {
+                let is_self_write = tracker
+                    .0
+                    .lock()
+                    .unwrap()
+                    .get(&head_path)
+                    .is_some_and(|t| t.elapsed() < SELF_WRITE_WINDOW);
+                if !is_self_write {
+                    let _ = app.emit("branch-changed", ());
+                }
+            }
+
             let open_files = app.state::<OpenFiles>();
             let changed_open_paths: Vec<PathBuf> = {
                 let open = open_files.0.lock().unwrap();
@@ -403,7 +429,6 @@ pub fn spawn_content_watcher(app: tauri::AppHandle) {
             };
 
             for path in changed_open_paths {
-                let tracker = app.state::<SelfWriteTracker>();
                 let is_self_write = tracker
                     .0
                     .lock()
