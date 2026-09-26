@@ -241,7 +241,10 @@
           <label>max <input type="number" id="tier-high-cap" min="1" max="10000" style="width: 70px;" /> px</label>
           <label>quality <input type="number" id="tier-high-quality" min="1" max="100" style="width: 55px;" /></label>
         </div>
-        <div id="tier-settings-status" style="font-size: 12px; color: var(--muted); margin-top: 8px;"></div>
+        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px;">
+          <div id="tier-settings-status" style="font-size: 12px; color: var(--muted);"></div>
+          <button id="save-tier-settings" class="secondary">Save sizes</button>
+        </div>
       </fieldset>
 
       <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
@@ -272,12 +275,13 @@
           <label for="r2-public-url-base">Public URL base</label>
           <input type="text" id="r2-public-url-base" placeholder="https://images.example.com" />
         </div>
-        <div id="r2-settings-status" style="font-size: 12px; color: var(--muted); margin-top: 8px;"></div>
+        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px;">
+          <div id="r2-settings-status" style="font-size: 12px; color: var(--muted);"></div>
+          <button id="save-r2-settings" class="secondary">Save R2 settings</button>
+        </div>
       </fieldset>
 
       <div style="display: flex; justify-content: flex-end; gap: 8px;">
-        <button id="save-tier-settings" class="secondary">Save sizes</button>
-        <button id="save-r2-settings" class="secondary">Save R2 settings</button>
         <button id="close-settings" class="secondary">Close</button>
       </div>
     </div>
@@ -393,7 +397,7 @@
           <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
             <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Where it lives</legend>
             <label style="display: block; font-size: 13px; margin-bottom: 4px;">
-              <input type="radio" name="insert-image-placement" value="static" checked /> Shared images folder (reusable across pages)
+              <input type="radio" name="insert-image-placement" value="static" checked /> <span id="insert-placement-static-label">Shared images folder (reusable across pages)</span>
             </label>
             <label style="display: block; font-size: 13px;">
               <input type="radio" name="insert-image-placement" value="bundle" /> With this page only
@@ -971,6 +975,18 @@
     const insertWidthInput = document.getElementById("insert-image-width");
     const insertHeightInput = document.getElementById("insert-image-height");
     const insertQualityInput = document.getElementById("insert-image-quality");
+    const insertPlacementStaticLabel = document.getElementById("insert-placement-static-label");
+
+    const refreshPlacementLabel = async () => {
+      try {
+        const r2 = await invoke("get_r2_settings");
+        insertPlacementStaticLabel.textContent = r2.enabled
+          ? "Shared images folder (uploads to Cloudflare R2)"
+          : "Shared images folder (reusable across pages)";
+      } catch {
+        insertPlacementStaticLabel.textContent = "Shared images folder (reusable across pages)";
+      }
+    };
 
     const looksLikeImagePath = (path) => {
       const ext = path.split(".").pop().toLowerCase();
@@ -1024,6 +1040,7 @@
       imagePreview.src = "";
       insertCurrentSizeEl.textContent = "";
       imagePanel.style.display = "flex";
+      refreshPlacementLabel();
       try {
         imagePreview.src = await invoke("read_image_preview", { path });
       } catch (err) {
@@ -1061,6 +1078,7 @@
       insertCurrentSizeEl.textContent = "";
       imagePreview.src = found.src;
       imagePanel.style.display = "flex";
+      refreshPlacementLabel();
       try {
         const { width, height } = await loadRemoteImageDims(found.src);
         pendingImageDims = { width, height };
