@@ -14,6 +14,7 @@ use std::sync::Mutex;
 
 use tauri::Manager;
 
+use content::AuthorSettingsState;
 use images::TierSettingsState;
 use preview::{LogBacklog, ServeState, LOG_LABEL, PREVIEW_LABEL};
 use r2::R2SettingsState;
@@ -37,6 +38,7 @@ fn main() {
         .manage(WatcherState(Mutex::new(None)))
         .manage(TierSettingsState(Mutex::new(images::load_tier_settings())))
         .manage(R2SettingsState(Mutex::new(r2::load_r2_settings())))
+        .manage(AuthorSettingsState(Mutex::new(content::load_author_settings())))
         .setup(|app| {
             site::spawn_content_watcher(app.handle().clone());
             Ok(())
@@ -81,6 +83,8 @@ fn main() {
             content::list_all_tags,
             content::get_content_tags,
             content::set_content_tags,
+            content::get_author_settings,
+            content::set_author_settings,
             content::set_front_matter_date,
             content::remove_front_matter_date,
             site::get_site_dir,

@@ -303,17 +303,23 @@ pub fn close_file(path: String, open_files: tauri::State<OpenFiles>) -> Result<(
 /// set_front_matter_date) stamps a Zola-native `updated` front-matter field
 /// on every save - a silent no-op via stamp_top_level_field if the file has
 /// no front matter block at all (e.g. a template), since this command saves
-/// both content and template files. Returns the actual bytes written so the
-/// frontend can reflect the stamp back into its buffer.
+/// both content and template files. `author`, if a display name is
+/// configured (see content::AuthorSettings), gets appended to
+/// `extra.authors` if they're not already listed on this page (see
+/// frontmatter::append_author) - None/empty is also a silent no-op. Returns
+/// the actual bytes written so the frontend can reflect the stamp back into
+/// its buffer.
 #[tauri::command]
 pub fn write_file(
     path: String,
     content: String,
     datetime: String,
+    author: Option<String>,
     tracker: tauri::State<SelfWriteTracker>,
 ) -> Result<String, String> {
     let full = resolve_site_path(&path)?;
     let content = crate::frontmatter::stamp_top_level_field(&content, "updated", &datetime).unwrap_or(content);
+    let content = crate::frontmatter::append_author(&content, author);
 
     // Mark the self-write window for THIS path BEFORE writing, not after: the
     // watcher thread runs concurrently and must never be able to observe the

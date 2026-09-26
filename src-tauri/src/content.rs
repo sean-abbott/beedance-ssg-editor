@@ -4,14 +4,56 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Instant;
 
 use crate::frontmatter::{
-    content_slug, front_matter_block, front_matter_field, front_matter_lines, reassemble, stamp_table_field,
-    stamp_top_level_field,
+    append_author, content_slug, format_toml_string_array, front_matter_block, front_matter_field, front_matter_lines,
+    parse_toml_string_array, reassemble, stamp_table_field, stamp_top_level_field,
 };
-use crate::site::{collect_files_with_ext, resolve_site_path, site_dir, OpenFiles, SelfWriteTracker};
+use crate::site::{collect_files_with_ext, config_dir, resolve_site_path, site_dir, OpenFiles, SelfWriteTracker};
 use crate::zola;
+
+/// A plain "who am I" display name, appended into `extra.authors` (see
+/// frontmatter::append_author) when set - the frontend supplies it into
+/// create_post/create_page/write_file the same way it supplies `datetime`,
+/// rather than those commands reaching into this state themselves, so this
+/// module stays the only thing that needs to know AuthorSettings exists at
+/// all.
+#[derive(Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorSettings {
+    display_name: String,
+}
+
+const AUTHOR_SETTINGS_FILE: &str = "author-settings.json";
+
+pub struct AuthorSettingsState(pub Mutex<AuthorSettings>);
+
+pub fn load_author_settings() -> AuthorSettings {
+    config_dir()
+        .and_then(|dir| std::fs::read_to_string(dir.join(AUTHOR_SETTINGS_FILE)).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn get_author_settings(state: tauri::State<AuthorSettingsState>) -> AuthorSettings {
+    state.0.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn set_author_settings(settings: AuthorSettings, state: tauri::State<AuthorSettingsState>) -> Result<(), String> {
+    *state.0.lock().unwrap() = settings.clone();
+
+    if let Some(dir) = config_dir() {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join(AUTHOR_SETTINGS_FILE), json).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 
 /// Guesses the URL a content file resolves to under Zola's default routing
 /// (content path mirrors the URL path, `index.md`/`_index.md` drop out of
@@ -154,7 +196,7 @@ pub fn remove_front_matter_date(content: String) -> Result<String, String> {
 /// keeps auto-stamped and manually-set (see set_front_matter_date) dates
 /// consistent with each other.
 #[tauri::command]
-pub fn create_post(title: String, datetime: String) -> Result<String, String> {
+pub fn create_post(title: String, datetime: String, author: Option<String>) -> Result<String, String> {
     let section_dir = find_post_section().ok_or_else(|| {
         "No section is marked as the posts section yet - add `sort_by = \"date\"` to a section's \
          _index.md front matter (e.g. content/blog/_index.md) to mark it as where posts go."
@@ -172,6 +214,7 @@ pub fn create_post(title: String, datetime: String) -> Result<String, String> {
     }
 
     let front_matter = format!("+++\ntitle = \"{}\"\ndate = {datetime}\n+++\n\n", title.replace('"', "\\\""));
+    let front_matter = append_author(&front_matter, author);
     std::fs::write(&full, front_matter).map_err(|e| e.to_string())?;
 
     full.strip_prefix(site_dir())
@@ -235,7 +278,7 @@ pub fn list_page_sections() -> Vec<ContentSection> {
 /// section.html), so a page picking up a creation date here doesn't make
 /// non-blog sections start showing dates they shouldn't.
 #[tauri::command]
-pub fn create_page(title: String, section: String, datetime: String) -> Result<String, String> {
+pub fn create_page(title: String, section: String, datetime: String, author: Option<String>) -> Result<String, String> {
     let slug = content_slug(&title);
     if slug.is_empty() {
         return Err("Title can't be empty".to_string());
@@ -252,6 +295,7 @@ pub fn create_page(title: String, section: String, datetime: String) -> Result<S
     }
 
     let front_matter = format!("+++\ntitle = \"{}\"\ndate = {datetime}\n+++\n\n", title.replace('"', "\\\""));
+    let front_matter = append_author(&front_matter, author);
     std::fs::write(&full, front_matter).map_err(|e| e.to_string())?;
 
     full.strip_prefix(site_dir())
@@ -374,23 +418,6 @@ pub fn rename_content(
         .strip_prefix(site_dir())
         .map(|rel| rel.to_string_lossy().replace('\\', "/"))
         .map_err(|e| e.to_string())
-}
-
-/// A single-line TOML string array (`["a", "b"]`) is all the tags/taxonomy
-/// front matter this app ever writes actually uses - not a general TOML
-/// value parser, just enough to round-trip that one shape.
-fn parse_toml_string_array(raw: &str) -> Vec<String> {
-    let inner = raw.trim().trim_start_matches('[').trim_end_matches(']');
-    inner
-        .split(',')
-        .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-fn format_toml_string_array(items: &[String]) -> String {
-    let quoted: Vec<String> = items.iter().map(|s| format!("\"{}\"", s.replace('"', "\\\""))).collect();
-    format!("[{}]", quoted.join(", "))
 }
 
 /// Every distinct tag currently used anywhere on the site, so the tag picker

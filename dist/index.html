@@ -254,6 +254,22 @@
       <div id="lan-address" style="font-size: 12px; margin-bottom: 16px;"></div>
 
       <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
+        <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Author</legend>
+        <label style="display: block; font-size: 13px; margin-bottom: 4px;">
+          Your name
+          <input type="text" id="author-display-name" style="width: 100%; margin-top: 4px;" placeholder="e.g. Sean" />
+        </label>
+        <p style="font-size: 12px; color: var(--muted); margin: 4px 0 0;">
+          Stamped into new posts/pages and every save as who created/last
+          updated them. Leave blank to skip attribution entirely.
+        </p>
+        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px;">
+          <div id="author-settings-status" style="font-size: 12px; color: var(--muted);"></div>
+          <button id="save-author-settings" class="secondary">Save name</button>
+        </div>
+      </fieldset>
+
+      <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
         <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Inserted image sizes</legend>
 
         <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 6px 10px; align-items: center; font-size: 13px;">
@@ -664,6 +680,14 @@
     const networkServeToggle = document.getElementById("network-serve-toggle");
     const lanAddressEl = document.getElementById("lan-address");
 
+    // Cached outside the Settings panel too - create_post/create_page/
+    // write_file need this on every save, not just while Settings happens to
+    // be open, so it's loaded once at startup (below) and kept in sync
+    // whenever Settings saves it.
+    let currentAuthorName = "";
+    const authorDisplayNameInput = document.getElementById("author-display-name");
+    const authorSettingsStatus = document.getElementById("author-settings-status");
+
     const tierWebCap = document.getElementById("tier-web-cap");
     const tierWebQuality = document.getElementById("tier-web-quality");
     const tierHighCap = document.getElementById("tier-high-cap");
@@ -685,6 +709,15 @@
         lanAddressEl.textContent = `This machine's address on your network: http://${ip}:1111`;
       } catch (err) {
         lanAddressEl.textContent = "Couldn't determine a network address: " + err;
+      }
+
+      authorSettingsStatus.textContent = "";
+      try {
+        const author = await invoke("get_author_settings");
+        authorDisplayNameInput.value = author.displayName;
+        currentAuthorName = author.displayName;
+      } catch (err) {
+        authorSettingsStatus.textContent = "Couldn't load author settings: " + err;
       }
 
       tierSettingsStatus.textContent = "";
@@ -709,6 +742,17 @@
         r2PublicUrlBase.value = r2.publicUrlBase;
       } catch (err) {
         r2SettingsStatus.textContent = "Couldn't load R2 settings: " + err;
+      }
+    });
+
+    document.getElementById("save-author-settings").addEventListener("click", async () => {
+      try {
+        const displayName = authorDisplayNameInput.value.trim();
+        await invoke("set_author_settings", { settings: { displayName } });
+        currentAuthorName = displayName;
+        authorSettingsStatus.textContent = "Saved.";
+      } catch (err) {
+        authorSettingsStatus.textContent = "ERROR: " + err;
       }
     });
 
@@ -836,6 +880,7 @@
       newContentPanel.style.display = "none";
     });
 
+
     document.getElementById("new-content-confirm").addEventListener("click", async () => {
       const title = newContentInput.value.trim();
       if (!title) {
@@ -851,8 +896,8 @@
         const command = newContentKind === "post" ? "create_post" : "create_page";
         const args =
           newContentKind === "post"
-            ? { title, datetime: nowForZola() }
-            : { title, section: newContentSection.value, datetime: nowForZola() };
+            ? { title, datetime: nowForZola(), author: currentAuthorName }
+            : { title, section: newContentSection.value, datetime: nowForZola(), author: currentAuthorName };
         const path = await invoke(command, args);
         newContentPanel.style.display = "none";
         await refreshFileList();
@@ -1092,7 +1137,7 @@
     const doSave = async (path, content) => {
       const tab = tabs.get(path);
       try {
-        const written = await invoke("write_file", { path, content, datetime: nowForZola() });
+        const written = await invoke("write_file", { path, content, datetime: nowForZola(), author: currentAuthorName });
         if (tab) {
           tab.dirty = false;
           // write_file stamps an `updated` front-matter field, which changes
@@ -1307,7 +1352,12 @@
         // rename_content works directly against what's on disk and this tab
         // gets reloaded from disk afterward - flush any unsaved edits first,
         // or they'd be silently discarded.
-        await invoke("write_file", { path: oldPath, content: editorEl.value, datetime: nowForZola() });
+        await invoke("write_file", {
+          path: oldPath,
+          content: editorEl.value,
+          datetime: nowForZola(),
+          author: currentAuthorName,
+        });
         const newPath = await invoke("rename_content", { path: oldPath, newTitle });
         closeTabQuietly(oldPath);
         renamePanel.style.display = "none";
@@ -2232,6 +2282,12 @@
       if (fileSelect.value) openTab(fileSelect.value);
     });
 
+    invoke("get_author_settings")
+      .then((author) => {
+        currentAuthorName = author.displayName;
+      })
+      .catch(() => {});
+
     document.getElementById("change-site").addEventListener("click", async () => {
       try {
         const folder = await window.__TAURI__.dialog.open({
@@ -2287,6 +2343,35 @@
       }
       banner.style.display = "none";
     });
+
+    // Enter triggers a panel's own primary action, Esc always cancels/closes
+    // - wired centrally here (a function DECLARATION, so it's hoisted and
+    // callable regardless of where in the file each panel's own variable
+    // happens to be defined) rather than at each panel's own definition
+    // site. Skipped for tags-panel (its own input already uses Enter to add
+    // a tag, not submit the whole panel - a panel-level Enter would double
+    // up) and settings-panel (several independent Save buttons, no single
+    // obvious default for Enter to trigger).
+    function wirePanelKeys(panelEl, confirmId, cancelId) {
+      panelEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && confirmId) {
+          e.preventDefault();
+          document.getElementById(confirmId).click();
+        } else if (e.key === "Escape") {
+          document.getElementById(cancelId).click();
+        }
+      });
+    }
+
+    wirePanelKeys(newContentPanel, "new-content-confirm", "new-content-cancel");
+    wirePanelKeys(confirmPanel, "confirm-panel-confirm", "confirm-panel-cancel");
+    wirePanelKeys(datePanel, "date-panel-confirm", "date-panel-cancel");
+    wirePanelKeys(renamePanel, "rename-panel-confirm", "rename-panel-cancel");
+    wirePanelKeys(imagePanel, "insert-image-confirm", "insert-image-cancel");
+    wirePanelKeys(urlImagePanel, "url-image-confirm", "url-image-cancel");
+    wirePanelKeys(resizePanel, "resize-confirm", "resize-cancel");
+    wirePanelKeys(tagsPanel, null, "tags-panel-cancel");
+    wirePanelKeys(settingsPanel, null, "close-settings");
   </script>
 </body>
 </html>

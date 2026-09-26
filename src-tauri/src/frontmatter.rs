@@ -133,6 +133,50 @@ pub fn stamp_table_field(content: &str, table: &str, field: &str, value: &str) -
     Some(reassemble(lines, newline, content))
 }
 
+/// A single-line TOML string array (`["a", "b"]`) is all the tags/authors
+/// front matter this app ever writes actually uses - not a general TOML
+/// value parser, just enough to round-trip that one shape.
+pub fn parse_toml_string_array(raw: &str) -> Vec<String> {
+    let inner = raw.trim().trim_start_matches('[').trim_end_matches(']');
+    inner
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+pub fn format_toml_string_array(items: &[String]) -> String {
+    let quoted: Vec<String> = items.iter().map(|s| format!("\"{}\"", s.replace('"', "\\\""))).collect();
+    format!("[{}]", quoted.join(", "))
+}
+
+/// Appends `name` to the front matter's `extra.authors` list if it isn't
+/// already there (case-insensitive) - a no-op if `name` is None/empty, or
+/// already present. Builds a running "who has contributed to this page"
+/// record rather than overwriting a single "last touched by" value, since on
+/// a small volunteer team attribution should accumulate, not churn - every
+/// save (or the initial create) just adds the current person if they're new
+/// to this particular page. Shared by content.rs (create_post/create_page)
+/// and site.rs (write_file), so it lives here rather than in either.
+pub fn append_author(content: &str, name: Option<String>) -> String {
+    let Some(name) = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty()) else {
+        return content.to_string();
+    };
+
+    let current = front_matter_block(content)
+        .and_then(|b| front_matter_field(b, "authors"))
+        .map(|raw| parse_toml_string_array(&raw))
+        .unwrap_or_default();
+
+    if current.iter().any(|a| a.eq_ignore_ascii_case(&name)) {
+        return content.to_string();
+    }
+
+    let mut updated = current;
+    updated.push(name);
+    stamp_table_field(content, "extra", "authors", &format_toml_string_array(&updated)).unwrap_or_else(|| content.to_string())
+}
+
 /// A URL/filename-safe slug: unlike `slugify` (git.rs - used for git branch
 /// names, where a run of dashes or a trailing one doesn't matter), this
 /// collapses consecutive separators and trims the ends so it reads cleanly
