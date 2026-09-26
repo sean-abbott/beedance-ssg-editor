@@ -10,18 +10,24 @@ use std::time::Instant;
 use image::codecs::jpeg::JpegEncoder;
 use image::{imageops::FilterType, ImageFormat, ImageReader};
 
-use crate::r2::{upload_to_r2, R2SettingsState};
-use crate::site::{config_dir, resolve_site_path, site_dir, OpenFiles, SelfWriteTracker};
+use crate::r2::{r2_fully_configured, r2_public_url_base, upload_to_r2, R2PersonalConfigState, R2SiteConfigState};
+use crate::site::{resolve_site_path, site_config_dir, site_dir, OpenFiles, SelfWriteTracker};
 use crate::zola;
 
 // Saved presets the frontend offers when inserting an image - not the only
 // choice available there (insert_image below takes an explicit width/height/
 // quality, so any custom size works), just a quick-fill starting point.
-// Deliberately two presets, not one: close-up nature/macro photography
-// (this app's first real site is a bee/pollinator committee blog) genuinely
-// needs more resolution than a typical web photo. User-adjustable (see
+// Three presets: close-up nature/macro photography (this app's first real
+// site is a bee/pollinator committee blog) genuinely needs more resolution
+// than a typical web photo, and a small "post internal" size exists
+// separately from "web standard" because an image meant to float left/right
+// with text wrapping around it needs to be noticeably smaller than a
+// full-width photo, or the float looks wrong (a giant image with a sliver of
+// text next to it, not a photo alongside a paragraph). User-adjustable (see
 // get_tier_settings/set_tier_settings) since the right tradeoff depends on
-// the site's own photos.
+// the site's own photos - SITE config (site_config_dir(), committed, shared
+// by everyone who edits this site), not personal, since it's a property of
+// the site's own photos/layout, not of who happens to be editing right now.
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TierSettings {
@@ -29,17 +35,24 @@ pub struct TierSettings {
     web_quality: u8,
     high_cap: u32,
     high_quality: u8,
+    post_internal_cap: u32,
+    post_internal_quality: u8,
 }
 
 impl Default for TierSettings {
     fn default() -> Self {
         // 1600 vs. an original 2000px cap: JPEG size roughly tracks pixel
         // area, so a 20% smaller linear dimension is ~36% smaller output.
+        // post_internal is a guess (480px) at "small enough for a
+        // meaningful left/right float", not measured against a real theme -
+        // adjust once it's actually used against real content.
         TierSettings {
             web_cap: 1600,
             web_quality: 80,
             high_cap: 4800,
             high_quality: 90,
+            post_internal_cap: 480,
+            post_internal_quality: 82,
         }
     }
 }
@@ -49,8 +62,8 @@ const TIER_SETTINGS_FILE: &str = "image-tiers.json";
 pub struct TierSettingsState(pub Mutex<TierSettings>);
 
 pub fn load_tier_settings() -> TierSettings {
-    config_dir()
-        .and_then(|dir| std::fs::read_to_string(dir.join(TIER_SETTINGS_FILE)).ok())
+    std::fs::read_to_string(site_config_dir().join(TIER_SETTINGS_FILE))
+        .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
 }
@@ -64,20 +77,21 @@ pub fn get_tier_settings(state: tauri::State<TierSettingsState>) -> TierSettings
 pub fn set_tier_settings(settings: TierSettings, state: tauri::State<TierSettingsState>) -> Result<(), String> {
     // Sane bounds so a typo can't produce a 0px image or a multi-hundred
     // megapixel one.
-    if settings.web_cap == 0 || settings.high_cap == 0 || settings.web_cap > 10000 || settings.high_cap > 10000 {
+    let caps = [settings.web_cap, settings.high_cap, settings.post_internal_cap];
+    if caps.iter().any(|c| *c == 0 || *c > 10000) {
         return Err("size must be between 1 and 10000px".to_string());
     }
-    if !(1..=100).contains(&settings.web_quality) || !(1..=100).contains(&settings.high_quality) {
+    let qualities = [settings.web_quality, settings.high_quality, settings.post_internal_quality];
+    if qualities.iter().any(|q| !(1..=100).contains(q)) {
         return Err("quality must be between 1 and 100".to_string());
     }
 
     *state.0.lock().unwrap() = settings;
 
-    if let Some(dir) = config_dir() {
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-        std::fs::write(dir.join(TIER_SETTINGS_FILE), json).map_err(|e| e.to_string())?;
-    }
+    let dir = site_config_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(TIER_SETTINGS_FILE), json).map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -151,7 +165,8 @@ async fn insert_image_impl(
     current_content_path: String,
     tracker: tauri::State<'_, SelfWriteTracker>,
     open_files: tauri::State<'_, OpenFiles>,
-    r2_settings: tauri::State<'_, R2SettingsState>,
+    r2_site: tauri::State<'_, R2SiteConfigState>,
+    r2_personal: tauri::State<'_, R2PersonalConfigState>,
 ) -> Result<InsertImageResult, String> {
     // Format is just a header read, cheap - fine on the main thread that
     // #[tauri::command] runs synchronous work on. Decoding/resizing/encoding
@@ -177,8 +192,9 @@ async fn insert_image_impl(
     // page-bundle image is inherently tied to one specific page/commit, not
     // a shared asset, so diverting it to a shared bucket wouldn't make sense
     // even with R2 turned on.
-    let r2 = r2_settings.0.lock().unwrap().clone();
-    let use_r2 = placement == "static" && r2.fully_configured();
+    let r2_site_cfg = r2_site.0.lock().unwrap().clone();
+    let r2_personal_cfg = r2_personal.0.lock().unwrap().clone();
+    let use_r2 = placement == "static" && r2_fully_configured(&r2_site_cfg, &r2_personal_cfg);
 
     let (dest_dir, markdown_prefix) = match placement.as_str() {
         "static" if use_r2 => (PathBuf::new(), String::new()), // unused in this branch, see below
@@ -284,16 +300,17 @@ async fn insert_image_impl(
         let key = format!("images/{timestamp}-{source_name}");
 
         let upload = {
-            let r2 = r2.clone();
+            let r2_site_cfg = r2_site_cfg.clone();
+            let r2_personal_cfg = r2_personal_cfg.clone();
             let key = key.clone();
             let encoded_bytes = encoded_bytes.clone();
-            move || upload_to_r2(&r2, &key, &encoded_bytes)
+            move || upload_to_r2(&r2_site_cfg, &r2_personal_cfg, &key, &encoded_bytes)
         };
         tauri::async_runtime::spawn_blocking(upload)
             .await
             .map_err(|e| e.to_string())??;
 
-        format!("{}/{key}", r2.public_url_base().trim_end_matches('/'))
+        format!("{}/{key}", r2_public_url_base(&r2_site_cfg).trim_end_matches('/'))
     } else {
         let dest_path = unique_dest(&dest_dir, &source_name);
         let dest_filename = dest_path.file_name().unwrap().to_string_lossy().to_string();
@@ -317,7 +334,8 @@ pub async fn insert_image(
     current_content_path: String,
     tracker: tauri::State<'_, SelfWriteTracker>,
     open_files: tauri::State<'_, OpenFiles>,
-    r2_settings: tauri::State<'_, R2SettingsState>,
+    r2_site: tauri::State<'_, R2SiteConfigState>,
+    r2_personal: tauri::State<'_, R2PersonalConfigState>,
 ) -> Result<InsertImageResult, String> {
     let source_name = Path::new(&source_path)
         .file_name()
@@ -334,7 +352,8 @@ pub async fn insert_image(
         current_content_path,
         tracker,
         open_files,
-        r2_settings,
+        r2_site,
+        r2_personal,
     )
     .await
 }
@@ -368,7 +387,8 @@ pub async fn localize_remote_image(
     current_content_path: String,
     tracker: tauri::State<'_, SelfWriteTracker>,
     open_files: tauri::State<'_, OpenFiles>,
-    r2_settings: tauri::State<'_, R2SettingsState>,
+    r2_site: tauri::State<'_, R2SiteConfigState>,
+    r2_personal: tauri::State<'_, R2PersonalConfigState>,
 ) -> Result<InsertImageResult, String> {
     let source_name = filename_from_url(&url);
     let temp_path = std::env::temp_dir().join(format!("beedance-localize-{}-{source_name}", std::process::id()));
@@ -401,7 +421,8 @@ pub async fn localize_remote_image(
         current_content_path,
         tracker,
         open_files,
-        r2_settings,
+        r2_site,
+        r2_personal,
     )
     .await;
     let _ = std::fs::remove_file(&temp_path);

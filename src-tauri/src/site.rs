@@ -11,6 +11,8 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{Emitter, Manager};
 
 use crate::frontmatter::{front_matter_block, front_matter_field};
+use crate::images::{self, TierSettingsState};
+use crate::r2::{self, R2SiteConfigState};
 use crate::zola;
 
 /// Tracks when this app last wrote each path itself, per-path (not a single
@@ -32,11 +34,22 @@ pub struct WatcherState(pub Mutex<Option<RecommendedWatcher>>);
 const CONFIG_FILE_NAME: &str = "site_dir";
 const SELF_WRITE_WINDOW: Duration = Duration::from_millis(750);
 
-/// Platform-correct config dir (XDG_CONFIG_HOME/.config on Linux, ~/Library/
-/// Application Support on macOS, %APPDATA% on Windows), not a hardcoded
-/// ~/.config - this app runs on all three.
+/// Platform-correct PERSONAL config dir (XDG_CONFIG_HOME/.config on Linux,
+/// ~/Library/Application Support on macOS, %APPDATA% on Windows), not a
+/// hardcoded ~/.config - this app runs on all three. Per-installation,
+/// never committed - secrets (R2 credentials) and machine-specific
+/// preferences (author display name, the network-serve toggle) live here.
 pub fn config_dir() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("beedance-ssg-editor"))
+}
+
+/// SITE config, as opposed to config_dir()'s personal config - lives inside
+/// the site directory itself (committed to the site's own repo) so it's
+/// shared by everyone who edits this site, not just this one installation.
+/// Image size presets and R2's non-secret account_id/bucket/public_url_base
+/// belong here; R2 credentials and per-installation preferences don't.
+pub fn site_config_dir() -> PathBuf {
+    site_dir().join(".beedance")
 }
 
 /// Resolves which site this app edits: $BEEDANCE_SITE_DIR env var if set (quick
@@ -88,6 +101,8 @@ pub fn set_site_dir(
     watcher_state: tauri::State<WatcherState>,
     open_files: tauri::State<OpenFiles>,
     tracker: tauri::State<SelfWriteTracker>,
+    tier_settings: tauri::State<TierSettingsState>,
+    r2_site_config: tauri::State<R2SiteConfigState>,
 ) -> Result<String, String> {
     if std::env::var("BEEDANCE_SITE_DIR").is_ok() {
         return Err("BEEDANCE_SITE_DIR env var is set and overrides this - unset it to use the site switcher".to_string());
@@ -115,6 +130,12 @@ pub fn set_site_dir(
     // forever across repeated site switches.
     open_files.0.lock().unwrap().clear();
     tracker.0.lock().unwrap().clear();
+
+    // TierSettings/R2SiteConfig are SITE config (site_config_dir(), which
+    // moved along with site_dir() above) - reload them for the new site
+    // instead of leaving the previous site's values cached in memory.
+    *tier_settings.0.lock().unwrap() = images::load_tier_settings();
+    *r2_site_config.0.lock().unwrap() = r2::load_r2_site_config();
 
     let mut message = new_dir.to_string_lossy().to_string();
     if !zola::looks_like_site(&new_dir) {

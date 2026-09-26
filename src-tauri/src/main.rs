@@ -17,7 +17,7 @@ use tauri::Manager;
 use content::AuthorSettingsState;
 use images::TierSettingsState;
 use preview::{LogBacklog, ServeState, LOG_LABEL, PREVIEW_LABEL};
-use r2::R2SettingsState;
+use r2::{R2PersonalConfigState, R2SiteConfigState};
 use site::{OpenFiles, SelfWriteTracker, WatcherState};
 
 fn main() {
@@ -37,7 +37,8 @@ fn main() {
         .manage(OpenFiles(Mutex::new(HashSet::new())))
         .manage(WatcherState(Mutex::new(None)))
         .manage(TierSettingsState(Mutex::new(images::load_tier_settings())))
-        .manage(R2SettingsState(Mutex::new(r2::load_r2_settings())))
+        .manage(R2SiteConfigState(Mutex::new(r2::load_r2_site_config())))
+        .manage(R2PersonalConfigState(Mutex::new(r2::load_r2_personal_config())))
         .manage(AuthorSettingsState(Mutex::new(content::load_author_settings())))
         .setup(|app| {
             site::spawn_content_watcher(app.handle().clone());
@@ -101,8 +102,10 @@ fn main() {
             images::resize_image_in_place,
             images::get_image_dimensions,
             images::localize_remote_image,
-            r2::get_r2_settings,
-            r2::set_r2_settings
+            r2::get_r2_site_config,
+            r2::set_r2_site_config,
+            r2::get_r2_personal_config,
+            r2::set_r2_personal_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -37,6 +37,22 @@ Support/beedance-ssg-editor/` on macOS), which the app reads on every launch
 also be switched from inside the app via the "Change site…" button. Remove
 that file to fall back to `sample-site/` again.
 
+# Site config vs. personal config
+
+Settings live in one of two places, and the app's own Settings dialog is
+split into matching tabs:
+
+- **Site config** (`<site>/.beedance/`) - committed to the site's own repo,
+  shared by everyone who edits it: image size presets, and the R2 bucket/
+  public URL a site uploads shared images to. Nothing here is ever secret -
+  it has to be safe to assume that repo is public, whether or not it
+  actually is.
+- **Personal config** (this platform's standard config directory, same one
+  `site_dir` lives in, above) - per-installation, never committed: your
+  display name, the network-serve toggle, and your own R2 credentials
+  (including the account ID, which grants no access by itself but still
+  isn't something to commit).
+
 # What's actually built
 
 - **Tabbed multi-file editing.** The "Open file" dropdown opens a file as a
