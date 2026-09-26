@@ -47,6 +47,8 @@ enum ConfigAction {
     /// Set your Cloudflare Account ID (fixed per account, not something to
     /// re-type on every create-user-key run)
     SetAccountId,
+    /// Set the R2 bucket to issue credentials against
+    SetBucket,
     /// Show current configuration (secrets redacted)
     Show,
 }
@@ -55,6 +57,7 @@ enum ConfigAction {
 struct Config {
     admin_api_token: Option<String>,
     account_id: Option<String>,
+    bucket: Option<String>,
 }
 
 fn config_path() -> Result<PathBuf, String> {
@@ -89,6 +92,7 @@ fn main() {
         Command::Config { action } => match action {
             ConfigAction::SetAdminToken => set_admin_token(),
             ConfigAction::SetAccountId => set_account_id(),
+            ConfigAction::SetBucket => set_bucket(),
             ConfigAction::Show => show_config(),
         },
         Command::CreateUserKey => create_user_key(),
@@ -132,6 +136,19 @@ fn set_account_id() -> Result<(), String> {
     Ok(())
 }
 
+fn set_bucket() -> Result<(), String> {
+    let bucket: String = dialoguer::Input::new()
+        .with_prompt("R2 bucket name")
+        .interact_text()
+        .map_err(|e| e.to_string())?;
+
+    let mut config = load_config();
+    config.bucket = Some(bucket);
+    save_config(&config)?;
+    println!("Saved.");
+    Ok(())
+}
+
 fn show_config() -> Result<(), String> {
     let config = load_config();
     match config.admin_api_token {
@@ -148,6 +165,10 @@ fn show_config() -> Result<(), String> {
     match config.account_id {
         Some(account_id) => println!("account_id:      {account_id}"),
         None => println!("account_id:      (not set - run `beedance-cli config set-account-id`)"),
+    }
+    match config.bucket {
+        Some(bucket) => println!("bucket:          {bucket}"),
+        None => println!("bucket:          (not set - run `beedance-cli config set-bucket`)"),
     }
     Ok(())
 }
@@ -184,19 +205,15 @@ fn create_user_key() -> Result<(), String> {
     let admin_token = config
         .admin_api_token
         .ok_or_else(|| "no admin token configured - run `beedance-cli config set-admin-token` first".to_string())?;
-    // Fixed per Cloudflare account, not something to re-type on every run -
-    // unlike the admin token and account ID, bucket stays a per-run prompt
-    // since one admin could reasonably issue keys for more than one site.
     let account_id = config
         .account_id
         .ok_or_else(|| "no account ID configured - run `beedance-cli config set-account-id` first".to_string())?;
+    let bucket = config
+        .bucket
+        .ok_or_else(|| "no bucket configured - run `beedance-cli config set-bucket` first".to_string())?;
 
     let label: String = dialoguer::Input::new()
         .with_prompt("Label for this credential (e.g. the person's name)")
-        .interact_text()
-        .map_err(|e| e.to_string())?;
-    let bucket: String = dialoguer::Input::new()
-        .with_prompt("R2 bucket name")
         .interact_text()
         .map_err(|e| e.to_string())?;
 
