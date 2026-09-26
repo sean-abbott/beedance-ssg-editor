@@ -295,6 +295,30 @@
     </div>
   </div>
 
+  <div id="new-content-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(380px, 90%); padding: 16px; background: var(--panel);">
+      <h3 id="new-content-title" style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">New post</h3>
+      <p id="new-content-help" style="font-size: 12px; color: var(--muted); margin: 0 0 10px;"></p>
+
+      <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+        Title
+        <input type="text" id="new-content-title-input" style="width: 100%; margin-top: 4px;" />
+      </label>
+
+      <label id="new-content-section-row" style="display: none; font-size: 13px; margin-bottom: 8px;">
+        Section (where it shows up in the menu)
+        <select id="new-content-section" style="width: 100%; margin-top: 4px;"></select>
+      </label>
+
+      <div id="new-content-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="new-content-cancel" class="secondary">Cancel</button>
+        <button id="new-content-confirm">Create</button>
+      </div>
+    </div>
+  </div>
+
   <div id="external-change-banner">
     <span id="external-change-message">File changed on disk externally.</span>
     <button id="banner-reload" class="secondary">Reload</button>
@@ -338,6 +362,8 @@
     <div class="toolbar">
       <button id="preview-start">Start preview</button>
       <button id="preview-stop" class="secondary">Stop preview</button>
+      <button id="new-post" class="secondary">New post&hellip;</button>
+      <button id="new-page" class="secondary">New page&hellip;</button>
       <label>
         Open file:
         <select id="file-select"></select>
@@ -618,6 +644,90 @@
 
     document.getElementById("close-settings").addEventListener("click", () => {
       settingsPanel.style.display = "none";
+    });
+
+    // "New post"/"New page" share one small modal (title field, kind-specific
+    // help text) rather than two near-identical dialogs - the only real
+    // difference is which Rust command runs and what the help text says.
+    const NEW_CONTENT_HELP = {
+      post: "A post is dated content - a blog entry or event - that fades in relevance over time. It's not part of the site's permanent menu.",
+      page: "A page is a permanent, menu-linked fixture (like \"About\" or \"Events\"). Use this for content that stays relevant indefinitely.",
+    };
+    let newContentKind = "post";
+    const newContentPanel = document.getElementById("new-content-panel");
+    const newContentTitleEl = document.getElementById("new-content-title");
+    const newContentHelpEl = document.getElementById("new-content-help");
+    const newContentInput = document.getElementById("new-content-title-input");
+    const newContentSectionRow = document.getElementById("new-content-section-row");
+    const newContentSection = document.getElementById("new-content-section");
+    const newContentStatus = document.getElementById("new-content-status");
+
+    const openNewContentPanel = async (kind) => {
+      newContentKind = kind;
+      newContentTitleEl.textContent = kind === "post" ? "New post" : "New page";
+      newContentHelpEl.textContent = NEW_CONTENT_HELP[kind];
+      newContentInput.value = "";
+      newContentStatus.textContent = "";
+      newContentPanel.style.display = "flex";
+      newContentInput.focus();
+
+      // A page always nests under an existing menu section (e.g. a new page
+      // under "Biodiversity") rather than minting its own top-level section -
+      // this site's nav is hardcoded in the template, so a brand-new
+      // top-level section wouldn't be reachable from the menu at all until
+      // the site-structure-editing work (pws-08j) exists to wire that up.
+      if (kind === "page") {
+        newContentSectionRow.style.display = "block";
+        newContentSection.innerHTML = "<option>(loading...)</option>";
+        try {
+          const sections = await invoke("list_page_sections");
+          newContentSection.innerHTML = "";
+          for (const s of sections) {
+            const opt = document.createElement("option");
+            opt.value = s.slug;
+            opt.textContent = s.title;
+            newContentSection.appendChild(opt);
+          }
+          if (sections.length === 0) {
+            newContentStatus.textContent = "This site has no existing sections to add a page to yet.";
+          }
+        } catch (err) {
+          newContentStatus.textContent = "Couldn't load sections: " + err;
+        }
+      } else {
+        newContentSectionRow.style.display = "none";
+      }
+    };
+
+    document.getElementById("new-post").addEventListener("click", () => openNewContentPanel("post"));
+    document.getElementById("new-page").addEventListener("click", () => openNewContentPanel("page"));
+
+    document.getElementById("new-content-cancel").addEventListener("click", () => {
+      newContentPanel.style.display = "none";
+    });
+
+    document.getElementById("new-content-confirm").addEventListener("click", async () => {
+      const title = newContentInput.value.trim();
+      if (!title) {
+        newContentStatus.textContent = "Enter a title first.";
+        return;
+      }
+      if (newContentKind === "page" && !newContentSection.value) {
+        newContentStatus.textContent = "Choose a section first.";
+        return;
+      }
+      newContentStatus.textContent = "Creating...";
+      try {
+        const command = newContentKind === "post" ? "create_post" : "create_page";
+        const args = newContentKind === "post" ? { title } : { title, section: newContentSection.value };
+        const path = await invoke(command, args);
+        newContentPanel.style.display = "none";
+        await refreshFileList();
+        fileSelect.value = path;
+        await openTab(path);
+      } catch (err) {
+        newContentStatus.textContent = "ERROR: " + err;
+      }
     });
 
     let previewRunning = false;

@@ -168,6 +168,161 @@ fn resolve_preview_path(content_path: String) -> Option<String> {
     Some(if segments.is_empty() { "/".to_string() } else { format!("/{}/", segments.join("/")) })
 }
 
+/// A URL/filename-safe slug: unlike `slugify` (used for git branch names,
+/// where a run of dashes or a trailing one doesn't matter), this collapses
+/// consecutive separators and trims the ends so it reads cleanly as both a
+/// filename and the page's actual public URL segment.
+fn content_slug(name: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_dash = false;
+    for c in name.trim().to_lowercase().chars() {
+        if c.is_alphanumeric() {
+            slug.push(c);
+            last_was_dash = false;
+        } else if !last_was_dash && !slug.is_empty() {
+            slug.push('-');
+            last_was_dash = true;
+        }
+    }
+    slug.trim_end_matches('-').to_string()
+}
+
+/// Finds the site's "posts" section: whichever content/ section has
+/// `sort_by = "date"` in its `_index.md` front matter. This is Zola's own
+/// native convention for a dated/chronological listing, not something this
+/// app invented - reusing it means "New post" has an unambiguous, existing
+/// signal for where posts go instead of guessing at a folder name like
+/// "blog", which isn't guaranteed to exist or be named that.
+fn find_post_section() -> Option<PathBuf> {
+    fn walk(dir: &Path, found: &mut Option<PathBuf>) {
+        if found.is_some() {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, found);
+            } else if path.file_name().is_some_and(|f| f == "_index.md") {
+                if let Ok(raw) = std::fs::read_to_string(&path) {
+                    if let Some(block) = front_matter_block(&raw) {
+                        if front_matter_field(block, "sort_by").as_deref() == Some("date") {
+                            *found = path.parent().map(Path::to_path_buf);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut found = None;
+    walk(&site_dir().join(zola::CONTENT_DIR), &mut found);
+    found
+}
+
+fn today_toml_date() -> String {
+    let today = time::OffsetDateTime::now_utc().date();
+    format!("{:04}-{:02}-{:02}", today.year(), today.month() as u8, today.day())
+}
+
+/// Creates a new dated post in whichever section find_post_section finds -
+/// see that function's doc comment for why "the posts section" is
+/// determined by a `sort_by = "date"` front-matter convention rather than a
+/// hardcoded folder name.
+#[tauri::command]
+fn create_post(title: String) -> Result<String, String> {
+    let section_dir = find_post_section().ok_or_else(|| {
+        "No section is marked as the posts section yet - add `sort_by = \"date\"` to a section's \
+         _index.md front matter (e.g. content/blog/_index.md) to mark it as where posts go."
+            .to_string()
+    })?;
+
+    let slug = content_slug(&title);
+    if slug.is_empty() {
+        return Err("Title can't be empty".to_string());
+    }
+
+    let full = section_dir.join(format!("{slug}.md"));
+    if full.exists() {
+        return Err(format!("A post already exists at \"{slug}.md\" - choose a different title."));
+    }
+
+    let front_matter = format!(
+        "+++\ntitle = \"{}\"\ndate = {}\n+++\n\n",
+        title.replace('"', "\\\""),
+        today_toml_date()
+    );
+    std::fs::write(&full, front_matter).map_err(|e| e.to_string())?;
+
+    full.strip_prefix(site_dir())
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ContentSection {
+    slug: String,
+    title: String,
+}
+
+/// Every existing top-level content/ section (has its own _index.md) that a
+/// new page could nest under - not recursive, since "New page" only offers
+/// one level of nesting for now (see create_page).
+#[tauri::command]
+fn list_page_sections() -> Vec<ContentSection> {
+    let content_root = site_dir().join(zola::CONTENT_DIR);
+    let mut sections = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&content_root) else { return sections };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let index = path.join("_index.md");
+        if !path.is_dir() || !index.exists() {
+            continue;
+        }
+        let slug = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+        let title = std::fs::read_to_string(&index)
+            .ok()
+            .and_then(|raw| front_matter_block(&raw).and_then(|b| front_matter_field(b, "title")))
+            .unwrap_or_else(|| slug.clone());
+        sections.push(ContentSection { slug, title });
+    }
+    sections.sort_by(|a, b| a.title.cmp(&b.title));
+    sections
+}
+
+/// Creates a new page nested under an existing top-level section (e.g. a new
+/// page under "Biodiversity") rather than as its own top-level section -
+/// this site's nav is hardcoded in the template (see pws-08j), so a
+/// brand-new top-level section has no way to become reachable from the menu
+/// until that's rebuilt on a `[[extra.menu]]` convention. Nesting under an
+/// existing section instead works today: the default section.html template
+/// already lists section.pages automatically.
+#[tauri::command]
+fn create_page(title: String, section: String) -> Result<String, String> {
+    let slug = content_slug(&title);
+    if slug.is_empty() {
+        return Err("Title can't be empty".to_string());
+    }
+
+    let section_dir = resolve_site_path(&format!("{}/{}", zola::CONTENT_DIR, section))?;
+    if !section_dir.join("_index.md").exists() {
+        return Err(format!("\"{section}\" isn't an existing section."));
+    }
+
+    let full = section_dir.join(format!("{slug}.md"));
+    if full.exists() {
+        return Err("A page already exists at this location - choose a different title.".to_string());
+    }
+
+    let front_matter = format!("+++\ntitle = \"{}\"\n+++\n\n", title.replace('"', "\\\""));
+    std::fs::write(&full, front_matter).map_err(|e| e.to_string())?;
+
+    full.strip_prefix(site_dir())
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .map_err(|e| e.to_string())
+}
+
 /// Points the app at a different site directory from the in-app folder
 /// picker, mirroring scripts/set-site.sh (same config file, same
 /// missing-config.toml warning) but also retargeting the live content
@@ -1151,6 +1306,9 @@ fn main() {
             open_log_window,
             set_preview_phone_mode,
             list_editable_files,
+            create_post,
+            create_page,
+            list_page_sections,
             get_site_dir,
             set_site_dir,
             read_file,
