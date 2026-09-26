@@ -53,6 +53,12 @@ enum ConfigAction {
     SetAccountId,
     /// Set the R2 bucket to issue credentials against
     SetBucket,
+    /// Set the Access Key ID to use for test-upload, without re-running
+    /// create-user-key (e.g. one generated before this cache existed)
+    SetAccessKeyId,
+    /// Set the Secret Access Key to use for test-upload, same reason as
+    /// set-access-key-id
+    SetSecretAccessKey,
     /// Show current configuration (secrets redacted)
     Show,
 }
@@ -62,6 +68,13 @@ struct Config {
     admin_api_token: Option<String>,
     account_id: Option<String>,
     bucket: Option<String>,
+    // Whatever create-user-key most recently generated - lets test-upload
+    // reuse it without retyping. Note: this means creating a key for someone
+    // ELSE also caches their secret here, however briefly - fine for a
+    // single-admin tool on the admin's own machine (you already saw the
+    // secret when it printed), but worth knowing.
+    access_key_id: Option<String>,
+    secret_access_key: Option<String>,
 }
 
 fn config_path() -> Result<PathBuf, String> {
@@ -103,6 +116,8 @@ fn main() {
             ConfigAction::SetAdminToken => set_admin_token(),
             ConfigAction::SetAccountId => set_account_id(),
             ConfigAction::SetBucket => set_bucket(),
+            ConfigAction::SetAccessKeyId => set_access_key_id(),
+            ConfigAction::SetSecretAccessKey => set_secret_access_key(),
             ConfigAction::Show => show_config(),
         },
         Command::CreateUserKey => create_user_key(),
@@ -160,26 +175,61 @@ fn set_bucket() -> Result<(), String> {
     Ok(())
 }
 
+fn set_access_key_id() -> Result<(), String> {
+    let access_key_id: String = dialoguer::Input::new()
+        .with_prompt("Access Key ID")
+        .interact_text()
+        .map_err(|e| e.to_string())?;
+
+    let mut config = load_config();
+    config.access_key_id = Some(access_key_id);
+    save_config(&config)?;
+    println!("Saved.");
+    Ok(())
+}
+
+fn set_secret_access_key() -> Result<(), String> {
+    let secret_access_key: String = dialoguer::Password::new()
+        .with_prompt("Secret Access Key")
+        .interact()
+        .map_err(|e| e.to_string())?;
+
+    let mut config = load_config();
+    config.secret_access_key = Some(secret_access_key);
+    save_config(&config)?;
+    println!("Saved.");
+    Ok(())
+}
+
+fn redact(secret: &str) -> String {
+    if secret.len() > 6 {
+        format!("{}...{}", &secret[..3], &secret[secret.len() - 3..])
+    } else {
+        "***".to_string()
+    }
+}
+
 fn show_config() -> Result<(), String> {
     let config = load_config();
     match config.admin_api_token {
-        Some(token) => {
-            let redacted = if token.len() > 6 {
-                format!("{}...{}", &token[..3], &token[token.len() - 3..])
-            } else {
-                "***".to_string()
-            };
-            println!("admin_api_token: {redacted}");
-        }
-        None => println!("admin_api_token: (not set - run `beedance-cli config set-admin-token`)"),
+        Some(token) => println!("admin_api_token:    {}", redact(&token)),
+        None => println!("admin_api_token:    (not set - run `beedance-cli config set-admin-token`)"),
     }
     match config.account_id {
-        Some(account_id) => println!("account_id:      {account_id}"),
-        None => println!("account_id:      (not set - run `beedance-cli config set-account-id`)"),
+        Some(account_id) => println!("account_id:         {account_id}"),
+        None => println!("account_id:         (not set - run `beedance-cli config set-account-id`)"),
     }
     match config.bucket {
-        Some(bucket) => println!("bucket:          {bucket}"),
-        None => println!("bucket:          (not set - run `beedance-cli config set-bucket`)"),
+        Some(bucket) => println!("bucket:             {bucket}"),
+        None => println!("bucket:             (not set - run `beedance-cli config set-bucket`)"),
+    }
+    match config.access_key_id {
+        Some(key) => println!("access_key_id:      {key} (from the last create-user-key run)"),
+        None => println!("access_key_id:      (none cached yet - run `beedance-cli create-user-key`)"),
+    }
+    match config.secret_access_key {
+        Some(secret) => println!("secret_access_key:  {} (from the last create-user-key run)", redact(&secret)),
+        None => println!("secret_access_key:  (none cached yet - run `beedance-cli create-user-key`)"),
     }
     Ok(())
 }
@@ -278,6 +328,13 @@ fn create_user_key() -> Result<(), String> {
     println!();
     println!("This is shown once - Cloudflare doesn't let you retrieve the secret again after this.");
 
+    // Cached so `test-upload` can reuse it without retyping - see the note
+    // on Config's fields about what this means when the key is for someone else.
+    let mut updated_config = load_config();
+    updated_config.access_key_id = Some(token_id.to_string());
+    updated_config.secret_access_key = Some(secret_access_key);
+    save_config(&updated_config)?;
+
     Ok(())
 }
 
@@ -305,14 +362,28 @@ fn test_upload() -> Result<(), String> {
         .with_initial_text(config.bucket.unwrap_or_default())
         .interact_text()
         .map_err(|e| e.to_string())?;
-    let access_key: String = dialoguer::Input::new()
-        .with_prompt("Access Key ID (from create-user-key)")
-        .interact_text()
-        .map_err(|e| e.to_string())?;
-    let secret_key: String = dialoguer::Password::new()
-        .with_prompt("Secret Access Key")
-        .interact()
-        .map_err(|e| e.to_string())?;
+    // Reuse whatever create-user-key most recently generated rather than
+    // making you retype it - only prompts if nothing's cached yet.
+    let access_key = match config.access_key_id {
+        Some(k) => {
+            println!("Access Key ID: {k} (from the last create-user-key run)");
+            k
+        }
+        None => dialoguer::Input::new()
+            .with_prompt("Access Key ID (from create-user-key)")
+            .interact_text()
+            .map_err(|e| e.to_string())?,
+    };
+    let secret_key = match config.secret_access_key {
+        Some(s) => {
+            println!("Secret Access Key: (using the cached one from the last create-user-key run)");
+            s
+        }
+        None => dialoguer::Password::new()
+            .with_prompt("Secret Access Key")
+            .interact()
+            .map_err(|e| e.to_string())?,
+    };
 
     let region = Region::Custom {
         region: "auto".to_string(),
