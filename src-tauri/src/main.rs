@@ -65,6 +65,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             preview::zola_version,
             git::git_status,
+            git::git_changed_files,
+            git::git_diff_for_file,
             git::git_commit,
             git::current_branch,
             git::start_draft,
