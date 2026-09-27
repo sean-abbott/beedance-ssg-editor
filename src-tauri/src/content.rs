@@ -356,12 +356,17 @@ pub fn create_section(title: String, author: Option<String>) -> Result<String, S
     }
 
     let section_dir = site_dir().join(zola::CONTENT_DIR).join(&slug);
-    if section_dir.exists() {
+    let full = section_dir.join("_index.md");
+    // Checking the _index.md file specifically, not just the directory -
+    // an empty (or otherwise index-less) leftover directory at this slug
+    // would otherwise permanently block ever creating a real section
+    // there, while also not showing up anywhere else in the app (nothing
+    // lists a directory with no _index.md as a section at all).
+    if full.exists() {
         return Err(format!("A section already exists at \"{slug}\" - choose a different title."));
     }
 
     std::fs::create_dir_all(&section_dir).map_err(|e| e.to_string())?;
-    let full = section_dir.join("_index.md");
 
     let front_matter = format!("+++\ntitle = \"{}\"\n+++\n\n", title.replace('"', "\\\""));
     let front_matter = append_author(&front_matter, author);

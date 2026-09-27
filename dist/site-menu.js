@@ -8,7 +8,14 @@
 // template render a submenu/dropdown for a page's children. Multi-level
 // nav editing is separate, not-yet-built future work (see pws-ws2).
 
-import { wirePanelKeys, showError, nowForZola, currentAuthorName, refreshFileList } from "./editor-core.js";
+import {
+  wirePanelKeys,
+  showError,
+  nowForZola,
+  currentAuthorName,
+  refreshFileList,
+  createSearchCombobox,
+} from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -32,10 +39,12 @@ const createStatus = document.getElementById("site-menu-create-status");
 // settles back into "page" (on success) or whatever it already was (on
 // cancel).
 let rows = [];
-// {path, label, title} for every content file (not templates) - populates
-// each row's "existing page" dropdown. label is the disambiguated
-// "Title (Group)" shown in that dropdown; title is the page's own plain
-// title, used as the menu entry's name when left blank (see saveSiteMenu).
+// {path, label, title, group, isSectionIndex} for every content file (not
+// templates) - populates each row's "existing page" picker. label is the
+// disambiguated "Title (Group)" shown there; title is the page's own plain
+// title, used as the menu entry's name when left blank (see saveSiteMenu);
+// group/isSectionIndex drive the picker's grouped view and its "Section"
+// tag (see createSearchCombobox in editor-core.js).
 let linkablePages = [];
 // {slug, title} for every top-level section - populates the create-page
 // popup's own parent-section dropdown (same source create_page's own
@@ -54,7 +63,13 @@ const refreshPagesAndSections = async () => {
   const [files, sectionList] = await Promise.all([invoke("list_editable_files_detailed"), invoke("list_page_sections")]);
   linkablePages = files
     .filter((f) => f.group !== "Templates")
-    .map((f) => ({ path: f.path, label: `${f.label} (${f.group})`, title: f.label }));
+    .map((f) => ({
+      path: f.path,
+      label: `${f.label} (${f.group})`,
+      title: f.label,
+      group: f.group,
+      isSectionIndex: f.isSectionIndex,
+    }));
   sections = sectionList;
 };
 
@@ -205,29 +220,35 @@ const renderSiteMenuList = () => {
     }
     kindSelect.value = row.kind;
 
-    const pageSelect = document.createElement("select");
-    pageSelect.className = "menu-entry-page";
-    for (const page of linkablePages) {
-      const opt = document.createElement("option");
-      opt.value = zolaUrlForPage(page.path);
-      opt.textContent = page.label;
-      pageSelect.appendChild(opt);
-    }
-    pageSelect.value = row.pageUrl;
-    // The select itself is narrower than some labels (see the truncated
-    // "Bio…"/"Plai…" screenshots this was reported against) - a hover
-    // tooltip with the full label is a cheap partial mitigation alongside
-    // the panel width increase.
-    const updatePageSelectTitle = () => {
-      pageSelect.title = pageSelect.selectedOptions[0]?.textContent || "";
-    };
-    updatePageSelectTitle();
-    pageSelect.addEventListener("change", () => {
-      row.pageUrl = pageSelect.value;
-      row.justCreated = false;
-      updatePageSelectTitle();
-      newBadge.style.display = "none";
+    // Same searchable combobox the main "Open file" control uses (see
+    // createSearchCombobox in editor-core.js) - a plain <select> here had
+    // no search at all, and made it easy to lose track of a page that was
+    // created but never added to the nav (Sean: "I can find environment
+    // now" once he tried the top-level picker instead). Each entry's
+    // isSectionIndex also gets a "Section" tag, since it's otherwise not
+    // obvious which pages could have something nested under them.
+    const pageWrap = document.createElement("span");
+    pageWrap.className = "menu-entry-page-wrap";
+    const pageInput = document.createElement("input");
+    pageInput.type = "text";
+    pageInput.className = "menu-entry-page";
+    pageInput.placeholder = "Search pages…";
+    const pageResults = document.createElement("div");
+    pageResults.className = "search-combobox-results";
+    pageWrap.append(pageInput, pageResults);
+
+    const pageCombobox = createSearchCombobox({
+      input: pageInput,
+      resultsEl: pageResults,
+      getEntries: () => linkablePages,
+      getCurrentLabel: () => linkablePages.find((p) => zolaUrlForPage(p.path) === row.pageUrl)?.label || "",
+      onSelect: (entry) => {
+        row.pageUrl = zolaUrlForPage(entry.path);
+        row.justCreated = false;
+        newBadge.style.display = "none";
+      },
     });
+    pageCombobox.syncDisplay();
 
     // Marks a row whose page/section was just minted through this same
     // dialog (openCreatePanel) rather than picked from what already
@@ -248,7 +269,7 @@ const renderSiteMenuList = () => {
     });
 
     const applyKindVisibility = () => {
-      pageSelect.style.display = row.kind === "page" ? "" : "none";
+      pageWrap.style.display = row.kind === "page" ? "" : "none";
       urlInput.style.display = row.kind === "external" ? "" : "none";
       newBadge.style.display = row.kind === "page" && row.justCreated ? "" : "none";
       nameInput.placeholder = row.kind === "page" ? "Label (defaults to the page's title)" : "Label";
@@ -280,7 +301,7 @@ const renderSiteMenuList = () => {
       renderSiteMenuList();
     });
 
-    el.append(dragHandle, up, down, nameInput, kindSelect, pageSelect, newBadge, urlInput, remove);
+    el.append(dragHandle, up, down, nameInput, kindSelect, pageWrap, newBadge, urlInput, remove);
     siteMenuList.appendChild(el);
   });
 };

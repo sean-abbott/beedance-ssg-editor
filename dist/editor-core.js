@@ -39,31 +39,167 @@ export function describeGitError(rawError) {
   return text;
 }
 
-export const fileSelect = document.getElementById("file-select");
-// The visible "Open file" control - a real text box with a custom dropdown
-// (below), not a native <datalist>: a bare <input list=...> shows nothing
+// Case-insensitive subsequence match ("abt" matches "About") - not a
+// scoring/ranking library, just enough for "show only what could plausibly
+// be what I'm typing" the way a quick-open box does, rather than a plain
+// prefix/substring search.
+export const fuzzyMatches = (query, label) => {
+  let qi = 0;
+  const lowerLabel = label.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  for (let li = 0; li < lowerLabel.length && qi < lowerQuery.length; li++) {
+    if (lowerLabel[li] === lowerQuery[qi]) qi++;
+  }
+  return qi === lowerQuery.length;
+};
+
+// A searchable "pick a site page" combobox - a real text box with a custom
+// dropdown, not a native <datalist> (a bare <input list=...> shows nothing
 // until you start typing and only prefix/substring-matches, which doesn't
-// give "show the full list on focus, then fuzzy-filter it" - something this
-// app has to build itself to get consistently across its 3 target
-// webviews. fileSelect (above) stays a real, populated <select> - just
-// hidden - so every OTHER module's existing `fileSelect.value` reads/writes
-// keep working unchanged; this box and fileSelect are kept in sync through
-// labelToPath/pathToLabel below.
-const fileSearchInput = document.getElementById("file-search");
-const fileSearchResults = document.getElementById("file-search-results");
-let labelToPath = new Map();
-let pathToLabel = new Map();
-// Titles mode's own section for each entry (undefined in Paths mode) -
-// used only to restore the section grouping/hierarchy as a set of headers
-// when showing the full list (an empty query), the same structure the old
-// <select>'s optgroups gave for free. A search actually in progress (a
-// non-empty query) drops this and shows a flat, fuzzy-sorted list instead -
-// once you're filtering across sections, the grouping stops being the
-// useful part, and each result's "(Group)" suffix still says which section
-// it's in.
-let labelToGroup = new Map();
-let fileSearchVisibleEntries = [];
-let fileSearchHighlightIndex = -1;
+// give "show the full list on focus, then fuzzy-filter it" this needs to
+// get consistently across this app's 3 target webviews). Shared by the
+// main "Open file" control and the site-menu editor's per-row page picker
+// (site-menu.js) - one implementation instead of two copies that could
+// drift apart.
+//
+// Each entry needs at least `label` (also what's matched/shown); `group`
+// (rendered as a header instead of the flat sort, but only while the query
+// is empty - once there's an actual query, matches can span groups and
+// sort by relevance instead) and `isSectionIndex` (a small "Section" tag,
+// since it's often not obvious from a plain page list which entries can
+// have pages nested under them) are both optional.
+export function createSearchCombobox({ input, resultsEl, getEntries, onSelect, getCurrentLabel }) {
+  let visibleEntries = [];
+  let highlightIndex = -1;
+
+  const close = () => {
+    resultsEl.style.display = "none";
+    resultsEl.innerHTML = "";
+    visibleEntries = [];
+    highlightIndex = -1;
+  };
+
+  const updateHighlight = () => {
+    const resultRows = resultsEl.querySelectorAll(".search-combobox-result");
+    resultRows.forEach((el, i) => el.classList.toggle("active", i === highlightIndex));
+    resultRows[highlightIndex]?.scrollIntoView({ block: "nearest" });
+  };
+
+  const select = (entry) => {
+    input.value = entry.label;
+    close();
+    onSelect(entry);
+  };
+
+  const render = (query) => {
+    const q = query.trim();
+    const entries = getEntries();
+    const showGrouped = q === "" && entries.some((e) => e.group !== undefined);
+
+    let matches = entries.filter((e) => fuzzyMatches(q, e.label));
+    if (!showGrouped) {
+      matches = matches.sort((a, b) => {
+        const aPrefix = a.label.toLowerCase().startsWith(q.toLowerCase());
+        const bPrefix = b.label.toLowerCase().startsWith(q.toLowerCase());
+        if (aPrefix !== bPrefix) return aPrefix ? -1 : 1;
+        return a.label.localeCompare(b.label);
+      });
+    }
+    visibleEntries = matches;
+
+    resultsEl.innerHTML = "";
+    if (visibleEntries.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "search-combobox-no-results";
+      empty.textContent = "No matches.";
+      resultsEl.appendChild(empty);
+      highlightIndex = -1;
+    } else {
+      highlightIndex = 0;
+      let lastGroup = null;
+      for (const entry of visibleEntries) {
+        if (showGrouped && entry.group !== lastGroup) {
+          const header = document.createElement("div");
+          header.className = "search-combobox-group-header";
+          header.textContent = entry.group;
+          resultsEl.appendChild(header);
+          lastGroup = entry.group;
+        }
+        const row = document.createElement("div");
+        row.className = "search-combobox-result";
+        const text = document.createElement("span");
+        text.textContent = entry.label;
+        row.appendChild(text);
+        if (entry.isSectionIndex) {
+          const tag = document.createElement("span");
+          tag.className = "search-combobox-section-tag";
+          tag.textContent = "Section";
+          row.appendChild(tag);
+        }
+        // mousedown, not click - fires before the input's own blur handler
+        // would otherwise close this dropdown first and discard the click.
+        row.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          select(entry);
+        });
+        resultsEl.appendChild(row);
+      }
+      updateHighlight();
+    }
+    resultsEl.style.display = "block";
+  };
+
+  const syncDisplay = () => {
+    input.value = getCurrentLabel ? getCurrentLabel() : "";
+  };
+
+  input.addEventListener("focus", () => {
+    // Clear outright rather than select()-ing the current text - a click's
+    // own default caret placement can otherwise land after the focus
+    // event's select() and quietly undo it, so typing wouldn't reliably
+    // wipe "About (About)" the way it should. blur (below) already
+    // restores this text if nothing gets picked, so clearing here loses
+    // nothing.
+    input.value = "";
+    render("");
+  });
+  input.addEventListener("input", () => render(input.value));
+  input.addEventListener("keydown", (e) => {
+    if (resultsEl.style.display === "none") return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      highlightIndex = Math.min(visibleEntries.length - 1, highlightIndex + 1);
+      updateHighlight();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      highlightIndex = Math.max(0, highlightIndex - 1);
+      updateHighlight();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const entry = visibleEntries[highlightIndex];
+      if (entry) select(entry);
+    } else if (e.key === "Escape") {
+      close();
+      input.blur();
+    }
+  });
+  // Typed text that never resolved to a real selection (left as a dead
+  // end, rather than picking a suggestion) shouldn't linger looking like
+  // it's the real current value - snap back to whatever it actually is.
+  input.addEventListener("blur", () => {
+    close();
+    syncDisplay();
+  });
+
+  return { syncDisplay };
+}
+
+export const fileSelect = document.getElementById("file-select");
+// fileSelect stays a real, populated <select> - just hidden - so every
+// OTHER module's existing `fileSelect.value` reads/writes keep working
+// unchanged; the visible search box (fileSearchCombobox, below
+// refreshFileList) is kept in sync with it through fileSearchEntries.
+let fileSearchEntries = [];
 export const editorEl = document.getElementById("editor");
 const tabBar = document.getElementById("tab-bar");
 export const statusEl = document.getElementById("editor-status");
@@ -174,28 +310,21 @@ const populateFileSelectGrouped = (entries) => {
       // group === label) - matching site-menu.js's own page-picker exactly,
       // and sidestepping any case where two different sections happen to
       // have a same-titled child page.
-      addSearchEntry(`${e.label} (${groupName})`, e.path, groupName);
+      fileSearchEntries.push({
+        label: `${e.label} (${groupName})`,
+        path: e.path,
+        group: groupName,
+        isSectionIndex: e.isSectionIndex,
+      });
     }
     fileSelect.appendChild(optgroup);
   }
 };
 
-const addSearchEntry = (label, path, group) => {
-  labelToPath.set(label, path);
-  pathToLabel.set(path, label);
-  if (group !== undefined) labelToGroup.set(label, group);
-};
-
-const syncFileSearchDisplay = () => {
-  fileSearchInput.value = pathToLabel.get(fileSelect.value) || "";
-};
-
 export const refreshFileList = async () => {
   const previous = fileSelect.value;
   fileSelect.innerHTML = "";
-  labelToPath = new Map();
-  pathToLabel = new Map();
-  labelToGroup = new Map();
+  fileSearchEntries = [];
   if (fileListMode === "paths") {
     const files = await invoke("list_editable_files");
     for (const f of files) {
@@ -203,7 +332,7 @@ export const refreshFileList = async () => {
       opt.value = f;
       opt.textContent = f;
       fileSelect.appendChild(opt);
-      addSearchEntry(f, f);
+      fileSearchEntries.push({ label: f, path: f });
     }
     if (files.includes(previous)) fileSelect.value = previous;
   } else {
@@ -211,7 +340,7 @@ export const refreshFileList = async () => {
     populateFileSelectGrouped(entries);
     if (entries.some((e) => e.path === previous)) fileSelect.value = previous;
   }
-  syncFileSearchDisplay();
+  fileSearchCombobox.syncDisplay();
 };
 
 // Sets which file is "selected" everywhere this app shows that (the hidden
@@ -221,143 +350,18 @@ export const refreshFileList = async () => {
 // apart.
 export const setActiveFilePath = (path) => {
   fileSelect.value = path;
-  syncFileSearchDisplay();
+  fileSearchCombobox.syncDisplay();
 };
 
-// Case-insensitive subsequence match ("abt" matches "About") - not a
-// scoring/ranking library, just enough for "show only what could plausibly
-// be what I'm typing" the way a quick-open box does, rather than a plain
-// prefix/substring search.
-const fuzzyMatches = (query, label) => {
-  let qi = 0;
-  const lowerLabel = label.toLowerCase();
-  const lowerQuery = query.toLowerCase();
-  for (let li = 0; li < lowerLabel.length && qi < lowerQuery.length; li++) {
-    if (lowerLabel[li] === lowerQuery[qi]) qi++;
-  }
-  return qi === lowerQuery.length;
-};
-
-const closeFileSearchResults = () => {
-  fileSearchResults.style.display = "none";
-  fileSearchResults.innerHTML = "";
-  fileSearchVisibleEntries = [];
-  fileSearchHighlightIndex = -1;
-};
-
-const selectFileSearchEntry = (entry) => {
-  fileSearchInput.value = entry.label;
-  fileSelect.value = entry.path;
-  closeFileSearchResults();
-  openTab(entry.path);
-};
-
-const updateFileSearchHighlight = () => {
-  const resultEls = fileSearchResults.querySelectorAll(".file-search-result");
-  resultEls.forEach((el, i) => el.classList.toggle("active", i === fileSearchHighlightIndex));
-  resultEls[fileSearchHighlightIndex]?.scrollIntoView({ block: "nearest" });
-};
-
-// Shows the full list on focus (even before typing anything), then
-// fuzzy-filters it live as the query changes - the "show it, then narrow
-// it down" combobox behavior a bare <input list=...> datalist doesn't give.
-//
-// An empty query (just opened, nothing typed yet) in Titles mode restores
-// the section grouping/headers the old <select>'s optgroups gave - once
-// there's an actual query, matches drop the grouping and sort flat by
-// relevance instead, since results can span sections and the group no
-// longer has a single obvious place to show a header for it (each result's
-// own "(Group)" suffix still says which section it's in).
-const renderFileSearchResults = (query) => {
-  const q = query.trim();
-  const showGrouped = q === "" && fileListMode === "titles";
-
-  let labels = [...labelToPath.keys()].filter((label) => fuzzyMatches(q, label));
-  if (!showGrouped) {
-    labels = labels.sort((a, b) => {
-      const aPrefix = a.toLowerCase().startsWith(q.toLowerCase());
-      const bPrefix = b.toLowerCase().startsWith(q.toLowerCase());
-      if (aPrefix !== bPrefix) return aPrefix ? -1 : 1;
-      return a.localeCompare(b);
-    });
-  }
-  fileSearchVisibleEntries = labels.map((label) => ({ label, path: labelToPath.get(label) }));
-
-  fileSearchResults.innerHTML = "";
-  if (fileSearchVisibleEntries.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "file-search-no-results";
-    empty.textContent = "No matching files.";
-    fileSearchResults.appendChild(empty);
-    fileSearchHighlightIndex = -1;
-  } else {
-    fileSearchHighlightIndex = 0;
-    let lastGroup = null;
-    fileSearchVisibleEntries.forEach((entry) => {
-      if (showGrouped) {
-        const group = labelToGroup.get(entry.label);
-        if (group !== lastGroup) {
-          const header = document.createElement("div");
-          header.className = "file-search-group-header";
-          header.textContent = group;
-          fileSearchResults.appendChild(header);
-          lastGroup = group;
-        }
-      }
-      const row = document.createElement("div");
-      row.className = "file-search-result";
-      row.textContent = entry.label;
-      // mousedown, not click - fires before the input's own blur handler
-      // would otherwise close this dropdown first and discard the click.
-      row.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        selectFileSearchEntry(entry);
-      });
-      fileSearchResults.appendChild(row);
-    });
-    updateFileSearchHighlight();
-  }
-  fileSearchResults.style.display = "block";
-};
-
-fileSearchInput.addEventListener("focus", () => {
-  // Clear outright rather than select()-ing the current text - a click's
-  // own default caret placement can otherwise land after the focus event's
-  // select() and quietly undo it, so typing wouldn't reliably wipe "About
-  // (About)"/"Home (Home)" the way it should. blur (below) already
-  // restores this text if nothing gets picked, so clearing here loses
-  // nothing.
-  fileSearchInput.value = "";
-  renderFileSearchResults("");
-});
-fileSearchInput.addEventListener("input", () => renderFileSearchResults(fileSearchInput.value));
-
-fileSearchInput.addEventListener("keydown", (e) => {
-  if (fileSearchResults.style.display === "none") return;
-  if (e.key === "ArrowDown") {
-    e.preventDefault();
-    fileSearchHighlightIndex = Math.min(fileSearchVisibleEntries.length - 1, fileSearchHighlightIndex + 1);
-    updateFileSearchHighlight();
-  } else if (e.key === "ArrowUp") {
-    e.preventDefault();
-    fileSearchHighlightIndex = Math.max(0, fileSearchHighlightIndex - 1);
-    updateFileSearchHighlight();
-  } else if (e.key === "Enter") {
-    e.preventDefault();
-    const entry = fileSearchVisibleEntries[fileSearchHighlightIndex];
-    if (entry) selectFileSearchEntry(entry);
-  } else if (e.key === "Escape") {
-    closeFileSearchResults();
-    fileSearchInput.blur();
-  }
-});
-
-// Typed text that never resolved to a real selection (left as a dead end,
-// rather than picking a suggestion) shouldn't linger looking like it's the
-// open file - snap back to whatever's actually open.
-fileSearchInput.addEventListener("blur", () => {
-  closeFileSearchResults();
-  syncFileSearchDisplay();
+const fileSearchCombobox = createSearchCombobox({
+  input: document.getElementById("file-search"),
+  resultsEl: document.getElementById("file-search-results"),
+  getEntries: () => fileSearchEntries,
+  getCurrentLabel: () => fileSearchEntries.find((e) => e.path === fileSelect.value)?.label || "",
+  onSelect: (entry) => {
+    fileSelect.value = entry.path;
+    openTab(entry.path);
+  },
 });
 
 fileListModeToggle.addEventListener("click", async () => {
@@ -476,7 +480,7 @@ const switchToTab = (path) => {
   // showing what's actually open - not just the ones that went through the
   // search box itself.
   fileSelect.value = path;
-  syncFileSearchDisplay();
+  fileSearchCombobox.syncDisplay();
   if (tab.externallyChanged) {
     bannerMessage.textContent = path + " changed on disk externally.";
     banner.style.display = "block";

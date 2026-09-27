@@ -66,7 +66,10 @@
     .status-line.status-success { color: #2e7d32; font-weight: 600; }
     .status-line.status-error { color: #c0392b; font-weight: 600; }
 
-    #file-search-results {
+    /* Shared by every createSearchCombobox instance (the main "Open file"
+       control, and each site-menu row's page picker) - a class, not an id,
+       since a site-menu panel has one of these per row. */
+    .search-combobox-results {
       display: none;
       position: absolute;
       top: 100%;
@@ -82,16 +85,20 @@
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
       font-size: 13px;
     }
-    .file-search-result {
+    .search-combobox-result {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
       padding: 6px 10px;
       cursor: pointer;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .file-search-result.active { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
-    .file-search-no-results { padding: 6px 10px; color: var(--muted); }
-    .file-search-group-header {
+    .search-combobox-result.active { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+    .search-combobox-no-results { padding: 6px 10px; color: var(--muted); }
+    .search-combobox-group-header {
       padding: 6px 10px;
       margin-top: 2px;
       font-size: 12px;
@@ -103,7 +110,18 @@
       border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
     }
-    .file-search-group-header:first-child { margin-top: 0; border-top: none; }
+    .search-combobox-group-header:first-child { margin-top: 0; border-top: none; }
+    .search-combobox-section-tag {
+      flex-shrink: 0;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 1px 6px;
+    }
 
     button, select, input[type=text] {
       font: inherit;
@@ -241,11 +259,13 @@
       font-size: 12px;
     }
     .menu-entry-row .menu-entry-name,
-    .menu-entry-row .menu-entry-page,
+    .menu-entry-row .menu-entry-page-wrap,
     .menu-entry-row .menu-entry-url {
       flex: 1;
       min-width: 0;
     }
+    .menu-entry-page-wrap { position: relative; }
+    .menu-entry-page-wrap .menu-entry-page { width: 100%; }
     .menu-entry-row button {
       flex-shrink: 0;
       padding: 2px 8px;
