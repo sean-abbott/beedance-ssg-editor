@@ -273,6 +273,16 @@
     .menu-entry-row.dragging .menu-entry-drag-bar {
       background: var(--text);
     }
+    .menu-entry-new-badge {
+      flex-shrink: 0;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      padding: 1px 7px;
+      white-space: nowrap;
+    }
     .menu-entry-row.dragging {
       position: relative;
       z-index: 5;

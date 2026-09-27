@@ -32,8 +32,10 @@ const createStatus = document.getElementById("site-menu-create-status");
 // settles back into "page" (on success) or whatever it already was (on
 // cancel).
 let rows = [];
-// {path, label} for every content file (not templates) - populates each
-// row's "existing page" dropdown.
+// {path, label, title} for every content file (not templates) - populates
+// each row's "existing page" dropdown. label is the disambiguated
+// "Title (Group)" shown in that dropdown; title is the page's own plain
+// title, used as the menu entry's name when left blank (see saveSiteMenu).
 let linkablePages = [];
 // {slug, title} for every top-level section - populates the create-page
 // popup's own parent-section dropdown (same source create_page's own
@@ -50,7 +52,9 @@ const zolaUrlForPage = (path) => "@/" + path.replace(/^content\//, "");
 // group/label logic.
 const refreshPagesAndSections = async () => {
   const [files, sectionList] = await Promise.all([invoke("list_editable_files_detailed"), invoke("list_page_sections")]);
-  linkablePages = files.filter((f) => f.group !== "Templates").map((f) => ({ path: f.path, label: `${f.label} (${f.group})` }));
+  linkablePages = files
+    .filter((f) => f.group !== "Templates")
+    .map((f) => ({ path: f.path, label: `${f.label} (${f.group})`, title: f.label }));
   sections = sectionList;
 };
 
@@ -220,8 +224,19 @@ const renderSiteMenuList = () => {
     updatePageSelectTitle();
     pageSelect.addEventListener("change", () => {
       row.pageUrl = pageSelect.value;
+      row.justCreated = false;
       updatePageSelectTitle();
+      newBadge.style.display = "none";
     });
+
+    // Marks a row whose page/section was just minted through this same
+    // dialog (openCreatePanel) rather than picked from what already
+    // existed - it otherwise looks identical to any other "Existing page"
+    // entry, with nothing showing it's actually brand new. Visibility is
+    // set below, by applyKindVisibility.
+    const newBadge = document.createElement("span");
+    newBadge.className = "menu-entry-new-badge";
+    newBadge.textContent = "New";
 
     const urlInput = document.createElement("input");
     urlInput.type = "text";
@@ -235,6 +250,8 @@ const renderSiteMenuList = () => {
     const applyKindVisibility = () => {
       pageSelect.style.display = row.kind === "page" ? "" : "none";
       urlInput.style.display = row.kind === "external" ? "" : "none";
+      newBadge.style.display = row.kind === "page" && row.justCreated ? "" : "none";
+      nameInput.placeholder = row.kind === "page" ? "Label (defaults to the page's title)" : "Label";
     };
     applyKindVisibility();
     kindSelect.addEventListener("change", () => {
@@ -263,7 +280,7 @@ const renderSiteMenuList = () => {
       renderSiteMenuList();
     });
 
-    el.append(dragHandle, up, down, nameInput, kindSelect, pageSelect, urlInput, remove);
+    el.append(dragHandle, up, down, nameInput, kindSelect, pageSelect, newBadge, urlInput, remove);
     siteMenuList.appendChild(el);
   });
 };
@@ -336,6 +353,7 @@ document.getElementById("site-menu-create-confirm").addEventListener("click", as
     await Promise.all([refreshPagesAndSections(), refreshFileList()]);
     row.kind = "page";
     row.pageUrl = zolaUrlForPage(path);
+    row.justCreated = true;
     if (!row.name.trim()) row.name = title;
     createPanel.style.display = "none";
     pendingCreate = null;
@@ -368,8 +386,15 @@ const setSiteMenuStatus = (text, kind) => {
 const saveSiteMenu = async () => {
   const entries = [];
   for (const row of rows) {
-    const name = row.name.trim();
     const url = row.kind === "external" ? row.externalUrl.trim() : row.pageUrl;
+    // Leaving the label blank for an existing-page entry defaults it to
+    // that page's own title - no need to pick a page from the dropdown
+    // and then retype its exact title right back into the label field.
+    // A web address has no title to fall back on, so it still needs one.
+    let name = row.name.trim();
+    if (!name && row.kind === "page") {
+      name = linkablePages.find((p) => zolaUrlForPage(p.path) === url)?.title || "";
+    }
     if (!name || !url) {
       setSiteMenuStatus("Every link needs a label and a destination.", "error");
       return false;
