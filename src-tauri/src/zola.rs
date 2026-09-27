@@ -55,25 +55,26 @@ pub fn looks_like_site(dir: &Path) -> bool {
 /// (Zola's real "this is a chronological listing" signal) isn't enough to
 /// also rule out a section that isn't an ordinary container at all: a
 /// tag-filtered listing built entirely from a custom template with no
-/// hand-maintained children (Events), or a single bespoke embedded-widget
-/// page that isn't a container (Plant Safari) - both would otherwise show up
-/// as valid "New page" nesting targets alongside real containers like About
-/// or Biodiversity.
+/// hand-maintained children, or a single bespoke embedded-widget page that
+/// isn't a container - both would otherwise show up as valid "New page"
+/// nesting targets alongside real containers.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum HeadingKind {
-    /// An ordinary container - arbitrary pages can nest under it (About,
-    /// Biodiversity).
+    /// An ordinary container - arbitrary pages can nest under it (e.g. an
+    /// "About" or "Team" section).
     Page,
-    /// A dated, chronological listing (Blog) - posts go here via
-    /// create_post, not create_page.
+    /// A dated, chronological listing (e.g. a Blog section) - posts go here
+    /// via create_post, not create_page.
     Blog,
     /// Not hand-maintained content at all - an algorithmic listing pulling
-    /// tagged posts from elsewhere (Events). Shouldn't accept a new page OR
-    /// a new post underneath it - there's nothing to nest, the listing has
-    /// no real children of its own.
+    /// tagged posts from elsewhere (e.g. an "Events" section built entirely
+    /// from posts tagged "event"). Shouldn't accept a new page OR a new
+    /// post underneath it - there's nothing to nest, the listing has no
+    /// real children of its own.
     FilteredView,
-    /// A single bespoke page (e.g. Plant Safari's embedded widget) - not a
-    /// container, shouldn't allow any sub-pages either.
+    /// A single bespoke page (e.g. a section whose _index.md is just a
+    /// hand-written embedded widget/script) - not a container, shouldn't
+    /// allow any sub-pages either.
     Widget,
 }
 

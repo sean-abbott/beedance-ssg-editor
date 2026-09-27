@@ -155,20 +155,15 @@ pub struct ExternalContentInfo {
     /// Some(name) if `template` overrides Zola's own default (page.html for
     /// a leaf page, section.html for a section index) - that template's own
     /// code, not this file's body, drives most or all of what actually
-    /// renders (e.g. events/calendar.md: an empty body, template =
-    /// "events-calendar.html" does all the real work).
+    /// renders.
     custom_template: Option<String>,
-    /// A <script> tag pasted directly into the body (e.g. plant-safari's
-    /// embedded widget) - real, editable text, but easy to break by editing
-    /// it as if it were just prose.
+    /// A <script> tag pasted directly into the body - real, editable text,
+    /// but easy to break by editing it as if it were just prose.
     has_script_tag: bool,
 }
 
-/// Detects the two ways a content file's actual rendered page can be driven
-/// by something other than what's visibly in this buffer - see pws-who's
-/// investigation of events/calendar.md (empty body, all logic in its
-/// template) and plant-safari/_index.md (a real embedded HTML/JS widget) on
-/// the live site for the two real cases this covers.
+/// Detects two ways a content file's actual rendered page can be driven by
+/// something other than what's visibly in this buffer.
 #[tauri::command]
 pub fn detect_external_content(content: String) -> ExternalContentInfo {
     let custom_template = front_matter_block(&content)
@@ -305,7 +300,7 @@ pub fn list_page_sections() -> Vec<ContentSection> {
 }
 
 /// Creates a new page nested under an existing top-level section (e.g. a new
-/// page under "Biodiversity") - see create_section for a brand-new top-level
+/// page under "About") - see create_section for a brand-new top-level
 /// section instead. The default section.html template already lists
 /// section.pages automatically, so nesting under an existing section needs
 /// nothing further to become visible there.
@@ -343,7 +338,7 @@ pub fn create_page(title: String, section: String, datetime: String, author: Opt
 }
 
 /// Creates a brand-new TOP-LEVEL section (its own content/<slug>/_index.md),
-/// a sibling of About/Biodiversity/etc. rather than nested under one of them
+/// a sibling of every other top-level section rather than nested under one
 /// - unlike create_page's target, becoming reachable from the site's actual
 /// nav is no longer blocked on a hardcoded template (see menu.rs's
 /// [[extra.menu]] and the Site menu editor): a new section just needs adding

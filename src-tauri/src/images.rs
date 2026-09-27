@@ -376,10 +376,9 @@ fn filename_from_url(url: &str) -> String {
 
 /// Downloads a remote image and runs it through the exact same normalize+
 /// place pipeline as a locally-picked file (see insert_image_impl) - the
-/// only difference is where the bytes come from. Existing content that
-/// points at images hosted elsewhere (e.g. easthamptonbees-ssg's WordPress-
-/// migration images) can be localized without depending on that host
-/// staying reachable.
+/// only difference is where the bytes come from. Lets existing content
+/// that points at an image hosted elsewhere be localized instead of
+/// depending on that host staying reachable.
 #[tauri::command]
 pub async fn localize_remote_image(
     url: String,

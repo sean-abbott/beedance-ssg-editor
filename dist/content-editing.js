@@ -28,7 +28,7 @@ const { invoke } = window.__TAURI__.core;
 // difference is which Rust command runs and what the help text says.
 const NEW_CONTENT_HELP = {
   post: "A post is dated content - a blog entry or event - that fades in relevance over time. It always goes into whichever section is set up as the blog, not wherever you happen to be editing right now.",
-  page: "A page is a permanent, menu-linked fixture (like \"About\" or \"Biodiversity\") that nests under an existing section. A few sections that might look similar won't show up as a destination below - an auto-generated listing built entirely from tagged posts (like Events), or a single bespoke page (like Plant Safari), isn't a real container to add a page under.",
+  page: "A page is a permanent, menu-linked fixture (like \"About\" or \"Contact\") that nests under an existing section. A few sections that might look similar won't show up as a destination below - an auto-generated listing built entirely from tagged posts, or a single bespoke embedded page, isn't a real container to add a page under.",
 };
 let newContentKind = "post";
 const newContentPanel = document.getElementById("new-content-panel");
@@ -49,8 +49,8 @@ const openNewContentPanel = async (kind) => {
   newContentInput.focus();
 
   // A page here always nests under an existing section (e.g. a new page
-  // under "Biodiversity") rather than minting its own top-level section -
-  // see site-menu.js's "New section..." option (from the Site menu editor)
+  // under "About") rather than minting its own top-level section - see
+  // site-menu.js's "New section..." option (from the Site menu editor)
   // for creating one of those instead.
   if (kind === "page") {
     newContentSectionRow.style.display = "block";

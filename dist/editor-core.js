@@ -434,13 +434,10 @@ const updateStatusForActiveTab = () => {
 const externalContentBanner = document.getElementById("external-content-banner");
 const externalContentMessage = document.getElementById("external-content-message");
 
-// A page whose actual rendered content is driven by something other
-// than what's visibly in this buffer - a custom `template` override
-// (e.g. events/calendar.md: an empty body, the real "calendar" behavior
-// lives entirely in events-calendar.html) or a <script> tag pasted
-// directly into the body (e.g. plant-safari's embedded widget, real
-// editable text but easy to break by editing it as if it were prose).
-// Just a heads-up, not a block - both are still perfectly editable.
+// A page whose actual rendered content is driven by something other than
+// what's visibly in this buffer - a custom `template` override, or a
+// <script> tag pasted directly into the body. Just a heads-up, not a
+// block - both are still perfectly editable.
 const refreshExternalContentBanner = async (content) => {
   try {
     const info = await invoke("detect_external_content", { content });

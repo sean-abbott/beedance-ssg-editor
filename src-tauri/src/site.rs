@@ -246,7 +246,7 @@ fn read_date(full: &Path) -> Option<String> {
 /// Whether the section at `section_index` (its _index.md) is a "blog
 /// heading" - the same zola::heading_kind_of classification content.rs's
 /// find_post_section/list_page_sections use to tell a dated, chronological
-/// section (like Blog) apart from a free-form one (like Biodiversity).
+/// section apart from a free-form one.
 fn section_is_blog_heading(section_index: &Path) -> bool {
     std::fs::read_to_string(section_index).ok().and_then(|raw| zola::heading_kind_of(&raw)) == Some(zola::HeadingKind::Blog)
 }
