@@ -23,6 +23,7 @@ import {
   bannerMessage,
   reviewModeActive,
   setReviewModeActive,
+  describeGitError,
 } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -306,7 +307,7 @@ const startReviewingPr = async (pr) => {
     reviewPrPanel.style.display = "none";
     reviewPrStatus.textContent = "";
   } catch (err) {
-    reviewPrStatus.textContent = "ERROR: " + err;
+    reviewPrStatus.textContent = describeGitError(err);
   }
 };
 
@@ -488,7 +489,7 @@ document.getElementById("review-changes-pull").addEventListener("click", async (
     document.getElementById("reload").click();
     reviewChangesStatus.textContent = "Up to date.";
   } catch (err) {
-    reviewChangesStatus.textContent = "ERROR: " + err;
+    reviewChangesStatus.textContent = describeGitError(err);
   }
 });
 
@@ -498,7 +499,7 @@ document.getElementById("review-changes-push").addEventListener("click", async (
     await invoke("git_push");
     reviewChangesStatus.textContent = "Sent.";
   } catch (err) {
-    reviewChangesStatus.textContent = "ERROR: " + err;
+    reviewChangesStatus.textContent = describeGitError(err);
   }
 });
 

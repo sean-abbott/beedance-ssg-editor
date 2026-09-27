@@ -6,6 +6,39 @@
 
 const { invoke } = window.__TAURI__.core;
 
+// Translates common raw git/SSH failure text into something a non-technical
+// person can actually act on. Found the necessity the hard way: even a
+// working developer (Dave) got stuck on a stale SSH host-key fingerprint
+// warning from GitHub's own real 2024 key rotation - completely opaque
+// unless you already know what a host key fingerprint is. Someone who isn't
+// technical has no path forward at all from git's own wording, so every
+// recognized SSH failure here points at the one escape hatch this app CAN
+// fully drive: switching to the HTTPS repository link with a personal
+// access token (Settings -> GitHub sync), which sidesteps SSH entirely.
+// Unrecognized errors pass through unchanged rather than being hidden.
+export function describeGitError(rawError) {
+  const text = String(rawError);
+  if (/host key verification failed/i.test(text) || /REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(text)) {
+    return (
+      "GitHub's identity doesn't match what this computer already trusts for SSH - a security check, " +
+      "not necessarily anything wrong. This needs someone comfortable with SSH to sort out on this " +
+      "machine, or switch to the HTTPS repository link with a personal access token instead (Settings " +
+      "→ GitHub sync), which avoids SSH entirely.\n\nRaw error: " + text
+    );
+  }
+  if (/permission denied \(publickey\)/i.test(text)) {
+    return (
+      "This computer doesn't have an SSH key GitHub recognizes for this repository. Use the HTTPS " +
+      "repository link with a personal access token instead (Settings → GitHub sync), or have " +
+      "someone set up an SSH key here.\n\nRaw error: " + text
+    );
+  }
+  if (/could not resolve host/i.test(text)) {
+    return "Couldn't reach GitHub - check the internet connection on this machine.\n\nRaw error: " + text;
+  }
+  return text;
+}
+
 export const fileSelect = document.getElementById("file-select");
 export const editorEl = document.getElementById("editor");
 const tabBar = document.getElementById("tab-bar");

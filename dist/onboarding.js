@@ -4,7 +4,7 @@
 // blocks using the app, just nudges toward the setup that makes the rest of
 // it (attribution, GitHub sync) actually useful from the start.
 
-import { switchToSiteDir, wirePanelKeys } from "./editor-core.js";
+import { switchToSiteDir, wirePanelKeys, describeGitError } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -13,6 +13,21 @@ const sitePanel = document.getElementById("onboarding-site-panel");
 const siteStatus = document.getElementById("onboarding-site-status");
 const cloneUrlInput = document.getElementById("onboarding-clone-url");
 const cloneDestinationLabel = document.getElementById("onboarding-clone-destination");
+const cloneSshHint = document.getElementById("onboarding-clone-ssh-hint");
+
+// A pasted SSH-style link (git@github.com:... or ssh://...) works fine for
+// someone who already has SSH set up (Sean, Dave) but is a dead end for
+// anyone who doesn't - a failure there surfaces as raw SSH/git errors this
+// app has no way to make friendly (see describeGitError). Flagged as soon
+// as it's typed rather than only after a failed clone.
+cloneUrlInput.addEventListener("input", () => {
+  const url = cloneUrlInput.value.trim();
+  const looksLikeSsh = /^git@/.test(url) || /^ssh:\/\//.test(url);
+  cloneSshHint.style.display = looksLikeSsh ? "block" : "none";
+  cloneSshHint.textContent = looksLikeSsh
+    ? "This looks like an SSH link. If you're not sure what that means, use the HTTPS link instead (see above)."
+    : "";
+});
 
 let chosenDestination = null;
 
@@ -86,7 +101,7 @@ document.getElementById("onboarding-clone-confirm").addEventListener("click", as
     siteStatus.textContent = "Cloned.";
     await finishOnboarding();
   } catch (err) {
-    siteStatus.textContent = "ERROR: " + err;
+    siteStatus.textContent = describeGitError(err);
   }
 });
 

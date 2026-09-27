@@ -46,10 +46,16 @@
       <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;">
         <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Or clone a site from GitHub</legend>
 
-        <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+        <label style="display: block; font-size: 13px; margin-bottom: 4px;">
           Repository URL
-          <input type="text" id="onboarding-clone-url" style="width: 100%; margin-top: 4px;" placeholder="git@github.com:you/your-site.git" />
+          <input type="text" id="onboarding-clone-url" style="width: 100%; margin-top: 4px;" placeholder="https://github.com/you/your-site.git" />
         </label>
+        <p style="font-size: 11px; color: var(--muted); margin: 0 0 4px;">
+          Use the HTTPS link (from GitHub's own green "Code" button, the
+          "HTTPS" tab) unless you already know what an SSH key is and have
+          one set up on this machine.
+        </p>
+        <div id="onboarding-clone-ssh-hint" style="display: none; font-size: 11px; color: #b8860b; margin: 0 0 8px;"></div>
 
         <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 8px;">
           <button type="button" id="onboarding-clone-choose-folder" class="secondary">Choose destination folder&hellip;</button>

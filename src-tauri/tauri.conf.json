@@ -20,7 +20,8 @@
     ]
   },
   "bundle": {
-    "active": false,
+    "active": true,
+    "targets": "all",
     "externalBin": ["binaries/zola"]
   }
 }

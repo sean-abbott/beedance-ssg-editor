@@ -3,6 +3,39 @@ site, driving an existing static site generator (Zola, via a bundled sidecar)
 instead of reimplementing a render pipeline. See `docs/theme-architecture.md`
 for the theme-compatibility and cross-backend design thinking.
 
+# Install
+
+Download the latest release for your OS from
+[this repo's Releases page](https://github.com/sean-abbott/beedance-ssg-editor/releases) -
+no build tools or command line needed.
+
+- **macOS**: download the `.dmg` (`aarch64` for Apple Silicon Macs, `x86_64`
+  for Intel), open it, and drag the app into Applications.
+- **Windows**: download and run the `.msi` installer.
+- **Linux**: download the `.deb`, `.rpm`, or `.AppImage`, whichever matches
+  your distribution - or just download the plain binary and run it directly.
+
+## About the security warning on first launch
+
+The first time you open it, macOS or Windows will likely show a warning -
+macOS says it's "from an unidentified developer"; Windows says "Windows
+protected your PC". Both mean the same thing: this app isn't signed with a
+paid developer certificate (Apple charges $99/year, Windows code-signing
+certificates cost money too), not that anything's actually wrong with it.
+Every unsigned app gets this same warning, regardless of whether it's
+trustworthy - it's not a judgment about this app specifically.
+
+- **macOS**: right-click (or Control-click) the app in Applications and
+  choose "Open", then confirm in the dialog that appears. You only need to
+  do this once.
+- **Windows**: click "More info", then "Run anyway".
+
+If you'd rather not take that on trust: this project is open source (see
+`LICENSE`), the release you downloaded was built directly from this
+repository's own source by GitHub's public build servers (not hand-assembled
+and uploaded), and you're always free to build it yourself from source
+instead (see "Setup" below).
+
 # Setup
 
 ```

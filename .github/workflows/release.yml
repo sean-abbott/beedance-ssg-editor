@@ -1,0 +1,98 @@
+name: Release
+
+# Push a tag like "app-v0.1.0" (matching the version in src-tauri/Cargo.toml
+# and tauri.conf.json) to build native installers for macOS (both Apple
+# Silicon and Intel), Windows, and Linux, and attach them to a draft GitHub
+# Release - review and publish that release by hand. workflow_dispatch is
+# there too for a manual one-off rebuild without needing a new tag.
+#
+# Free on GitHub-hosted "standard" runners (this matrix only uses those, not
+# the separately-priced "larger runners") for a public repository, on every
+# OS including macOS/Windows - verified against GitHub's own billing docs
+# 2026-09-27, not assumed.
+on:
+  push:
+    tags:
+      - "app-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "macos-latest"
+            target: "aarch64-apple-darwin"
+          - platform: "macos-latest"
+            target: "x86_64-apple-darwin"
+          - platform: "ubuntu-22.04"
+            target: ""
+          - platform: "windows-latest"
+            target: ""
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same package list as build.Dockerfile (already verified working
+      # there), plus patchelf/xdg-utils, which that image never needed since
+      # it only ever ran `cargo check`, never a real bundle (AppImage
+      # creation needs patchelf; the .desktop entry needs xdg-utils).
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            pkg-config \
+            libdbus-1-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust build cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      # This app has no JS build step at all (dist/ is plain HTML/JS/CSS,
+      # see the README) - no setup-node/npm install step needed here, unlike
+      # most Tauri app CI recipes.
+
+      # Windows runners default new steps to PowerShell - `shell: bash`
+      # picks up the Git Bash already installed there, same as this script
+      # already supports for a local Windows dev with Git Bash/MSYS/WSL.
+      - name: Fetch the Zola sidecar
+        shell: bash
+        run: ./scripts/fetch-zola-sidecar.sh
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: app-v__VERSION__
+          releaseName: "beedance-ssg-editor v__VERSION__"
+          releaseBody: |
+            See the assets below to download and install - macOS
+            (`aarch64` for Apple Silicon, `x86_64` for Intel), Windows
+            (`.msi`), or Linux (`.deb`/`.rpm`/`.AppImage`). See the README's
+            "Install" section for first-run instructions.
+          releaseDraft: true
+          args: ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }}
