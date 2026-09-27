@@ -16,6 +16,55 @@
     </div>
   </header>
 
+  <div id="onboarding-welcome-panel" style="position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(420px, 90%); padding: 16px; background: var(--panel);">
+      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Welcome</h3>
+      <p style="font-size: 13px; margin: 0 0 14px;">
+        First, a couple of things worth setting up: your name (added to
+        pages you edit) and, if you'll be syncing with GitHub, your access
+        token. You can always change these later in Settings.
+      </p>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="onboarding-welcome-skip" class="secondary">Skip setup for now</button>
+        <button id="onboarding-welcome-continue">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="onboarding-site-panel" style="position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(460px, 90%); padding: 16px; background: var(--panel);">
+      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Choose a site</h3>
+      <p style="font-size: 13px; margin: 0 0 14px;">
+        Start with the bundled sample site to explore the app, or clone a
+        real site's repository from GitHub.
+      </p>
+
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 14px;">
+        <button id="onboarding-site-start-fresh" class="secondary">Start with the sample site</button>
+      </div>
+
+      <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;">
+        <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Or clone a site from GitHub</legend>
+
+        <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+          Repository URL
+          <input type="text" id="onboarding-clone-url" style="width: 100%; margin-top: 4px;" placeholder="git@github.com:you/your-site.git" />
+        </label>
+
+        <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 8px;">
+          <button type="button" id="onboarding-clone-choose-folder" class="secondary">Choose destination folder&hellip;</button>
+          <span id="onboarding-clone-destination" style="font-size: 12px; color: var(--muted);">(none chosen)</span>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end;">
+          <button type="button" id="onboarding-clone-confirm">Clone</button>
+        </div>
+      </fieldset>
+
+      <div id="onboarding-site-status" style="font-size: 12px; color: var(--muted); margin: 10px 0 0;"></div>
+    </div>
+  </div>
+
   <div id="settings-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
     <div class="panel" style="width: min(440px, 90%); max-height: 85vh; padding: 16px; background: var(--panel); display: flex; flex-direction: column;">
       <h3 style="margin: 0 0 12px; font-size: 13px; color: var(--muted); flex-shrink: 0;">Settings</h3>

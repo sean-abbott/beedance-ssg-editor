@@ -419,3 +419,15 @@ pub fn git_pull(auth: State<GitAuthConfigState>) -> Result<String, String> {
     let cfg = auth.0.lock().unwrap().clone();
     run_git_authed(&dir, &["pull", "origin", &branch], &cfg)
 }
+
+/// Clones a GitHub repo to `destination` (an absolute path - the frontend
+/// gets one from its own directory picker, same as "Change site...") - used
+/// by the first-run "start fresh or clone a site" onboarding flow. Not
+/// scoped to the CURRENTLY edited site at all (doesn't call ensure_site_repo
+/// or use site_dir()) since the whole point is picking a NEW site directory
+/// that doesn't exist as a git repo, or even as a directory, yet.
+#[tauri::command]
+pub fn git_clone_repo(url: String, destination: String, auth: State<GitAuthConfigState>) -> Result<String, String> {
+    let cfg = auth.0.lock().unwrap().clone();
+    run_git_authed(Path::new("."), &["clone", &url, &destination], &cfg)
+}

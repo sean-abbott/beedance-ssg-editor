@@ -36,6 +36,17 @@ export function setCurrentGithubUsername(name) {
   currentGithubUsername = name;
 }
 
+// Non-null while looking at someone else's open pull request read-only -
+// {number, title, authorLogin, url} (see git-workflow.js, which owns
+// entering/exiting review mode). Lives here, not there, so content-
+// editing.js's own section-aware toolbar guard (fmt-date/fmt-tags) can
+// compose with it directly instead of both independently fighting over the
+// same buttons' .disabled state.
+export let reviewModeActive = null;
+export function setReviewModeActive(value) {
+  reviewModeActive = value;
+}
+
 // Zola's `date` field is naive (no timezone) and this app's users are a
 // single local group, so "now" means the browser's own local wall-clock
 // time, formatted the same way whether it's an auto-stamp (create_post)
@@ -480,6 +491,24 @@ invoke("get_author_settings")
   })
   .catch(() => {});
 
+// Shared by the "Change site..." button below and onboarding.js's clone
+// flow - leaving the current site entirely, so every open tab against it
+// gets flushed/closed first (closeTab already saves pending edits and tells
+// the backend to stop tracking each path), before switching underneath.
+export const switchToSiteDir = async (folder) => {
+  for (const path of [...tabs.keys()]) closeTab(path);
+
+  await invoke("zola_stop");
+  document.getElementById("phone-toggle").checked = false;
+
+  const result = await invoke("set_site_dir", { path: folder });
+  currentSiteDir = folder;
+  siteDirEl.textContent = result;
+
+  await refreshFileList();
+  if (fileSelect.value) openTab(fileSelect.value);
+};
+
 document.getElementById("change-site").addEventListener("click", async () => {
   try {
     const folder = await window.__TAURI__.dialog.open({
@@ -489,21 +518,7 @@ document.getElementById("change-site").addEventListener("click", async () => {
       defaultPath: currentSiteDir,
     });
     if (!folder) return;
-
-    // Leaving the current site entirely - flush and close every open tab
-    // against it (closeTab already saves pending edits and tells the
-    // backend to stop tracking each path) before switching underneath.
-    for (const path of [...tabs.keys()]) closeTab(path);
-
-    await invoke("zola_stop");
-    document.getElementById("phone-toggle").checked = false;
-
-    const result = await invoke("set_site_dir", { path: folder });
-    currentSiteDir = folder;
-    siteDirEl.textContent = result;
-
-    await refreshFileList();
-    if (fileSelect.value) openTab(fileSelect.value);
+    await switchToSiteDir(folder);
   } catch (err) {
     siteDirEl.textContent = "ERROR: " + err;
   }

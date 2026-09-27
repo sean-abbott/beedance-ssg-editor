@@ -21,6 +21,8 @@ import {
   currentGithubUsername,
   banner,
   bannerMessage,
+  reviewModeActive,
+  setReviewModeActive,
 } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -58,13 +60,13 @@ reviewModeLink.addEventListener("click", (e) => {
   }
 });
 
-// Non-null while looking at someone else's open pull request read-only -
-// {number, title, authorLogin, url}. Sean's call: reviewing someone
-// else's work should never risk accidentally editing it, so this
-// disables every content-mutating control in the app, not just the
-// editor textarea itself.
-let reviewModeActive = null;
-
+// reviewModeActive itself lives in editor-core.js (see its own comment for
+// why) - Sean's call: reviewing someone else's work should never risk
+// accidentally editing it, so this disables every content-mutating control
+// in the app, not just the editor textarea itself. fmt-date/fmt-tags are
+// deliberately NOT in this list - content-editing.js's own
+// updateSectionAwareToolbar composes reviewModeActive with its section
+// check for those two, so this list doesn't fight it over the same buttons.
 const REVIEW_MODE_DISABLED_IDS = [
   "save",
   "rename-content",
@@ -85,8 +87,6 @@ const REVIEW_MODE_DISABLED_IDS = [
   "fmt-ol",
   "fmt-image",
   "fmt-image-url",
-  "fmt-date",
-  "fmt-tags",
 ];
 
 const applyReviewModeUI = () => {
@@ -96,6 +96,12 @@ const applyReviewModeUI = () => {
     const el = document.getElementById(id);
     if (el) el.disabled = active;
   }
+  // fmt-date/fmt-tags (and images.js's alignment toolbar) all key off this
+  // same event for their own active-tab-dependent state - re-dispatching it
+  // here means they recompute immediately on every review-mode transition,
+  // not just on the next actual tab switch (which may not always follow
+  // immediately - see updateSectionAwareToolbar's own comment).
+  document.dispatchEvent(new Event("beedance:tab-changed"));
   localDraftsNormal.style.display = active ? "none" : "block";
   localDraftsReviewActive.style.display = active ? "block" : "none";
   reviewPrNormal.style.display = active ? "none" : "block";
@@ -293,7 +299,7 @@ const startReviewingPr = async (pr) => {
     }
     await invoke("git_checkout_remote_branch", { branch: pr.branch });
     closeAllTabsQuietly();
-    reviewModeActive = { number: pr.number, title: pr.title, authorLogin: pr.authorLogin, url: pr.url };
+    setReviewModeActive({ number: pr.number, title: pr.title, authorLogin: pr.authorLogin, url: pr.url });
     applyReviewModeUI();
     await refreshFileList();
     if (fileSelect.value) await openTab(fileSelect.value);
@@ -313,7 +319,7 @@ const exitReviewMode = async () => {
       await invoke("git_checkout_branch", { branch: live.name });
     }
     closeAllTabsQuietly();
-    reviewModeActive = null;
+    setReviewModeActive(null);
     applyReviewModeUI();
     await refreshFileList();
     if (fileSelect.value) await openTab(fileSelect.value);

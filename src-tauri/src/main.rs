@@ -22,6 +22,23 @@ use preview::{LogBacklog, ServeState, LOG_LABEL, PREVIEW_LABEL};
 use r2::{R2PersonalConfigState, R2SiteConfigState};
 use site::{OpenFiles, SelfWriteTracker, WatcherState};
 
+/// Kills the zola sidecar (if running) and closes the preview/log windows
+/// (if open) - called from both an ordinary main-window close AND an
+/// app-level quit (see main()'s run callback for why both are needed).
+fn cleanup_preview(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<ServeState>() {
+        if let Some(child) = state.0.lock().unwrap().take() {
+            let _ = child.kill();
+        }
+    }
+    if let Some(preview) = app.get_webview_window(PREVIEW_LABEL) {
+        let _ = preview.close();
+    }
+    if let Some(log_win) = app.get_webview_window(LOG_LABEL) {
+        let _ = log_win.close();
+    }
+}
+
 fn main() {
     // Both ureq and rust-s3 pull in rustls transitively; with more than one
     // in the dependency graph, rustls refuses to guess which crypto backend
@@ -30,10 +47,11 @@ fn main() {
     // (found the hard way via beedance-cli's own real-world test-upload run).
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(ServeState(Mutex::new(None)))
+        .manage(preview::PreviewPortState(Mutex::new(None)))
         .manage(LogBacklog(Mutex::new(Vec::new())))
         .manage(SelfWriteTracker(Mutex::new(HashMap::new())))
         .manage(OpenFiles(Mutex::new(HashSet::new())))
@@ -46,24 +64,6 @@ fn main() {
         .setup(|app| {
             site::spawn_content_watcher(app.handle().clone());
             Ok(())
-        })
-        .on_window_event(|window, event| {
-            // Closing the main window should take the preview (window + zola
-            // serve process) down with it, not leave it orphaned.
-            if window.label() == "main" && matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
-                let app = window.app_handle();
-                if let Some(state) = app.try_state::<ServeState>() {
-                    if let Some(child) = state.0.lock().unwrap().take() {
-                        let _ = child.kill();
-                    }
-                }
-                if let Some(preview) = app.get_webview_window(PREVIEW_LABEL) {
-                    let _ = preview.close();
-                }
-                if let Some(log_win) = app.get_webview_window(LOG_LABEL) {
-                    let _ = log_win.close();
-                }
-            }
         })
         .invoke_handler(tauri::generate_handler![
             preview::zola_version,
@@ -83,6 +83,7 @@ fn main() {
             git::git_checkout_branch,
             git::git_checkout_remote_branch,
             git::git_check_main_drift,
+            git::git_clone_repo,
             github::github_list_open_prs,
             preview::zola_serve,
             preview::zola_stop,
@@ -107,6 +108,8 @@ fn main() {
             content::remove_front_matter_date,
             site::get_site_dir,
             site::set_site_dir,
+            site::has_completed_onboarding,
+            site::mark_onboarding_complete,
             site::read_file,
             site::close_file,
             site::write_file,
@@ -124,6 +127,24 @@ fn main() {
             r2::get_r2_personal_config,
             r2::set_r2_personal_config
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // A plain .on_window_event(CloseRequested) hook (what this used to be)
+    // only reliably fires for a literal click on the main window's own
+    // close button. Quitting via Cmd+Q or the Dock/menu-bar Quit item on
+    // macOS goes through the app-level quit flow instead, which surfaces
+    // here as RunEvent::ExitRequested, NOT a WindowEvent - found the hard
+    // way testing on a real Mac, where quitting that way left zola serve
+    // running (and its port held) after the app itself had already exited.
+    // Handling both keeps every way of closing the app covered, on every
+    // platform - cleanup_preview is idempotent (ServeState.take() makes a
+    // second call a no-op) so overlap between the two is harmless.
+    app.run(|app_handle, event| match event {
+        tauri::RunEvent::ExitRequested { .. } => cleanup_preview(app_handle),
+        tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { .. }, .. } if label == "main" => {
+            cleanup_preview(app_handle);
+        }
+        _ => {}
+    });
 }

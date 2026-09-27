@@ -19,7 +19,6 @@ pub const THEMES_DIR: &str = "themes";
 pub const CONTENT_EXT: &str = "md";
 pub const TEMPLATE_EXT: &str = "html";
 pub const SITE_CONFIG_FILE: &str = "config.toml";
-pub const DEFAULT_SERVE_PORT: u16 = 1111;
 
 /// True if `path`'s filename is one of Zola's two "this directory can
 /// already colocate assets" conventions: `index.md` (a leaf page turned into
@@ -28,6 +27,18 @@ pub const DEFAULT_SERVE_PORT: u16 = 1111;
 /// into a nested bundle the way a plain leaf page does).
 pub fn is_bundle_page(path: &Path) -> bool {
     path.file_name().is_some_and(|f| f == "index.md" || f == "_index.md")
+}
+
+/// True if `path` is specifically a SECTION index (`_index.md`), as opposed
+/// to a plain page or a page bundle's `index.md`. Matters beyond is_bundle_page
+/// because Zola's Section front matter schema is a genuinely different,
+/// smaller set of recognized fields than Page's - `updated` (and `date`)
+/// belong to Page only. Stamping `updated` onto a section's front matter
+/// isn't just redundant, it's a hard TOML parse error ("unknown field
+/// `updated`") that breaks the whole build - found the hard way testing on
+/// a real site's content/_index.md.
+pub fn is_section_index(path: &Path) -> bool {
+    path.file_name().is_some_and(|f| f == "_index.md")
 }
 
 /// Looks like a real Zola site directory (has the SSG's own config file) -

@@ -80,6 +80,27 @@ pub fn get_site_dir() -> String {
     site_dir().to_string_lossy().to_string()
 }
 
+const ONBOARDING_MARKER_FILE: &str = "onboarding-complete";
+
+/// Whether the first-run onboarding flow (Settings, then pick/clone a site)
+/// has ever finished - a dedicated marker file rather than inferring it from
+/// whether site_dir's own pointer file exists, since "start fresh" (keep
+/// using the bundled sample-site) is a legitimate way to finish onboarding
+/// that never writes that file at all. `just uninstall` removes this
+/// alongside the rest of config_dir(), correctly making onboarding run again
+/// on the next launch.
+#[tauri::command]
+pub fn has_completed_onboarding() -> bool {
+    config_dir().map(|dir| dir.join(ONBOARDING_MARKER_FILE).exists()).unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn mark_onboarding_complete() -> Result<(), String> {
+    let dir = config_dir().ok_or_else(|| "could not resolve a config directory for this platform".to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(ONBOARDING_MARKER_FILE), "").map_err(|e| e.to_string())
+}
+
 /// Lets the frontend ask whether a content path is already a Zola bundle
 /// page/section (see zola::is_bundle_page) instead of hand-copying that
 /// convention in JS - a duplicated copy of exactly this check is what caused
@@ -356,7 +377,14 @@ pub fn write_file(
         return Ok(content);
     }
 
-    let content = crate::frontmatter::stamp_top_level_field(&content, "updated", &datetime).unwrap_or(content);
+    // `updated` is a Page-only front-matter field - Zola's Section schema
+    // doesn't recognize it at all, and stamping it there is a hard build
+    // error ("unknown field `updated`"), not just redundant metadata.
+    let content = if zola::is_section_index(&full) {
+        content
+    } else {
+        crate::frontmatter::stamp_top_level_field(&content, "updated", &datetime).unwrap_or(content)
+    };
     let content = crate::frontmatter::append_author(&content, author);
 
     // Mark the self-write window for THIS path BEFORE writing, not after: the

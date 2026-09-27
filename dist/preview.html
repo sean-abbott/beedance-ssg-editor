@@ -27,26 +27,46 @@
     <button id="forward" title="Forward" aria-label="Forward">&rarr;</button>
     <button id="reload" title="Reload" aria-label="Reload">&#8635;</button>
   </div>
-  <iframe id="frame" src="http://127.0.0.1:1111"></iframe>
+  <iframe id="frame"></iframe>
 
   <script>
     const frame = document.getElementById("frame");
 
-    // Set by the Rust side's initialization_script before this page's own
-    // script runs, so the window opens straight on the page being edited
-    // instead of always landing on the site root.
-    if (window.__BEEDANCE_PREVIEW_TARGET__) {
-      frame.src = "http://127.0.0.1:1111" + window.__BEEDANCE_PREVIEW_TARGET__;
-    }
+    // No fixed port - zola_serve picks a fresh free one every run (see
+    // preview.rs), passed in via this injected variable at window creation
+    // and again on every "preview-navigate" (a site/tab switch reusing this
+    // same window always implies a fresh port, since zola_serve always
+    // picks a new one).
+    let currentPort = window.__BEEDANCE_PREVIEW_PORT__;
+    let currentPath = window.__BEEDANCE_PREVIEW_TARGET__ || "/";
+
+    // The embedded webview's HTTP cache (WKWebView on macOS in particular)
+    // persists across app restarts, tied to a shared on-disk data store, not
+    // to this one window - so a genuinely fresh preview window can still
+    // serve a stale cached response left over from an earlier session (e.g.
+    // before switching to a different site), even though zola itself is
+    // serving fresh content. Found the hard way testing on a real Mac. A
+    // cache-busting query param makes every navigation a byte-different
+    // URL, forcing a real network fetch instead of a cache hit, regardless
+    // of what an earlier session cached.
+    const navigateFrame = (path, port) => {
+      currentPath = path;
+      currentPort = port;
+      const separator = path.includes("?") ? "&" : "?";
+      frame.src = `http://127.0.0.1:${port}${path}${separator}_t=${Date.now()}`;
+    };
+
+    navigateFrame(currentPath, currentPort);
 
     // "Start preview" clicked again while this window was already open (e.g.
-    // after switching tabs) - navigate in place instead of needing a reopen.
+    // after switching tabs, or after switching sites, which always means a
+    // new port too) - navigate in place instead of needing a reopen.
     window.__TAURI__.event.listen("preview-navigate", (event) => {
-      frame.src = "http://127.0.0.1:1111" + event.payload;
+      navigateFrame(event.payload.path, event.payload.port);
     });
 
     // history.back()/forward() are allowed cross-origin per spec even though
-    // the iframe (127.0.0.1:1111) and this page (tauri's own origin) differ.
+    // the iframe (127.0.0.1:<port>) and this page (tauri's own origin) differ.
     document.getElementById("back").addEventListener("click", () => {
       frame.contentWindow.history.back();
     });
@@ -54,10 +74,11 @@
       frame.contentWindow.history.forward();
     });
 
-    // Reassigning the iframe's own src (an element the parent owns) reloads
-    // it without needing cross-origin access to contentWindow.location.
+    // Re-navigating with a fresh cache-busting timestamp, not just
+    // reassigning the same src (frame.src = frame.src is a no-op in some
+    // engines, and even when it isn't, it can still be served from cache).
     document.getElementById("reload").addEventListener("click", () => {
-      frame.src = frame.src;
+      navigateFrame(currentPath, currentPort);
     });
   </script>
 </body>

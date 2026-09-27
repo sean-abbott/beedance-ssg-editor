@@ -17,6 +17,7 @@ import {
   openTab,
   closeTabQuietly,
   currentAuthorName,
+  reviewModeActive,
 } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -481,3 +482,28 @@ wirePanelKeys(newContentPanel, "new-content-confirm", "new-content-cancel");
 wirePanelKeys(datePanel, "date-panel-confirm", "date-panel-cancel");
 wirePanelKeys(renamePanel, "rename-panel-confirm", "rename-panel-cancel");
 wirePanelKeys(tagsPanel, null, "tags-panel-cancel");
+
+// Zola's Section front matter is a genuinely smaller, different set of
+// recognized fields than Page's - no `date`, no `taxonomies` (tags), only
+// `extra` as a catch-all. Stamping either onto a section index (_index.md)
+// isn't just wrong, it's a hard TOML "unknown field" build error - the same
+// class of bug found and fixed for the automatic `updated` stamp (site.rs's
+// write_file). Guarded here, at the only two buttons that could trigger it,
+// rather than in the backend commands themselves, which take raw content
+// text with no path at all to check against.
+const fmtDateButton = document.getElementById("fmt-date");
+const fmtTagsButton = document.getElementById("fmt-tags");
+
+// Composed with reviewModeActive (not just the section check alone) so this
+// doesn't fight git-workflow.js's own review-mode disabling over the same
+// two buttons - each recomputes independently from the same shared state
+// instead of one overwriting the other's reason for disabling.
+const updateSectionAwareToolbar = () => {
+  const isSection = activeTab != null && activeTab.split("/").pop() === "_index.md";
+  const disabled = isSection || reviewModeActive != null;
+  fmtDateButton.disabled = disabled;
+  fmtTagsButton.disabled = disabled;
+  fmtDateButton.title = isSection ? "Not available for section pages" : "";
+  fmtTagsButton.title = isSection ? "Not available for section pages" : "";
+};
+document.addEventListener("beedance:tab-changed", updateSectionAwareToolbar);

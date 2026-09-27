@@ -46,7 +46,10 @@ const lanAddressEl = document.getElementById("lan-address");
 document.getElementById("open-settings").addEventListener("click", async () => {
   try {
     const ip = await invoke("get_lan_ip");
-    lanAddressEl.textContent = `This machine's address on your network: http://${ip}:1111`;
+    // No fixed port to show here - each "Start preview" picks a fresh free
+    // one (see preview.rs), reported in the editor's status message once
+    // it's actually running.
+    lanAddressEl.textContent = `This machine's address on your network: ${ip} (the port shows in the status message after you start the preview)`;
   } catch (err) {
     lanAddressEl.textContent = "Couldn't determine a network address: " + err;
   }

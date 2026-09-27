@@ -11,7 +11,6 @@ use tauri_plugin_shell::ShellExt;
 
 use crate::content::resolve_preview_path;
 use crate::site::site_dir;
-use crate::zola;
 
 pub const PREVIEW_LABEL: &str = "preview";
 // "idiomatic average web page" desktop viewport, and a common phone reference size.
@@ -22,6 +21,27 @@ pub const LOG_LABEL: &str = "log";
 const LOG_WINDOW_SIZE: (f64, f64) = (640.0, 480.0);
 
 pub struct ServeState(pub Mutex<Option<CommandChild>>);
+
+/// The port the CURRENT (or most recent) zola_serve run picked - a fresh
+/// free port every time (see pick_free_port), not a fixed one. Needed so a
+/// reused preview window (open_or_focus_preview_window) and the frontend's
+/// LAN-address display know what port actually applies right now.
+pub struct PreviewPortState(pub Mutex<Option<u16>>);
+
+/// Asks the OS for a free port instead of assuming a fixed one is available -
+/// found the hard way testing on a real Mac that a stale zola process (or,
+/// in principle, anything else) already holding a fixed port could make a
+/// fresh serve attempt silently bind nothing new, while wait_for_port below
+/// still saw *something* listening and reported success. A small TOCTOU race
+/// exists between closing this probe listener and zola binding the same
+/// port, same as any tool using this pattern - acceptable for a local
+/// desktop app talking to its own sidecar process.
+fn pick_free_port() -> Result<u16, String> {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .map(|addr| addr.port())
+        .map_err(|e| e.to_string())
+}
 
 /// Backlog of the current zola serve run's log lines, so the log window
 /// shows what already happened when opened after the fact - "zola-log" is a
@@ -62,26 +82,34 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
-fn open_or_focus_preview_window(app: &tauri::AppHandle, target_path: Option<&str>) -> Result<(), String> {
+#[derive(serde::Serialize, Clone, Copy)]
+struct PreviewNavigatePayload<'a> {
+    path: &'a str,
+    port: u16,
+}
+
+fn open_or_focus_preview_window(app: &tauri::AppHandle, target_path: Option<&str>, port: u16) -> Result<(), String> {
+    let target = target_path.unwrap_or("/");
+
     if let Some(win) = app.get_webview_window(PREVIEW_LABEL) {
         win.set_focus().map_err(|e| e.to_string())?;
         // Window's already open (e.g. hitting "Start preview" again after
-        // switching tabs) - navigate its iframe rather than needing it
-        // reopened, since the initial nav script below only runs on creation.
-        if let Some(target) = target_path {
-            let _ = win.emit("preview-navigate", target);
-        }
+        // switching tabs, or after a site switch, which always picks a
+        // fresh port) - navigate its iframe rather than needing it
+        // reopened, since the initial nav script below only runs on
+        // creation. Always sends the CURRENT port - the window may have
+        // been created for an earlier, now-dead port.
+        let _ = win.emit("preview-navigate", PreviewNavigatePayload { path: target, port });
         return Ok(());
     }
 
-    let mut builder = WebviewWindowBuilder::new(app, PREVIEW_LABEL, WebviewUrl::App("preview.html".into()))
+    let target_json = serde_json::to_string(target).map_err(|e| e.to_string())?;
+    let builder = WebviewWindowBuilder::new(app, PREVIEW_LABEL, WebviewUrl::App("preview.html".into()))
         .title("Preview")
-        .inner_size(DESKTOP_PREVIEW_SIZE.0, DESKTOP_PREVIEW_SIZE.1);
-
-    if let Some(target) = target_path {
-        let target_json = serde_json::to_string(target).map_err(|e| e.to_string())?;
-        builder = builder.initialization_script(&format!("window.__BEEDANCE_PREVIEW_TARGET__ = {target_json};"));
-    }
+        .inner_size(DESKTOP_PREVIEW_SIZE.0, DESKTOP_PREVIEW_SIZE.1)
+        .initialization_script(&format!(
+            "window.__BEEDANCE_PREVIEW_TARGET__ = {target_json}; window.__BEEDANCE_PREVIEW_PORT__ = {port};"
+        ));
 
     builder.build().map_err(|e| e.to_string())?;
 
@@ -115,6 +143,7 @@ pub fn open_log_window(app: tauri::AppHandle, backlog: tauri::State<LogBacklog>)
 pub async fn zola_serve(
     app: tauri::AppHandle,
     state: tauri::State<'_, ServeState>,
+    port_state: tauri::State<'_, PreviewPortState>,
     backlog: tauri::State<'_, LogBacklog>,
     network: bool,
     current_content_path: Option<String>,
@@ -127,7 +156,11 @@ pub async fn zola_serve(
     backlog.0.lock().unwrap().clear();
     let _ = app.emit("zola-log-reset", ());
 
-    let mut args = vec!["serve".to_string()];
+    // A fresh free port every run, not a fixed one - see pick_free_port.
+    let port = pick_free_port()?;
+    *port_state.0.lock().unwrap() = Some(port);
+
+    let mut args = vec!["serve".to_string(), "--port".to_string(), port.to_string()];
     if network {
         // Binding 0.0.0.0 still answers on 127.0.0.1 too, so wait_for_port
         // below needs no change. base-url also needs to follow, or asset/
@@ -137,7 +170,7 @@ pub async fn zola_serve(
         args.push("--interface".to_string());
         args.push("0.0.0.0".to_string());
         args.push("--base-url".to_string());
-        args.push(format!("http://{lan_ip}:{}", zola::DEFAULT_SERVE_PORT));
+        args.push(format!("http://{lan_ip}:{port}"));
     }
 
     let sidecar = app.shell().sidecar("zola").map_err(|e| e.to_string())?;
@@ -183,26 +216,24 @@ pub async fn zola_serve(
     // before), so that loop used to freeze the whole app's UI for up to 5s
     // every time preview started. spawn_blocking moves it off the main
     // thread; the command staying `async fn` is what makes that possible.
-    let port_ready = tauri::async_runtime::spawn_blocking(|| wait_for_port(zola::DEFAULT_SERVE_PORT, Duration::from_secs(5)))
+    let port_ready = tauri::async_runtime::spawn_blocking(move || wait_for_port(port, Duration::from_secs(5)))
         .await
         .map_err(|e| e.to_string())?;
     if !port_ready {
         return Err(format!(
-            "zola serve did not start listening on 127.0.0.1:{} within 5s - check the log panel below for the actual error",
-            zola::DEFAULT_SERVE_PORT
+            "zola serve did not start listening on 127.0.0.1:{port} within 5s - check the log panel below for the actual error"
         ));
     }
     let target_path = current_content_path.and_then(resolve_preview_path);
-    open_or_focus_preview_window(&app, target_path.as_deref())?;
+    open_or_focus_preview_window(&app, target_path.as_deref(), port)?;
 
     if network {
         let lan_ip = local_ip_address::local_ip().map_err(|e| e.to_string())?;
         Ok(format!(
-            "zola serve started on http://127.0.0.1:{0} (also reachable on your network at http://{lan_ip}:{0})",
-            zola::DEFAULT_SERVE_PORT
+            "zola serve started on http://127.0.0.1:{port} (also reachable on your network at http://{lan_ip}:{port})"
         ))
     } else {
-        Ok(format!("zola serve started on http://127.0.0.1:{}", zola::DEFAULT_SERVE_PORT))
+        Ok(format!("zola serve started on http://127.0.0.1:{port}"))
     }
 }
 

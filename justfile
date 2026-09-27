@@ -28,6 +28,12 @@ add-theme name url:
 set-site path:
     ./scripts/set-site.sh {{path}}
 
+# Remove this app's personal config (site pointer, author name, R2/GitHub
+# credentials) - backed up by default; pass --no-backup to skip that.
+# Never touches a site's own content or repo.
+uninstall *ARGS:
+    ./scripts/uninstall.sh {{ARGS}}
+
 # Build the Docker image used by docker-check/docker-build (see build.Dockerfile)
 docker-image:
     docker build -t beedance-tauri-check -f build.Dockerfile .
