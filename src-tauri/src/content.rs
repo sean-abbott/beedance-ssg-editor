@@ -599,6 +599,70 @@ pub fn set_content_tags(content: String, tags: Vec<String>) -> Result<String, St
         .ok_or_else(|| "This file has no front matter block to set tags in.".to_string())
 }
 
+/// The pure, testable core of rewrite_tag: computes this ONE file's updated
+/// tag list, or None if `from` isn't present at all (nothing to do). Case-
+/// insensitive matching/de-duplication throughout, the same convention
+/// list_all_tags and the per-post tag picker already use - this site's real
+/// content already has both "Newsletter" and "newsletter" as separate tags
+/// on some posts, which this also quietly cleans up whenever either one is
+/// the rename/merge target.
+fn rewritten_tags(tags: &[String], from: &str, to: Option<&str>) -> Option<Vec<String>> {
+    if !tags.iter().any(|t| t.eq_ignore_ascii_case(from)) {
+        return None;
+    }
+    let mut updated: Vec<String> = Vec::new();
+    for t in tags {
+        if t.eq_ignore_ascii_case(from) {
+            if let Some(new_tag) = to {
+                if !updated.iter().any(|u: &String| u.eq_ignore_ascii_case(new_tag)) {
+                    updated.push(new_tag.to_string());
+                }
+            }
+            // to == None: drop it entirely (delete).
+        } else if !updated.iter().any(|u| u.eq_ignore_ascii_case(t)) {
+            updated.push(t.clone());
+        }
+    }
+    Some(updated)
+}
+
+/// Deletes (`to: None`) or renames/merges (`to: Some(new)`) a tag across
+/// EVERY content file that has it - delete and rename/merge are the exact
+/// same underlying rewrite (see rewritten_tags), just with a different
+/// target; whether `to` already exists on some other page (a merge) or is
+/// brand new everywhere (a plain rename) doesn't change what this actually
+/// does. Returns how many files were actually changed.
+#[tauri::command]
+pub fn rewrite_tag(from: String, to: Option<String>, tracker: tauri::State<SelfWriteTracker>) -> Result<usize, String> {
+    let dir = site_dir();
+    let mut content_paths = Vec::new();
+    collect_files_with_ext(&dir.join(zola::CONTENT_DIR), &dir, zola::CONTENT_EXT, &mut content_paths);
+
+    let mut changed = 0;
+    for rel in content_paths {
+        let full = dir.join(&rel);
+        let Ok(raw) = std::fs::read_to_string(&full) else { continue };
+        let Some(block) = front_matter_block(&raw) else { continue };
+        let Some(raw_tags) = front_matter_field(block, "tags") else { continue };
+        let tags = parse_toml_string_array(&raw_tags);
+
+        let Some(updated_tags) = rewritten_tags(&tags, &from, to.as_deref()) else { continue };
+
+        let updated = stamp_table_field(&raw, "taxonomies", "tags", &format_toml_string_array(&updated_tags))
+            .ok_or_else(|| format!("{rel}: no front matter block to update tags in"))?;
+
+        // Registered as a self-write (like write_file/delete_content already
+        // do for their own out-of-band writes) so the live content watcher
+        // doesn't mistake this for an external edit landing on a tab that
+        // happens to still be open on this exact file.
+        tracker.0.lock().unwrap().insert(full.clone(), Instant::now());
+        std::fs::write(&full, updated).map_err(|e| e.to_string())?;
+        changed += 1;
+    }
+
+    Ok(changed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -637,5 +701,51 @@ mod tests {
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         assert!(!section_is_empty(&dir, &index));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn tags(strs: &[&str]) -> Vec<String> {
+        strs.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn rewritten_tags_none_when_from_absent() {
+        assert_eq!(rewritten_tags(&tags(&["a", "b"]), "c", None), None);
+    }
+
+    #[test]
+    fn rewritten_tags_deletes_when_to_is_none() {
+        assert_eq!(rewritten_tags(&tags(&["a", "b", "c"]), "b", None), Some(tags(&["a", "c"])));
+    }
+
+    #[test]
+    fn rewritten_tags_renames_to_a_new_name() {
+        assert_eq!(rewritten_tags(&tags(&["a", "b"]), "a", Some("z")), Some(tags(&["z", "b"])));
+    }
+
+    #[test]
+    fn rewritten_tags_merges_into_an_existing_tag_without_duplicating() {
+        // "urgent" merged into "volunteer", which the post already has.
+        assert_eq!(rewritten_tags(&tags(&["urgent", "volunteer"]), "urgent", Some("volunteer")), Some(tags(&["volunteer"])));
+    }
+
+    #[test]
+    fn rewritten_tags_matching_is_case_insensitive() {
+        assert_eq!(rewritten_tags(&tags(&["Newsletter"]), "newsletter", Some("News")), Some(tags(&["News"])));
+    }
+
+    #[test]
+    fn rewritten_tags_cleans_up_an_existing_case_duplicate_on_rename() {
+        // A post that already has both casings of the same real-world tag -
+        // renaming/merging either one into the canonical spelling should
+        // collapse them to a single entry, not leave a duplicate.
+        assert_eq!(
+            rewritten_tags(&tags(&["Newsletter", "newsletter", "news"]), "Newsletter", Some("newsletter")),
+            Some(tags(&["newsletter", "news"]))
+        );
+    }
+
+    #[test]
+    fn rewritten_tags_leaves_unrelated_tags_untouched() {
+        assert_eq!(rewritten_tags(&tags(&["a", "b", "c"]), "b", Some("z")), Some(tags(&["a", "z", "c"])));
     }
 }

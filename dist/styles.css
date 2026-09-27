@@ -226,6 +226,14 @@
       white-space: nowrap;
     }
     .review-row .review-row-status { color: var(--muted); flex-shrink: 0; }
+    .manage-tag-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+    }
+    .manage-tag-row .manage-tag-name { flex: 1; min-width: 0; }
+    .manage-tag-row button { flex-shrink: 0; padding: 2px 8px; }
     .menu-entry-row {
       display: flex;
       align-items: center;

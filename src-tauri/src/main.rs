@@ -106,6 +106,7 @@ fn main() {
             content::list_all_tags,
             content::get_content_tags,
             content::set_content_tags,
+            content::rewrite_tag,
             content::get_author_settings,
             content::set_author_settings,
             content::set_front_matter_date,

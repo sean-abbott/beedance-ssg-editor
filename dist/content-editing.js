@@ -490,6 +490,109 @@ wirePanelKeys(datePanel, "date-panel-confirm", "date-panel-cancel");
 wirePanelKeys(renamePanel, "rename-panel-confirm", "rename-panel-cancel");
 wirePanelKeys(tagsPanel, null, "tags-panel-cancel");
 
+// Manage tags: delete/rename/merge a tag across EVERY post that uses it,
+// not just the one open in the editor right now - reached from the same
+// Tags panel (per the original request) rather than its own toolbar
+// button, since it's about the site's tag taxonomy as a whole, not this
+// one page. Rename and merge are the exact same backend call
+// (rewrite_tag) - typing a name that already exists elsewhere just IS a
+// merge, so there's no separate "Merge" control to build or explain.
+const manageTagsPanel = document.getElementById("manage-tags-panel");
+const manageTagsList = document.getElementById("manage-tags-list");
+const manageTagsStatus = document.getElementById("manage-tags-status");
+
+const openManageTags = async () => {
+  manageTagsStatus.textContent = "";
+  try {
+    const tags = await invoke("list_all_tags");
+    renderManageTagsList(tags);
+    if (tags.length === 0) manageTagsStatus.textContent = "No tags used anywhere on the site yet.";
+  } catch (err) {
+    showError(err);
+  }
+};
+
+const renderManageTagsList = (tags) => {
+  manageTagsList.innerHTML = "";
+  for (const tag of tags) {
+    const row = document.createElement("div");
+    row.className = "manage-tag-row";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "manage-tag-name";
+    input.value = tag;
+
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "secondary";
+    rename.textContent = "Rename";
+    rename.addEventListener("click", async () => {
+      const newName = input.value.trim();
+      if (!newName) {
+        manageTagsStatus.textContent = "Enter a name first.";
+        return;
+      }
+      if (newName.toLowerCase() === tag.toLowerCase()) return;
+      const merging = tags.some((t) => t !== tag && t.toLowerCase() === newName.toLowerCase());
+      const proceed = await askConfirm(
+        merging ? "Merge tags?" : "Rename this tag?",
+        merging
+          ? `"${tag}" and "${newName}" are both already in use - merge every post using either one into "${newName}"?`
+          : `Rename "${tag}" to "${newName}" on every post that uses it?`,
+        merging ? "Merge" : "Rename"
+      );
+      if (!proceed) return;
+      manageTagsStatus.textContent = "Updating...";
+      try {
+        const count = await invoke("rewrite_tag", { from: tag, to: newName });
+        manageTagsStatus.textContent = `Updated ${count} post${count === 1 ? "" : "s"}.`;
+        await openManageTags();
+      } catch (err) {
+        manageTagsStatus.textContent = "";
+        showError(err);
+      }
+    });
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "secondary";
+    del.textContent = "Delete";
+    del.addEventListener("click", async () => {
+      const proceed = await askConfirm(
+        "Delete this tag?",
+        `Remove "${tag}" from every post that uses it? This can't be undone.`,
+        "Delete"
+      );
+      if (!proceed) return;
+      manageTagsStatus.textContent = "Deleting...";
+      try {
+        const count = await invoke("rewrite_tag", { from: tag, to: null });
+        manageTagsStatus.textContent = `Updated ${count} post${count === 1 ? "" : "s"}.`;
+        await openManageTags();
+      } catch (err) {
+        manageTagsStatus.textContent = "";
+        showError(err);
+      }
+    });
+
+    row.append(input, rename, del);
+    manageTagsList.appendChild(row);
+  }
+};
+
+document.getElementById("manage-tags-open").addEventListener("click", async () => {
+  tagsPanel.style.display = "none";
+  await openManageTags();
+  manageTagsPanel.style.display = "flex";
+});
+
+document.getElementById("manage-tags-close").addEventListener("click", () => {
+  manageTagsPanel.style.display = "none";
+});
+
+wirePanelKeys(manageTagsPanel, null, "manage-tags-close");
+
 // Zola's Section front matter is a genuinely smaller, different set of
 // recognized fields than Page's - no `date`, no `taxonomies` (tags), only
 // `extra` as a catch-all. Stamping either onto a section index (_index.md)
