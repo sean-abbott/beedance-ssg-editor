@@ -92,8 +92,14 @@ const renderSiteMenuList = () => {
     // relies on), and the array only actually reorders once, on release.
     const dragHandle = document.createElement("span");
     dragHandle.className = "menu-entry-drag";
-    dragHandle.textContent = "⠿";
     dragHandle.title = "Drag to reorder";
+    // A drawn 3-bar grip rather than a Unicode glyph (the earlier "⠿" was
+    // hard to see - too small/faint, and glyph rendering/legibility varies
+    // across this app's 3 target webviews anyway) - a plain CSS shape
+    // renders identically everywhere.
+    for (let bar = 0; bar < 3; bar++) {
+      dragHandle.appendChild(document.createElement("span")).className = "menu-entry-drag-bar";
+    }
     dragHandle.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       const startIndex = i;
@@ -237,7 +243,7 @@ const renderSiteMenuList = () => {
 };
 
 document.getElementById("site-menu-button").addEventListener("click", async () => {
-  siteMenuStatus.textContent = "";
+  setSiteMenuStatus("", null);
   try {
     const entries = await invoke("get_site_menu");
     await refreshPagesAndSections();
@@ -314,30 +320,57 @@ document.getElementById("site-menu-create-confirm").addEventListener("click", as
   }
 });
 
-document.getElementById("site-menu-save").addEventListener("click", async () => {
+let siteMenuStatusClearTimer = null;
+
+const setSiteMenuStatus = (text, kind) => {
+  clearTimeout(siteMenuStatusClearTimer);
+  siteMenuStatus.textContent = text;
+  siteMenuStatus.classList.remove("status-success", "status-error");
+  if (kind) siteMenuStatus.classList.add(kind === "success" ? "status-success" : "status-error");
+  if (kind === "success") {
+    siteMenuStatusClearTimer = setTimeout(() => {
+      siteMenuStatus.textContent = "";
+      siteMenuStatus.classList.remove("status-success");
+    }, 3000);
+  }
+};
+
+// Returns true on a successful save, false on a validation problem or a
+// real error (already reported, either inline or via showError) - so
+// site-menu-save-close only closes the panel once the save actually went
+// through, not just because the button was clicked.
+const saveSiteMenu = async () => {
   const entries = [];
   for (const row of rows) {
     const name = row.name.trim();
     const url = row.kind === "external" ? row.externalUrl.trim() : row.pageUrl;
     if (!name || !url) {
-      siteMenuStatus.textContent = "Every link needs a label and a destination.";
-      return;
+      setSiteMenuStatus("Every link needs a label and a destination.", "error");
+      return false;
     }
     entries.push({ name, url });
   }
-  siteMenuStatus.textContent = "Saving...";
+  setSiteMenuStatus("Saving...", null);
   try {
     await invoke("set_site_menu", { entries });
-    siteMenuStatus.textContent = "Saved.";
+    setSiteMenuStatus("✓ Saved.", "success");
+    return true;
   } catch (err) {
-    siteMenuStatus.textContent = "";
+    setSiteMenuStatus("", null);
     showError(err);
+    return false;
   }
+};
+
+document.getElementById("site-menu-save").addEventListener("click", saveSiteMenu);
+
+document.getElementById("site-menu-save-close").addEventListener("click", async () => {
+  if (await saveSiteMenu()) siteMenuPanel.style.display = "none";
 });
 
 document.getElementById("site-menu-close").addEventListener("click", () => {
   siteMenuPanel.style.display = "none";
 });
 
-wirePanelKeys(siteMenuPanel, "site-menu-save", "site-menu-close");
+wirePanelKeys(siteMenuPanel, "site-menu-save-close", "site-menu-close");
 wirePanelKeys(createPanel, "site-menu-create-confirm", "site-menu-create-cancel");

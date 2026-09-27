@@ -40,6 +40,19 @@ export function describeGitError(rawError) {
 }
 
 export const fileSelect = document.getElementById("file-select");
+// The visible "Open file" control - a real text box with a native <datalist>
+// of suggestions (filtered by the browser as you type, the same mechanism
+// this app already trusts for the tags panel's own autocomplete) rather than
+// a plain <select>'s "jump to the option starting with what you typed"
+// type-ahead, which is easy to miss and doesn't show the actual matches.
+// fileSelect (above) stays a real, populated <select> - just hidden - so
+// every OTHER module's existing `fileSelect.value` reads/writes keep
+// working unchanged; this box and fileSelect are kept in sync through
+// labelToPath/pathToLabel below.
+const fileSearchInput = document.getElementById("file-search");
+const fileSearchDatalist = document.getElementById("file-search-datalist");
+let labelToPath = new Map();
+let pathToLabel = new Map();
 export const editorEl = document.getElementById("editor");
 const tabBar = document.getElementById("tab-bar");
 export const statusEl = document.getElementById("editor-status");
@@ -145,14 +158,35 @@ const populateFileSelectGrouped = (entries) => {
       // Grouping into optgroups by section already conveys the nesting.
       opt.textContent = e.label;
       optgroup.appendChild(opt);
+
+      // Always "Label (Group)", even for a section's own index (where
+      // group === label) - matching site-menu.js's own page-picker exactly,
+      // and sidestepping any case where two different sections happen to
+      // have a same-titled child page.
+      addSearchEntry(`${e.label} (${groupName})`, e.path);
     }
     fileSelect.appendChild(optgroup);
   }
 };
 
+const addSearchEntry = (label, path) => {
+  labelToPath.set(label, path);
+  pathToLabel.set(path, label);
+  const opt = document.createElement("option");
+  opt.value = label;
+  fileSearchDatalist.appendChild(opt);
+};
+
+const syncFileSearchDisplay = () => {
+  fileSearchInput.value = pathToLabel.get(fileSelect.value) || "";
+};
+
 export const refreshFileList = async () => {
   const previous = fileSelect.value;
   fileSelect.innerHTML = "";
+  fileSearchDatalist.innerHTML = "";
+  labelToPath = new Map();
+  pathToLabel = new Map();
   if (fileListMode === "paths") {
     const files = await invoke("list_editable_files");
     for (const f of files) {
@@ -160,6 +194,7 @@ export const refreshFileList = async () => {
       opt.value = f;
       opt.textContent = f;
       fileSelect.appendChild(opt);
+      addSearchEntry(f, f);
     }
     if (files.includes(previous)) fileSelect.value = previous;
   } else {
@@ -167,7 +202,31 @@ export const refreshFileList = async () => {
     populateFileSelectGrouped(entries);
     if (entries.some((e) => e.path === previous)) fileSelect.value = previous;
   }
+  syncFileSearchDisplay();
 };
+
+// Sets which file is "selected" everywhere this app shows that (the hidden
+// backing <select> every other module reads, and the visible search box) -
+// exported so any module that used to just write fileSelect.value directly
+// keeps the search box honest too, instead of the two silently drifting
+// apart.
+export const setActiveFilePath = (path) => {
+  fileSelect.value = path;
+  syncFileSearchDisplay();
+};
+
+fileSearchInput.addEventListener("input", () => {
+  const path = labelToPath.get(fileSearchInput.value);
+  if (path) {
+    fileSelect.value = path;
+    openTab(path);
+  }
+});
+
+// Typed text that never resolved to a real match (left as a dead end,
+// rather than picking a suggestion) shouldn't linger looking like it's the
+// open file - snap back to whatever's actually open.
+fileSearchInput.addEventListener("blur", syncFileSearchDisplay);
 
 fileListModeToggle.addEventListener("click", async () => {
   fileListMode = fileListMode === "titles" ? "paths" : "titles";
@@ -283,6 +342,12 @@ const switchToTab = (path) => {
   editorEl.disabled = false;
   updateStatusForActiveTab();
   renderTabBar();
+  // Every path into switchToTab (the search box, the hidden <select>'s own
+  // change event, a direct tab-bar click) should leave the search box
+  // showing what's actually open - not just the ones that went through the
+  // search box itself.
+  fileSelect.value = path;
+  syncFileSearchDisplay();
   if (tab.externallyChanged) {
     bannerMessage.textContent = path + " changed on disk externally.";
     banner.style.display = "block";

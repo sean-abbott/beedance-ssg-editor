@@ -4,10 +4,10 @@
 
 import {
   editorEl,
-  fileSelect,
   tabs,
   activeTab,
   setActiveTab,
+  setActiveFilePath,
   renderTabBar,
   refreshFileList,
   withActiveTab,
@@ -273,7 +273,7 @@ document.getElementById("insert-image-confirm").addEventListener("click", async 
       invoke("close_file", { path: oldPath }).catch(() => {});
       invoke("read_file", { path: result.renamedContentPath }).catch(() => {});
       await refreshFileList();
-      fileSelect.value = result.renamedContentPath;
+      setActiveFilePath(result.renamedContentPath);
       renderTabBar();
     }
 

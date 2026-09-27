@@ -4,7 +4,7 @@
 
 import {
   editorEl,
-  fileSelect,
+  setActiveFilePath,
   statusEl,
   activeTab,
   withActiveTab,
@@ -102,7 +102,7 @@ document.getElementById("new-content-confirm").addEventListener("click", async (
     const path = await invoke(command, args);
     newContentPanel.style.display = "none";
     await refreshFileList();
-    fileSelect.value = path;
+    setActiveFilePath(path);
     await openTab(path);
   } catch (err) {
     newContentStatus.textContent = "";
@@ -181,7 +181,7 @@ document.getElementById("rename-panel-confirm").addEventListener("click", async 
     closeTabQuietly(oldPath);
     renamePanel.style.display = "none";
     await refreshFileList();
-    fileSelect.value = newPath;
+    setActiveFilePath(newPath);
     await openTab(newPath);
   } catch (err) {
     renamePanelStatus.textContent = "";
