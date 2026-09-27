@@ -5,6 +5,7 @@ mod frontmatter;
 mod git;
 mod github;
 mod images;
+mod menu;
 mod preview;
 mod r2;
 mod site;
@@ -96,6 +97,8 @@ fn main() {
             content::delete_content,
             content::rename_content,
             content::list_page_sections,
+            menu::get_site_menu,
+            menu::set_site_menu,
             content::get_front_matter_date,
             content::get_front_matter_title,
             content::detect_external_content,

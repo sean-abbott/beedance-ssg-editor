@@ -11,3 +11,4 @@ import "./content-editing.js";
 import "./images.js";
 import "./git-workflow.js";
 import "./onboarding.js";
+import "./site-menu.js";

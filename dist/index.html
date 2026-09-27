@@ -373,6 +373,27 @@
     </div>
   </div>
 
+  <div id="site-menu-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(560px, 92%); max-height: 85vh; overflow-y: auto; padding: 16px; background: var(--panel);">
+      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Site menu</h3>
+      <p style="font-size: 12px; color: var(--muted); margin: 0 0 12px;">
+        The site's main navigation, top to bottom is left to right. Link to
+        an existing page, or paste a web address for anything else.
+      </p>
+
+      <div id="site-menu-list" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;"></div>
+
+      <button type="button" id="site-menu-add" class="secondary" style="margin-bottom: 10px;">Add link&hellip;</button>
+
+      <div id="site-menu-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="site-menu-close" class="secondary">Close</button>
+        <button id="site-menu-save">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div id="local-drafts-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
     <div class="panel" style="width: min(440px, 90%); max-height: 85vh; overflow-y: auto; padding: 16px; background: var(--panel);">
       <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Local drafts</h3>
@@ -519,6 +540,7 @@
       <button id="preview-stop" class="secondary">Stop preview</button>
       <button id="new-post" class="secondary">New post&hellip;</button>
       <button id="new-page" class="secondary">New page&hellip;</button>
+      <button id="site-menu-button" class="secondary" title="Edit the site's main navigation">Site menu&hellip;</button>
       <label>
         Open file:
         <select id="file-select"></select>

@@ -183,6 +183,22 @@
       white-space: nowrap;
     }
     .review-row .review-row-status { color: var(--muted); flex-shrink: 0; }
+    .menu-entry-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+    }
+    .menu-entry-row .menu-entry-name,
+    .menu-entry-row .menu-entry-page,
+    .menu-entry-row .menu-entry-url {
+      flex: 1;
+      min-width: 0;
+    }
+    .menu-entry-row button {
+      flex-shrink: 0;
+      padding: 2px 8px;
+    }
     .tag-chip button:hover { background: color-mix(in srgb, var(--text) 12%, transparent); }
     .tab .tab-dot { color: #b8860b; flex-shrink: 0; }
     .tab .tab-external-dot { color: #c0392b; flex-shrink: 0; }

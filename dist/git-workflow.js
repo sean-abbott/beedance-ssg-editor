@@ -75,6 +75,7 @@ const REVIEW_MODE_DISABLED_IDS = [
   "delete-content",
   "new-post",
   "new-page",
+  "site-menu-button",
   "review-changes-commit",
   "review-changes-push",
   "local-drafts-new-confirm",
