@@ -46,6 +46,8 @@ export const statusEl = document.getElementById("editor-status");
 export const banner = document.getElementById("external-change-banner");
 export const bannerMessage = document.getElementById("external-change-message");
 const saveButton = document.getElementById("save");
+const undoButton = document.getElementById("undo-button");
+const redoButton = document.getElementById("redo-button");
 
 // Every open file is its own tab with its own buffer/dirty/autosave-timer/
 // external-change state, keyed by site-relative path.
@@ -211,6 +213,8 @@ const updateStatusForActiveTab = () => {
   if (!activeTab) {
     statusEl.textContent = "";
     saveButton.classList.add("clean");
+    undoButton.disabled = true;
+    redoButton.disabled = true;
     return;
   }
   const tab = tabs.get(activeTab);
@@ -222,6 +226,12 @@ const updateStatusForActiveTab = () => {
     statusEl.textContent = "";
     saveButton.classList.add("clean");
   }
+  // reviewModeActive composes here rather than through git-workflow.js's own
+  // toolbar-disabling list - same reasoning as content-editing.js's
+  // section-aware fmt-date/fmt-tags guard, so the two disable-reasons
+  // (nothing to undo vs. read-only review) don't fight over .disabled.
+  undoButton.disabled = reviewModeActive != null || tab.undoStack.length === 0;
+  redoButton.disabled = reviewModeActive != null || tab.redoStack.length === 0;
 };
 
 const externalContentBanner = document.getElementById("external-content-banner");
@@ -284,7 +294,15 @@ export const openTab = async (path) => {
   }
   try {
     const content = await invoke("read_file", { path });
-    tabs.set(path, { content, dirty: false, timer: null, externallyChanged: false });
+    tabs.set(path, {
+      content,
+      dirty: false,
+      timer: null,
+      externallyChanged: false,
+      undoStack: [],
+      redoStack: [],
+      lastUndoTime: null,
+    });
     switchToTab(path);
   } catch (err) {
     statusEl.textContent = "";
@@ -403,20 +421,101 @@ export const closeAllTabsQuietly = () => {
   }
 };
 
-editorEl.addEventListener("input", () => {
-  if (!activeTab) return;
-  const tab = tabs.get(activeTab);
-  tab.content = editorEl.value;
-  tab.dirty = true;
-  updateStatusForActiveTab();
-  renderTabBar();
-
+const scheduleAutosave = (path, tab) => {
   clearTimeout(tab.timer);
-  const path = activeTab;
   tab.timer = setTimeout(() => {
     tab.timer = null;
     doSave(path, tab.content);
   }, AUTOSAVE_DELAY_MS);
+};
+
+// Undo/redo is app-managed rather than relying on the textarea's native
+// browser undo stack - every toolbar action in this app (bold/italic wrap,
+// date/tags panels, image insert/resize/delete) works by assigning
+// editorEl.value directly, and a direct .value assignment resets/desyncs
+// the native undo history in every webview engine this app targets
+// (WebKitGTK, WKWebView, WebView2). Centralized here because this "input"
+// listener already fires for every content change in the app, typed or
+// programmatic (every module ends its own edits with emitEdited(), which
+// dispatches a real "input" event on editorEl) - one choke point, no other
+// module needs to know undo/redo exists.
+const UNDO_COALESCE_MS = 700;
+const UNDO_MAX_DEPTH = 200;
+
+editorEl.addEventListener("input", () => {
+  if (!activeTab) return;
+  const tab = tabs.get(activeTab);
+  const previousValue = tab.content;
+  const newValue = editorEl.value;
+
+  if (previousValue !== newValue) {
+    const now = Date.now();
+    const delta = Math.abs(newValue.length - previousValue.length);
+    // Coalesce a burst of plain typing into one undo step; anything bigger
+    // than a single character in one go (paste, a toolbar action, a
+    // panel-driven rewrite) always starts its own step regardless of timing.
+    const withinCoalesceWindow =
+      tab.lastUndoTime != null && now - tab.lastUndoTime < UNDO_COALESCE_MS && delta <= 1;
+    if (!withinCoalesceWindow) {
+      tab.undoStack.push(previousValue);
+      if (tab.undoStack.length > UNDO_MAX_DEPTH) tab.undoStack.shift();
+      tab.redoStack.length = 0;
+    }
+    tab.lastUndoTime = now;
+  }
+
+  tab.content = newValue;
+  tab.dirty = true;
+  updateStatusForActiveTab();
+  renderTabBar();
+  scheduleAutosave(activeTab, tab);
+});
+
+// Jumps straight to a stored buffer (used by undo/redo) without going
+// through the "input" listener above - it already changed editorEl.value
+// itself, so re-dispatching input would just push this jump back onto the
+// undo/redo stacks as if it were a fresh edit.
+const jumpToHistoryEntry = (tab, value) => {
+  tab.lastUndoTime = null;
+  tab.content = value;
+  editorEl.value = value;
+  editorEl.setSelectionRange(value.length, value.length);
+  tab.dirty = true;
+  updateStatusForActiveTab();
+  renderTabBar();
+  scheduleAutosave(activeTab, tab);
+};
+
+export const undo = () => {
+  if (!activeTab || reviewModeActive != null) return;
+  const tab = tabs.get(activeTab);
+  if (!tab || tab.undoStack.length === 0) return;
+  tab.redoStack.push(tab.content);
+  jumpToHistoryEntry(tab, tab.undoStack.pop());
+};
+
+export const redo = () => {
+  if (!activeTab || reviewModeActive != null) return;
+  const tab = tabs.get(activeTab);
+  if (!tab || tab.redoStack.length === 0) return;
+  tab.undoStack.push(tab.content);
+  jumpToHistoryEntry(tab, tab.redoStack.pop());
+};
+
+undoButton.addEventListener("click", undo);
+redoButton.addEventListener("click", redo);
+
+editorEl.addEventListener("keydown", (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  if (e.key === "z" || e.key === "Z") {
+    e.preventDefault();
+    if (e.shiftKey) redo();
+    else undo();
+  } else if (e.key === "y" || e.key === "Y") {
+    e.preventDefault();
+    redo();
+  }
 });
 
 export const withActiveTab = (fn) => () => {
@@ -508,6 +607,9 @@ document.getElementById("reload").addEventListener("click", async () => {
     tab.content = content;
     tab.dirty = false;
     tab.externallyChanged = false;
+    tab.undoStack.length = 0;
+    tab.redoStack.length = 0;
+    tab.lastUndoTime = null;
     if (path === activeTab) {
       editorEl.value = content;
       updateStatusForActiveTab();
