@@ -514,6 +514,29 @@ const openManageTags = async () => {
   }
 };
 
+// Deleting or renaming/merging a tag makes its OLD name disappear entirely -
+// if a theme template hardcodes that exact name (e.g.
+// get_taxonomy_term(kind="tags", term="event")), the next Zola build breaks
+// with an "unknown term" error that has nothing to do with content and is
+// hard to trace back to "I renamed a tag" after the fact (found this the
+// hard way merging "event" into "events"). Zola can't warn about this ahead
+// of time itself, so this is the one place that can.
+const confirmTagRemovalSafe = async (tag) => {
+  let refs = [];
+  try {
+    refs = await invoke("find_taxonomy_term_template_refs", { term: tag });
+  } catch {
+    return true; // Check failing shouldn't block the rename/delete itself.
+  }
+  if (refs.length === 0) return true;
+  return askConfirm(
+    "This tag is hardcoded in a template",
+    `"${tag}" is referenced by name in ${refs.join(", ")} - removing it will likely break the site's next build ` +
+      `unless that template is updated too. Proceed anyway?`,
+    "Proceed anyway"
+  );
+};
+
 const renderManageTagsList = (tags) => {
   manageTagsList.innerHTML = "";
   for (const tag of tags) {
@@ -537,6 +560,7 @@ const renderManageTagsList = (tags) => {
       }
       if (newName.toLowerCase() === tag.toLowerCase()) return;
       const merging = tags.some((t) => t !== tag && t.toLowerCase() === newName.toLowerCase());
+      if (!(await confirmTagRemovalSafe(tag))) return;
       const proceed = await askConfirm(
         merging ? "Merge tags?" : "Rename this tag?",
         merging
@@ -561,6 +585,7 @@ const renderManageTagsList = (tags) => {
     del.className = "secondary";
     del.textContent = "Delete";
     del.addEventListener("click", async () => {
+      if (!(await confirmTagRemovalSafe(tag))) return;
       const proceed = await askConfirm(
         "Delete this tag?",
         `Remove "${tag}" from every post that uses it? This can't be undone.`,

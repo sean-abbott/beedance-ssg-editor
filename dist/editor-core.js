@@ -178,9 +178,16 @@ export function createSearchCombobox({ input, resultsEl, getEntries, onSelect, g
       updateHighlight();
     } else if (e.key === "Enter") {
       e.preventDefault();
+      e.stopPropagation();
       const entry = visibleEntries[highlightIndex];
       if (entry) select(entry);
     } else if (e.key === "Escape") {
+      // Stopped here so this only closes the dropdown - without this, the
+      // same keystroke also bubbles up to the enclosing modal's own
+      // Escape handler (wirePanelKeys) and closes/cancels the whole
+      // modal in one press, when closing just the picker is what's
+      // actually wanted (e.g. the site menu editor's page picker).
+      e.stopPropagation();
       close();
       input.blur();
     }

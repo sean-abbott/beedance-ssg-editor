@@ -213,12 +213,16 @@ pub fn collect_files_with_ext(dir: &Path, root: &Path, ext: &str, out: &mut Vec<
 /// many there are), plus every .html template under the site's own templates/
 /// (if any) and any vendored theme's templates/ (themes/*/templates/), so the
 /// editor's file switcher covers a real multi-page site, not just one file.
-#[tauri::command]
-pub fn list_editable_files() -> Vec<String> {
+/// Every .html template under the site's own templates/ (if any) plus every
+/// vendored theme's templates/ (themes/*/templates/, whichever one is
+/// actually active or not - Zola lets a site override individual theme
+/// templates by name, so a hardcoded reference could live in either place).
+/// Shared by list_editable_files (the file switcher) and
+/// find_taxonomy_term_template_refs (content.rs's tag-rewrite safety check).
+pub fn collect_template_files() -> Vec<String> {
     let dir = site_dir();
     let mut files = Vec::new();
 
-    collect_files_with_ext(&dir.join(zola::CONTENT_DIR), &dir, zola::CONTENT_EXT, &mut files);
     collect_files_with_ext(&dir.join(zola::TEMPLATES_DIR), &dir, zola::TEMPLATE_EXT, &mut files);
 
     if let Ok(entries) = std::fs::read_dir(dir.join(zola::THEMES_DIR)) {
@@ -226,6 +230,17 @@ pub fn list_editable_files() -> Vec<String> {
             collect_files_with_ext(&entry.path().join(zola::TEMPLATES_DIR), &dir, zola::TEMPLATE_EXT, &mut files);
         }
     }
+
+    files
+}
+
+#[tauri::command]
+pub fn list_editable_files() -> Vec<String> {
+    let dir = site_dir();
+    let mut files = Vec::new();
+
+    collect_files_with_ext(&dir.join(zola::CONTENT_DIR), &dir, zola::CONTENT_EXT, &mut files);
+    files.extend(collect_template_files());
 
     files.sort();
     files

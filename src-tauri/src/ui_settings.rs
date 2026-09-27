@@ -8,12 +8,18 @@ use std::sync::Mutex;
 
 use crate::site::config_dir;
 
-#[derive(Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiSettings {
-    // "blue" (default/unset) or "bee" - anything else the frontend doesn't
+    // "bee" (default) or "blue" - anything else the frontend doesn't
     // recognize just falls back to blue, so this never needs validating.
     theme: String,
+}
+
+impl Default for UiSettings {
+    fn default() -> Self {
+        Self { theme: "bee".to_string() }
+    }
 }
 
 const UI_SETTINGS_FILE: &str = "ui-settings.json";

@@ -112,6 +112,7 @@ fn main() {
             content::get_content_tags,
             content::set_content_tags,
             content::rewrite_tag,
+            content::find_taxonomy_term_template_refs,
             content::get_author_settings,
             content::set_author_settings,
             ui_settings::get_ui_settings,

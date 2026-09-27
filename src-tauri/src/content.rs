@@ -626,6 +626,33 @@ fn rewritten_tags(tags: &[String], from: &str, to: Option<&str>) -> Option<Vec<S
     Some(updated)
 }
 
+/// Finds template files (this site's own templates/, plus every vendored
+/// theme's) that hardcode `term` as a literal taxonomy-term argument, e.g.
+/// `get_taxonomy_term(kind="tags", term="event")`. A tag rewrite that makes
+/// `term` disappear entirely (a delete, or a rename/merge to a different
+/// name) breaks Zola's build for a template like that with an "unknown
+/// term" error - Zola itself has no way to catch this ahead of time, since
+/// it doesn't know the frontend is about to remove the term until the next
+/// build actually fails. Found the hard way: merging "event" into "events"
+/// broke a template hardcoding `term="event"`. Matches `term = "value"` or
+/// `term='value'` with either quote style and any spacing around `=`, since
+/// Tera accepts both - not a real Tera parser, just enough to catch the
+/// realistic case.
+#[tauri::command]
+pub fn find_taxonomy_term_template_refs(term: String) -> Vec<String> {
+    let pattern = format!(r#"term\s*=\s*["']{}["']"#, regex::escape(&term));
+    let Ok(re) = regex::Regex::new(&pattern) else { return Vec::new() };
+
+    let dir = site_dir();
+    let mut matches = Vec::new();
+    for rel in crate::site::collect_template_files() {
+        if std::fs::read_to_string(dir.join(&rel)).is_ok_and(|raw| re.is_match(&raw)) {
+            matches.push(rel);
+        }
+    }
+    matches
+}
+
 /// Deletes (`to: None`) or renames/merges (`to: Some(new)`) a tag across
 /// EVERY content file that has it - delete and rename/merge are the exact
 /// same underlying rewrite (see rewritten_tags), just with a different
