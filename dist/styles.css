@@ -92,13 +92,18 @@
     .file-search-result.active { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
     .file-search-no-results { padding: 6px 10px; color: var(--muted); }
     .file-search-group-header {
-      padding: 5px 10px 3px;
-      font-size: 11px;
+      padding: 6px 10px;
+      margin-top: 2px;
+      font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.02em;
-      color: var(--muted);
+      letter-spacing: 0.03em;
+      color: var(--text);
+      background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
     }
+    .file-search-group-header:first-child { margin-top: 0; border-top: none; }
 
     button, select, input[type=text] {
       font: inherit;

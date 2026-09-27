@@ -321,11 +321,14 @@ const renderFileSearchResults = (query) => {
 };
 
 fileSearchInput.addEventListener("focus", () => {
-  // Show everything first (an empty query matches every entry), and select
-  // the current text so typing immediately replaces it instead of the user
-  // having to clear "About (About)" by hand before they can search.
+  // Clear outright rather than select()-ing the current text - a click's
+  // own default caret placement can otherwise land after the focus event's
+  // select() and quietly undo it, so typing wouldn't reliably wipe "About
+  // (About)"/"Home (Home)" the way it should. blur (below) already
+  // restores this text if nothing gets picked, so clearing here loses
+  // nothing.
+  fileSearchInput.value = "";
   renderFileSearchResults("");
-  fileSearchInput.select();
 });
 fileSearchInput.addEventListener("input", () => renderFileSearchResults(fileSearchInput.value));
 
