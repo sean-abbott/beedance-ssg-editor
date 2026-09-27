@@ -18,6 +18,7 @@ import {
   closeTabQuietly,
   currentAuthorName,
   reviewModeActive,
+  showError,
 } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -106,7 +107,8 @@ document.getElementById("new-content-confirm").addEventListener("click", async (
     fileSelect.value = path;
     await openTab(path);
   } catch (err) {
-    newContentStatus.textContent = "ERROR: " + err;
+    newContentStatus.textContent = "";
+    showError(err);
   }
 });
 
@@ -121,7 +123,7 @@ document.getElementById("delete-content").addEventListener(
       closeTabQuietly(path);
       await refreshFileList();
     } catch (err) {
-      statusEl.textContent = "ERROR: " + err;
+      showError(err);
     }
   })
 );
@@ -140,7 +142,8 @@ document.getElementById("rename-content").addEventListener(
       renamePanelOriginalTitle = title || "";
       renamePanelInput.value = renamePanelOriginalTitle;
     } catch (err) {
-      renamePanelStatus.textContent = "ERROR: " + err;
+      renamePanelStatus.textContent = "";
+      showError(err);
     }
     renamePanel.style.display = "flex";
     renamePanelInput.focus();
@@ -183,7 +186,8 @@ document.getElementById("rename-panel-confirm").addEventListener("click", async 
     fileSelect.value = newPath;
     await openTab(newPath);
   } catch (err) {
-    renamePanelStatus.textContent = "ERROR: " + err;
+    renamePanelStatus.textContent = "";
+    showError(err);
   }
 });
 
@@ -323,7 +327,8 @@ document.getElementById("fmt-date").addEventListener(
       const current = await invoke("get_front_matter_date", { content: editorEl.value });
       fillDatePanel(zolaDateToParts(current));
     } catch (err) {
-      datePanelStatus.textContent = "ERROR: " + err;
+      datePanelStatus.textContent = "";
+      showError(err);
     }
     datePanel.style.display = "flex";
   })
@@ -351,7 +356,8 @@ document.getElementById("date-panel-clear").addEventListener("click", async () =
     emitEdited();
     datePanel.style.display = "none";
   } catch (err) {
-    datePanelStatus.textContent = "ERROR: " + err;
+    datePanelStatus.textContent = "";
+    showError(err);
   }
 });
 
@@ -374,7 +380,8 @@ document.getElementById("date-panel-confirm").addEventListener("click", async ()
     emitEdited();
     datePanel.style.display = "none";
   } catch (err) {
-    datePanelStatus.textContent = "ERROR: " + err;
+    datePanelStatus.textContent = "";
+    showError(err);
   }
 });
 
@@ -443,7 +450,8 @@ document.getElementById("fmt-tags").addEventListener(
         tagsPanelDatalist.appendChild(opt);
       }
     } catch (err) {
-      tagsPanelStatus.textContent = "ERROR: " + err;
+      tagsPanelStatus.textContent = "";
+      showError(err);
     }
     tagsPanelInput.value = "";
     tagsPanel.style.display = "flex";
@@ -474,7 +482,8 @@ document.getElementById("tags-panel-confirm").addEventListener("click", async ()
     emitEdited();
     tagsPanel.style.display = "none";
   } catch (err) {
-    tagsPanelStatus.textContent = "ERROR: " + err;
+    tagsPanelStatus.textContent = "";
+    showError(err);
   }
 });
 

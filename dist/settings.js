@@ -3,7 +3,7 @@
 // token, GitHub username). See editor-core.js for currentAuthorName/
 // currentGithubUsername themselves - this module only loads/saves them.
 
-import { wirePanelKeys, setCurrentAuthorName, setCurrentGithubUsername } from "./editor-core.js";
+import { wirePanelKeys, setCurrentAuthorName, setCurrentGithubUsername, showError } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -118,7 +118,8 @@ document.getElementById("save-author-settings").addEventListener("click", async 
     setCurrentAuthorName(displayName);
     authorSettingsStatus.textContent = "Saved.";
   } catch (err) {
-    authorSettingsStatus.textContent = "ERROR: " + err;
+    authorSettingsStatus.textContent = "";
+    showError(err);
   }
 });
 
@@ -136,7 +137,8 @@ document.getElementById("save-tier-settings").addEventListener("click", async ()
     });
     tierSettingsStatus.textContent = "Saved.";
   } catch (err) {
-    tierSettingsStatus.textContent = "ERROR: " + err;
+    tierSettingsStatus.textContent = "";
+    showError(err);
   }
 });
 
@@ -161,7 +163,8 @@ document.getElementById("save-r2-site-settings").addEventListener("click", async
     });
     r2SiteSettingsStatus.textContent = "Saved.";
   } catch (err) {
-    r2SiteSettingsStatus.textContent = "ERROR: " + err;
+    r2SiteSettingsStatus.textContent = "";
+    showError(err);
   }
 });
 
@@ -177,7 +180,8 @@ document.getElementById("save-r2-personal-settings").addEventListener("click", a
     });
     r2PersonalSettingsStatus.textContent = "Saved.";
   } catch (err) {
-    r2PersonalSettingsStatus.textContent = "ERROR: " + err;
+    r2PersonalSettingsStatus.textContent = "";
+    showError(err);
   }
 });
 
@@ -192,7 +196,8 @@ document.getElementById("save-git-auth-settings").addEventListener("click", asyn
     setCurrentGithubUsername(githubUsername);
     gitAuthSettingsStatus.textContent = "Saved.";
   } catch (err) {
-    gitAuthSettingsStatus.textContent = "ERROR: " + err;
+    gitAuthSettingsStatus.textContent = "";
+    showError(err);
   }
 });
 

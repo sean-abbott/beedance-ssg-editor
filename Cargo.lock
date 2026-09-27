@@ -3901,8 +3901,7 @@ dependencies = [
 [[package]]
 name = "rust-s3"
 version = "0.37.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aeedb13abdaa7e48d391de05b0569b37fa0a7a64a668dff6ffb2141ad0c2527e"
+source = "git+https://github.com/Databanx/rust-s3?branch=fix%2Fdelete-signed-headers#505aded53d2e668bad472bd7834019e8b1f7a4dd"
 dependencies = [
  "async-trait",
  "attohttpc",

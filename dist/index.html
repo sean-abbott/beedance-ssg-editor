@@ -342,6 +342,16 @@
     </div>
   </div>
 
+  <div id="error-panel" style="position: fixed; inset: 0; z-index: 30; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(560px, 92%); max-height: 80vh; padding: 16px; background: var(--panel); display: flex; flex-direction: column;">
+      <h3 style="margin: 0 0 8px; font-size: 13px; color: #b8433b;">Something went wrong</h3>
+      <pre id="error-panel-message" style="flex: 1; overflow: auto; margin: 0; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); font-size: 12px; white-space: pre-wrap; word-break: break-word;"></pre>
+      <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+        <button id="error-panel-close">OK</button>
+      </div>
+    </div>
+  </div>
+
   <div id="tags-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
     <div class="panel" style="width: min(380px, 90%); padding: 16px; background: var(--panel);">
       <h3 style="margin: 0 0 10px; font-size: 13px; color: var(--muted);">Tags</h3>

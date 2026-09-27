@@ -15,6 +15,7 @@ import {
   emitEdited,
   currentSiteDir,
   askConfirm,
+  showError,
 } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -198,8 +199,7 @@ document.getElementById("fmt-image").addEventListener("click", withActiveTab(asy
     });
     if (path) await openInsertImagePanel(path);
   } catch (err) {
-    imageStatus.textContent = "ERROR: " + err;
-    imagePanel.style.display = "flex";
+    showError(err);
   }
 }));
 
@@ -295,7 +295,8 @@ document.getElementById("insert-image-confirm").addEventListener("click", async 
     closeInsertImagePanel();
     updateImageAlignToolbar();
   } catch (err) {
-    imageStatus.textContent = "ERROR: " + err;
+    imageStatus.textContent = "";
+    showError(err);
   } finally {
     confirmBtn.disabled = false;
     cancelBtn.disabled = false;
@@ -565,7 +566,8 @@ document.getElementById("image-delete-button").addEventListener("click", async (
     updateImageAlignToolbar();
     imageAlignStatus.textContent = "Deleted.";
   } catch (err) {
-    imageAlignStatus.textContent = "ERROR: " + err;
+    imageAlignStatus.textContent = "";
+    showError(err);
   }
 });
 
@@ -634,7 +636,8 @@ document.getElementById("resize-confirm").addEventListener("click", async () => 
       resizePanel.style.display = "none";
     }, 600);
   } catch (err) {
-    resizeStatus.textContent = "ERROR: " + err;
+    resizeStatus.textContent = "";
+    showError(err);
   }
 });
 

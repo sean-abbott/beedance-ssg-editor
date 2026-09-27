@@ -287,11 +287,17 @@ export const openTab = async (path) => {
     tabs.set(path, { content, dirty: false, timer: null, externallyChanged: false });
     switchToTab(path);
   } catch (err) {
-    statusEl.textContent = "ERROR: " + err;
+    statusEl.textContent = "";
+    showError(err);
   }
 };
 
-const doSave = async (path, content) => {
+// onError is deliberately opt-in, not automatic - doSave also runs from the
+// autosave debounce timer and flushTab (closing a tab, quitting the app),
+// where a popup on every failed background save would be far more
+// disruptive than the inline status text this already shows. Only the
+// explicit "Save" button (below) opts in.
+const doSave = async (path, content, { onError } = {}) => {
   const tab = tabs.get(path);
   try {
     const written = await invoke("write_file", { path, content, datetime: nowForZola(), author: currentAuthorName });
@@ -318,6 +324,7 @@ const doSave = async (path, content) => {
     renderTabBar();
   } catch (err) {
     if (path === activeTab) statusEl.textContent = "ERROR: " + err;
+    if (onError) onError(err);
   }
 };
 
@@ -448,6 +455,24 @@ document.getElementById("confirm-panel-confirm").addEventListener("click", () =>
   confirmPanelResolve = null;
 });
 
+// A real popup for a failed command's error text instead of dumping it
+// inline into whatever small status line happened to be nearby - some of
+// these (a raw R2 XML error body, for one real example) are long, technical,
+// and easy to lose track of squeezed into a one-line status area. Every
+// catch block across every module routes its error text through this
+// instead of writing it into its own inline status element directly.
+const errorPanel = document.getElementById("error-panel");
+const errorPanelMessage = document.getElementById("error-panel-message");
+
+export const showError = (err) => {
+  errorPanelMessage.textContent = String(err);
+  errorPanel.style.display = "flex";
+};
+
+document.getElementById("error-panel-close").addEventListener("click", () => {
+  errorPanel.style.display = "none";
+});
+
 export const emitEdited = () => editorEl.dispatchEvent(new Event("input", { bubbles: true }));
 
 // Enter triggers a panel's own primary action, Esc always cancels/closes -
@@ -467,6 +492,7 @@ export function wirePanelKeys(panelEl, confirmId, cancelId) {
 }
 
 wirePanelKeys(confirmPanel, "confirm-panel-confirm", "confirm-panel-cancel");
+wirePanelKeys(errorPanel, "error-panel-close", "error-panel-close");
 
 window.addEventListener("beforeunload", () => {
   for (const path of tabs.keys()) flushTab(path);
@@ -489,7 +515,8 @@ document.getElementById("reload").addEventListener("click", async () => {
     }
     renderTabBar();
   } catch (err) {
-    statusEl.textContent = "ERROR: " + err;
+    statusEl.textContent = "";
+    showError(err);
   }
 });
 
@@ -500,7 +527,7 @@ fileSelect.addEventListener("change", () => openTab(fileSelect.value));
 document.getElementById("save").addEventListener("click", () => {
   if (!activeTab) return;
   cancelTabAutosave(activeTab);
-  doSave(activeTab, editorEl.value);
+  doSave(activeTab, editorEl.value, { onError: showError });
 });
 
 const siteDirEl = document.getElementById("site-dir");
@@ -553,7 +580,7 @@ document.getElementById("change-site").addEventListener("click", async () => {
     if (!folder) return;
     await switchToSiteDir(folder);
   } catch (err) {
-    siteDirEl.textContent = "ERROR: " + err;
+    showError(err);
   }
 });
 

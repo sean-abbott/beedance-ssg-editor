@@ -4,7 +4,7 @@
 // blocks using the app, just nudges toward the setup that makes the rest of
 // it (attribution, GitHub sync) actually useful from the start.
 
-import { switchToSiteDir, wirePanelKeys, describeGitError } from "./editor-core.js";
+import { switchToSiteDir, wirePanelKeys, describeGitError, showError } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -80,7 +80,7 @@ document.getElementById("onboarding-clone-choose-folder").addEventListener("clic
     chosenDestination = folder;
     cloneDestinationLabel.textContent = folder;
   } catch (err) {
-    siteStatus.textContent = "ERROR: " + err;
+    showError(err);
   }
 });
 
@@ -101,7 +101,8 @@ document.getElementById("onboarding-clone-confirm").addEventListener("click", as
     siteStatus.textContent = "Cloned.";
     await finishOnboarding();
   } catch (err) {
-    siteStatus.textContent = describeGitError(err);
+    siteStatus.textContent = "";
+    showError(describeGitError(err));
   }
 });
 

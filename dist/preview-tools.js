@@ -6,7 +6,7 @@
 // restart it when the toggle flips, and settings.js has no other reason to
 // depend on this module.
 
-import { activeTab } from "./editor-core.js";
+import { activeTab, showError } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -65,7 +65,8 @@ const startPreview = async () => {
     status.textContent = "";
   } catch (err) {
     previewRunning = false;
-    status.textContent = "ERROR: " + err;
+    status.textContent = "";
+    showError(err);
   }
 };
 
@@ -76,7 +77,8 @@ const stopPreview = async () => {
     previewRunning = false;
     document.getElementById("phone-toggle").checked = false;
   } catch (err) {
-    status.textContent = "ERROR: " + err;
+    status.textContent = "";
+    showError(err);
   }
 };
 
@@ -100,7 +102,8 @@ document.getElementById("phone-toggle").addEventListener("change", async (e) => 
   try {
     await invoke("set_preview_phone_mode", { phone: e.target.checked });
   } catch (err) {
-    status.textContent = "ERROR: " + err;
+    status.textContent = "";
+    showError(err);
     e.target.checked = !e.target.checked;
   }
 });

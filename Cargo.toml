@@ -1,3 +1,16 @@
 [workspace]
 resolver = "2"
 members = ["src-tauri", "cli"]
+
+# rust-s3 0.37.2 signs content-length/content-type for bodyless DELETE
+# requests (DeleteObject and friends) even though it never actually sends
+# those headers - AWS S3 tolerates the mismatch, Cloudflare R2 enforces
+# SigV4 strictly and rejects it with 403 SignatureDoesNotMatch (found the
+# hard way trying the new "Delete image" button against a real R2 bucket).
+# Known, currently-open upstream bug: durch/rust-s3#466. This pins to the
+# fix from the still-unmerged PR (durch/rust-s3#467) via Cargo's patch
+# mechanism (must live in the workspace root manifest, not a member's -
+# Cargo silently ignores it otherwise) until upstream releases it properly -
+# remove this patch and bump the version requirement once that happens.
+[patch.crates-io]
+rust-s3 = { git = "https://github.com/Databanx/rust-s3", branch = "fix/delete-signed-headers" }

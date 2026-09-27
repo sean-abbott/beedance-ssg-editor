@@ -24,6 +24,7 @@ import {
   reviewModeActive,
   setReviewModeActive,
   describeGitError,
+  showError,
 } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -218,7 +219,8 @@ const switchDraft = async (name) => {
     localDraftsStatus.textContent = `Switched to "${name}".`;
     await refreshLocalDrafts();
   } catch (err) {
-    localDraftsStatus.textContent = "ERROR: " + err;
+    localDraftsStatus.textContent = "";
+    showError(err);
   }
 };
 
@@ -274,7 +276,8 @@ document.getElementById("review-pr-load").addEventListener("click", async () => 
     renderPrList(prs);
     reviewPrStatus.textContent = "";
   } catch (err) {
-    reviewPrStatus.textContent = "ERROR: " + err;
+    reviewPrStatus.textContent = "";
+    showError(err);
   }
 });
 
@@ -307,7 +310,8 @@ const startReviewingPr = async (pr) => {
     reviewPrPanel.style.display = "none";
     reviewPrStatus.textContent = "";
   } catch (err) {
-    reviewPrStatus.textContent = describeGitError(err);
+    reviewPrStatus.textContent = "";
+    showError(describeGitError(err));
   }
 };
 
@@ -327,7 +331,8 @@ const exitReviewMode = async () => {
     localDraftsStatus.textContent = "";
     await refreshLocalDrafts();
   } catch (err) {
-    localDraftsStatus.textContent = "ERROR: " + err;
+    localDraftsStatus.textContent = "";
+    showError(err);
   }
 };
 
@@ -370,7 +375,8 @@ const createNewDraft = async () => {
     localDraftsStatus.textContent = "New draft created.";
     await refreshLocalDrafts();
   } catch (err) {
-    localDraftsStatus.textContent = "ERROR: " + err;
+    localDraftsStatus.textContent = "";
+    showError(err);
   }
 };
 
@@ -453,7 +459,7 @@ document.getElementById("review-changes").addEventListener("click", async () => 
   try {
     await refreshReviewChanges();
   } catch (err) {
-    reviewChangesStatus.textContent = "ERROR: " + err;
+    showError(err);
   }
 });
 
@@ -474,7 +480,8 @@ document.getElementById("review-changes-commit").addEventListener("click", async
     reviewChangesStatus.textContent = "Committed.";
     await refreshReviewChanges();
   } catch (err) {
-    reviewChangesStatus.textContent = "ERROR: " + err;
+    reviewChangesStatus.textContent = "";
+    showError(err);
   }
 });
 
@@ -489,7 +496,8 @@ document.getElementById("review-changes-pull").addEventListener("click", async (
     document.getElementById("reload").click();
     reviewChangesStatus.textContent = "Up to date.";
   } catch (err) {
-    reviewChangesStatus.textContent = describeGitError(err);
+    reviewChangesStatus.textContent = "";
+    showError(describeGitError(err));
   }
 });
 
@@ -499,7 +507,8 @@ document.getElementById("review-changes-push").addEventListener("click", async (
     await invoke("git_push");
     reviewChangesStatus.textContent = "Sent.";
   } catch (err) {
-    reviewChangesStatus.textContent = describeGitError(err);
+    reviewChangesStatus.textContent = "";
+    showError(describeGitError(err));
   }
 });
 
