@@ -8,7 +8,7 @@
 // template render a submenu/dropdown for a page's children. Multi-level
 // nav editing is separate, not-yet-built future work (see pws-ws2).
 
-import { wirePanelKeys, showError, nowForZola, currentAuthorName } from "./editor-core.js";
+import { wirePanelKeys, showError, nowForZola, currentAuthorName, refreshFileList } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -81,6 +81,47 @@ const renderSiteMenuList = () => {
   rows.forEach((row, i) => {
     const el = document.createElement("div");
     el.className = "menu-entry-row";
+
+    // Drag to reorder - the up/down buttons below work fine for a small
+    // nudge, but repeatedly clicking "up" at a fixed mouse position to move
+    // something a long way doesn't keep hitting the same row (each click
+    // reshuffles which row's button ends up under the cursor next). A drag
+    // sidesteps that entirely: the dragged row's own element visually
+    // tracks the pointer for the whole gesture (a CSS transform, not a
+    // rebuild - rebuilding mid-drag would drop the pointer capture this
+    // relies on), and the array only actually reorders once, on release.
+    const dragHandle = document.createElement("span");
+    dragHandle.className = "menu-entry-drag";
+    dragHandle.textContent = "⠿";
+    dragHandle.title = "Drag to reorder";
+    dragHandle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      const startIndex = i;
+      const startY = e.clientY;
+      const rowHeight = el.getBoundingClientRect().height + 6;
+      dragHandle.setPointerCapture(e.pointerId);
+      el.classList.add("dragging");
+
+      const onMove = (moveEvent) => {
+        el.style.transform = `translateY(${moveEvent.clientY - startY}px)`;
+      };
+      const onUp = (upEvent) => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        el.classList.remove("dragging");
+        el.style.transform = "";
+
+        const deltaRows = Math.round((upEvent.clientY - startY) / rowHeight);
+        const targetIndex = Math.min(rows.length - 1, Math.max(0, startIndex + deltaRows));
+        if (targetIndex !== startIndex) {
+          const [moved] = rows.splice(startIndex, 1);
+          rows.splice(targetIndex, 0, moved);
+          renderSiteMenuList();
+        }
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    });
 
     const up = document.createElement("button");
     up.type = "button";
@@ -190,7 +231,7 @@ const renderSiteMenuList = () => {
       renderSiteMenuList();
     });
 
-    el.append(up, down, nameInput, kindSelect, pageSelect, urlInput, remove);
+    el.append(dragHandle, up, down, nameInput, kindSelect, pageSelect, urlInput, remove);
     siteMenuList.appendChild(el);
   });
 };
@@ -255,7 +296,12 @@ document.getElementById("site-menu-create-confirm").addEventListener("click", as
             author: currentAuthorName,
           })
         : await invoke("create_section", { title, author: currentAuthorName });
-    await refreshPagesAndSections();
+    // Both the menu editor's own page/section pickers AND the main "Open
+    // file" dropdown need to know about this - they're two separate
+    // frontend modules with their own independently-fetched copies of the
+    // same underlying file list, so creating a file through this dialog
+    // doesn't otherwise reach the other one at all.
+    await Promise.all([refreshPagesAndSections(), refreshFileList()]);
     row.kind = "page";
     row.pageUrl = zolaUrlForPage(path);
     if (!row.name.trim()) row.name = title;

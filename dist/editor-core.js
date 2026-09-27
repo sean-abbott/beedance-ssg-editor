@@ -137,7 +137,13 @@ const populateFileSelectGrouped = (entries) => {
     for (const e of items) {
       const opt = document.createElement("option");
       opt.value = e.path;
-      opt.textContent = e.isSectionIndex ? e.label : "  " + e.label;
+      // Deliberately no leading-space indent for a child page (that used
+      // to distinguish it from its section's own index entry visually) -
+      // a native <select>'s built-in type-to-search matches from the very
+      // start of each option's text, so any fixed prefix on every child
+      // page silently broke typing a page's real name to jump to it.
+      // Grouping into optgroups by section already conveys the nesting.
+      opt.textContent = e.label;
       optgroup.appendChild(opt);
     }
     fileSelect.appendChild(optgroup);

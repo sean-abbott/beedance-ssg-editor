@@ -199,6 +199,22 @@
       flex-shrink: 0;
       padding: 2px 8px;
     }
+    .menu-entry-drag {
+      flex-shrink: 0;
+      cursor: grab;
+      color: var(--muted);
+      padding: 0 4px;
+      touch-action: none;
+      user-select: none;
+    }
+    .menu-entry-row.dragging {
+      position: relative;
+      z-index: 5;
+      cursor: grabbing;
+      background: color-mix(in srgb, var(--accent) 15%, var(--panel));
+      box-shadow: 0 2px 8px color-mix(in srgb, var(--text) 20%, transparent);
+    }
+    .menu-entry-row.dragging .menu-entry-drag { cursor: grabbing; }
     .tag-chip button:hover { background: color-mix(in srgb, var(--text) 12%, transparent); }
     .tab .tab-dot { color: #b8860b; flex-shrink: 0; }
     .tab .tab-external-dot { color: #c0392b; flex-shrink: 0; }
