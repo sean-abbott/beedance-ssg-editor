@@ -587,6 +587,15 @@ document.getElementById("manage-tags-open").addEventListener("click", async () =
   manageTagsPanel.style.display = "flex";
 });
 
+// Same panel, reached directly from the top-level toolbar - this is a
+// site-wide operation, not tied to whatever page (if any) is currently
+// open, so it shouldn't require going through a specific post's own Tags
+// panel first.
+document.getElementById("manage-tags-button").addEventListener("click", async () => {
+  await openManageTags();
+  manageTagsPanel.style.display = "flex";
+});
+
 document.getElementById("manage-tags-close").addEventListener("click", () => {
   manageTagsPanel.style.display = "none";
 });
