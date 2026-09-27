@@ -66,6 +66,32 @@
     .status-line.status-success { color: #2e7d32; font-weight: 600; }
     .status-line.status-error { color: #c0392b; font-weight: 600; }
 
+    #file-search-results {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      z-index: 15;
+      min-width: 260px;
+      max-height: 280px;
+      overflow-y: auto;
+      margin-top: 2px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+      font-size: 13px;
+    }
+    .file-search-result {
+      padding: 6px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .file-search-result.active { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+    .file-search-no-results { padding: 6px 10px; color: var(--muted); }
+
     button, select, input[type=text] {
       font: inherit;
       font-size: 13px;
@@ -234,6 +260,12 @@
       box-shadow: 0 2px 8px color-mix(in srgb, var(--text) 20%, transparent);
     }
     .menu-entry-row.dragging .menu-entry-drag { cursor: grabbing; }
+    .menu-entry-drop-indicator {
+      height: 3px;
+      margin: 3px 4px;
+      border-radius: 2px;
+      background: var(--accent);
+    }
     .tag-chip button:hover { background: color-mix(in srgb, var(--text) 12%, transparent); }
     .tab .tab-dot { color: #b8860b; flex-shrink: 0; }
     .tab .tab-external-dot { color: #c0392b; flex-shrink: 0; }

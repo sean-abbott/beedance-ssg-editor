@@ -567,8 +567,10 @@
       <button id="site-menu-button" class="secondary" title="Edit the site's main navigation">Site menu&hellip;</button>
       <label>
         Open file:
-        <input type="text" id="file-search" list="file-search-datalist" placeholder="Type to search..." autocomplete="off" style="width: 220px;" />
-        <datalist id="file-search-datalist"></datalist>
+        <span style="position: relative; display: inline-block;">
+          <input type="text" id="file-search" placeholder="Type to search..." autocomplete="off" style="width: 220px;" />
+          <div id="file-search-results"></div>
+        </span>
         <select id="file-select" style="display: none;"></select>
         <button id="file-list-mode-toggle" class="secondary" title="Switch between page titles and raw file paths">Show: Titles</button>
         <button id="refresh-files" class="secondary" title="Rescan for template files (e.g. after just add-theme)">rescan</button>

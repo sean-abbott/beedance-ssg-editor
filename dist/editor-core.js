@@ -40,19 +40,21 @@ export function describeGitError(rawError) {
 }
 
 export const fileSelect = document.getElementById("file-select");
-// The visible "Open file" control - a real text box with a native <datalist>
-// of suggestions (filtered by the browser as you type, the same mechanism
-// this app already trusts for the tags panel's own autocomplete) rather than
-// a plain <select>'s "jump to the option starting with what you typed"
-// type-ahead, which is easy to miss and doesn't show the actual matches.
-// fileSelect (above) stays a real, populated <select> - just hidden - so
-// every OTHER module's existing `fileSelect.value` reads/writes keep
-// working unchanged; this box and fileSelect are kept in sync through
+// The visible "Open file" control - a real text box with a custom dropdown
+// (below), not a native <datalist>: a bare <input list=...> shows nothing
+// until you start typing and only prefix/substring-matches, which doesn't
+// give "show the full list on focus, then fuzzy-filter it" - something this
+// app has to build itself to get consistently across its 3 target
+// webviews. fileSelect (above) stays a real, populated <select> - just
+// hidden - so every OTHER module's existing `fileSelect.value` reads/writes
+// keep working unchanged; this box and fileSelect are kept in sync through
 // labelToPath/pathToLabel below.
 const fileSearchInput = document.getElementById("file-search");
-const fileSearchDatalist = document.getElementById("file-search-datalist");
+const fileSearchResults = document.getElementById("file-search-results");
 let labelToPath = new Map();
 let pathToLabel = new Map();
+let fileSearchVisibleEntries = [];
+let fileSearchHighlightIndex = -1;
 export const editorEl = document.getElementById("editor");
 const tabBar = document.getElementById("tab-bar");
 export const statusEl = document.getElementById("editor-status");
@@ -172,9 +174,6 @@ const populateFileSelectGrouped = (entries) => {
 const addSearchEntry = (label, path) => {
   labelToPath.set(label, path);
   pathToLabel.set(path, label);
-  const opt = document.createElement("option");
-  opt.value = label;
-  fileSearchDatalist.appendChild(opt);
 };
 
 const syncFileSearchDisplay = () => {
@@ -184,7 +183,6 @@ const syncFileSearchDisplay = () => {
 export const refreshFileList = async () => {
   const previous = fileSelect.value;
   fileSelect.innerHTML = "";
-  fileSearchDatalist.innerHTML = "";
   labelToPath = new Map();
   pathToLabel = new Map();
   if (fileListMode === "paths") {
@@ -215,18 +213,116 @@ export const setActiveFilePath = (path) => {
   syncFileSearchDisplay();
 };
 
-fileSearchInput.addEventListener("input", () => {
-  const path = labelToPath.get(fileSearchInput.value);
-  if (path) {
-    fileSelect.value = path;
-    openTab(path);
+// Case-insensitive subsequence match ("abt" matches "About") - not a
+// scoring/ranking library, just enough for "show only what could plausibly
+// be what I'm typing" the way a quick-open box does, rather than a plain
+// prefix/substring search.
+const fuzzyMatches = (query, label) => {
+  let qi = 0;
+  const lowerLabel = label.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  for (let li = 0; li < lowerLabel.length && qi < lowerQuery.length; li++) {
+    if (lowerLabel[li] === lowerQuery[qi]) qi++;
+  }
+  return qi === lowerQuery.length;
+};
+
+const closeFileSearchResults = () => {
+  fileSearchResults.style.display = "none";
+  fileSearchResults.innerHTML = "";
+  fileSearchVisibleEntries = [];
+  fileSearchHighlightIndex = -1;
+};
+
+const selectFileSearchEntry = (entry) => {
+  fileSearchInput.value = entry.label;
+  fileSelect.value = entry.path;
+  closeFileSearchResults();
+  openTab(entry.path);
+};
+
+const updateFileSearchHighlight = () => {
+  [...fileSearchResults.children].forEach((el, i) => el.classList.toggle("active", i === fileSearchHighlightIndex));
+  fileSearchResults.children[fileSearchHighlightIndex]?.scrollIntoView({ block: "nearest" });
+};
+
+// Shows the full list on focus (even before typing anything), then
+// fuzzy-filters it live as the query changes - the "show it, then narrow
+// it down" combobox behavior a bare <input list=...> datalist doesn't give.
+const renderFileSearchResults = (query) => {
+  const q = query.trim();
+  fileSearchVisibleEntries = [...labelToPath.keys()]
+    .filter((label) => fuzzyMatches(q, label))
+    .sort((a, b) => {
+      const aPrefix = a.toLowerCase().startsWith(q.toLowerCase());
+      const bPrefix = b.toLowerCase().startsWith(q.toLowerCase());
+      if (aPrefix !== bPrefix) return aPrefix ? -1 : 1;
+      return a.localeCompare(b);
+    })
+    .map((label) => ({ label, path: labelToPath.get(label) }));
+
+  fileSearchResults.innerHTML = "";
+  if (fileSearchVisibleEntries.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "file-search-no-results";
+    empty.textContent = "No matching files.";
+    fileSearchResults.appendChild(empty);
+    fileSearchHighlightIndex = -1;
+  } else {
+    fileSearchHighlightIndex = 0;
+    fileSearchVisibleEntries.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "file-search-result";
+      row.textContent = entry.label;
+      // mousedown, not click - fires before the input's own blur handler
+      // would otherwise close this dropdown first and discard the click.
+      row.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        selectFileSearchEntry(entry);
+      });
+      fileSearchResults.appendChild(row);
+    });
+    updateFileSearchHighlight();
+  }
+  fileSearchResults.style.display = "block";
+};
+
+fileSearchInput.addEventListener("focus", () => {
+  // Show everything first (an empty query matches every entry), and select
+  // the current text so typing immediately replaces it instead of the user
+  // having to clear "About (About)" by hand before they can search.
+  renderFileSearchResults("");
+  fileSearchInput.select();
+});
+fileSearchInput.addEventListener("input", () => renderFileSearchResults(fileSearchInput.value));
+
+fileSearchInput.addEventListener("keydown", (e) => {
+  if (fileSearchResults.style.display === "none") return;
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    fileSearchHighlightIndex = Math.min(fileSearchVisibleEntries.length - 1, fileSearchHighlightIndex + 1);
+    updateFileSearchHighlight();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    fileSearchHighlightIndex = Math.max(0, fileSearchHighlightIndex - 1);
+    updateFileSearchHighlight();
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    const entry = fileSearchVisibleEntries[fileSearchHighlightIndex];
+    if (entry) selectFileSearchEntry(entry);
+  } else if (e.key === "Escape") {
+    closeFileSearchResults();
+    fileSearchInput.blur();
   }
 });
 
-// Typed text that never resolved to a real match (left as a dead end,
+// Typed text that never resolved to a real selection (left as a dead end,
 // rather than picking a suggestion) shouldn't linger looking like it's the
 // open file - snap back to whatever's actually open.
-fileSearchInput.addEventListener("blur", syncFileSearchDisplay);
+fileSearchInput.addEventListener("blur", () => {
+  closeFileSearchResults();
+  syncFileSearchDisplay();
+});
 
 fileListModeToggle.addEventListener("click", async () => {
   fileListMode = fileListMode === "titles" ? "paths" : "titles";

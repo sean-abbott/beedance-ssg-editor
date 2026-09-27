@@ -105,20 +105,46 @@ const renderSiteMenuList = () => {
       const startIndex = i;
       const startY = e.clientY;
       const rowHeight = el.getBoundingClientRect().height + 6;
+      // A fixed snapshot of the OTHER rows' elements, taken before the
+      // indicator (below) becomes a sibling of theirs too - inserting the
+      // indicator shifts live DOM indices around as it moves, so computing
+      // "which element to insert before" against this stable array (never
+      // touched again during the drag) instead of a live children lookup
+      // keeps that math correct throughout.
+      const rowEls = Array.from(siteMenuList.children);
       dragHandle.setPointerCapture(e.pointerId);
       el.classList.add("dragging");
 
+      const indicator = document.createElement("div");
+      indicator.className = "menu-entry-drop-indicator";
+
+      const computeTargetIndex = (clientY) => {
+        const deltaRows = Math.round((clientY - startY) / rowHeight);
+        return Math.min(rows.length - 1, Math.max(0, startIndex + deltaRows));
+      };
+      // targetIndex is where the dragged row will land among the OTHER
+      // (rowEls) rows once removed from its own original slot - one slot
+      // earlier in rowEls-space than targetIndex once the drop point has
+      // passed the dragged row's own original position, since that's one
+      // fewer "other" row separating the start of the list from there.
+      const placeIndicator = (targetIndex) => {
+        const boundary = targetIndex < startIndex ? targetIndex : targetIndex + 1;
+        siteMenuList.insertBefore(indicator, rowEls[boundary] || null);
+      };
+      placeIndicator(startIndex);
+
       const onMove = (moveEvent) => {
         el.style.transform = `translateY(${moveEvent.clientY - startY}px)`;
+        placeIndicator(computeTargetIndex(moveEvent.clientY));
       };
       const onUp = (upEvent) => {
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
         el.classList.remove("dragging");
         el.style.transform = "";
+        indicator.remove();
 
-        const deltaRows = Math.round((upEvent.clientY - startY) / rowHeight);
-        const targetIndex = Math.min(rows.length - 1, Math.max(0, startIndex + deltaRows));
+        const targetIndex = computeTargetIndex(upEvent.clientY);
         if (targetIndex !== startIndex) {
           const [moved] = rows.splice(startIndex, 1);
           rows.splice(targetIndex, 0, moved);
