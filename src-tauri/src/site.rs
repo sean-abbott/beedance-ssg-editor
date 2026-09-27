@@ -244,15 +244,11 @@ fn read_date(full: &Path) -> Option<String> {
 }
 
 /// Whether the section at `section_index` (its _index.md) is a "blog
-/// heading" - the same sort_by = "date" convention content.rs's
+/// heading" - the same zola::heading_kind_of classification content.rs's
 /// find_post_section/list_page_sections use to tell a dated, chronological
 /// section (like Blog) apart from a free-form one (like Biodiversity).
 fn section_is_blog_heading(section_index: &Path) -> bool {
-    std::fs::read_to_string(section_index)
-        .ok()
-        .and_then(|raw| front_matter_block(&raw).and_then(|b| front_matter_field(b, "sort_by")))
-        .as_deref()
-        == Some("date")
+    std::fs::read_to_string(section_index).ok().and_then(|raw| zola::heading_kind_of(&raw)) == Some(zola::HeadingKind::Blog)
 }
 
 #[derive(Clone, serde::Serialize)]

@@ -100,11 +100,12 @@ pub fn resolve_preview_path(content_path: String) -> Option<String> {
     Some(if segments.is_empty() { "/".to_string() } else { format!("/{}/", segments.join("/")) })
 }
 
-/// Finds the site's "posts" section: whichever content/ section has
-/// `sort_by = "date"` in its `_index.md` front matter. This is Zola's own
-/// native convention for a dated/chronological listing, not something this
-/// app invented - reusing it means "New post" has an unambiguous, existing
-/// signal for where posts go instead of guessing at a folder name like
+/// Finds the site's "posts" section: whichever content/ section is
+/// classified `heading_kind = "blog"` (or, lacking that, has
+/// `sort_by = "date"` - Zola's own native convention for a dated/
+/// chronological listing, and the fallback zola::heading_kind_of already
+/// applies). Reusing an existing signal means "New post" has an
+/// unambiguous place to look instead of guessing at a folder name like
 /// "blog", which isn't guaranteed to exist or be named that.
 fn find_post_section() -> Option<PathBuf> {
     fn walk(dir: &Path, found: &mut Option<PathBuf>) {
@@ -118,10 +119,8 @@ fn find_post_section() -> Option<PathBuf> {
                 walk(&path, found);
             } else if path.file_name().is_some_and(|f| f == "_index.md") {
                 if let Ok(raw) = std::fs::read_to_string(&path) {
-                    if let Some(block) = front_matter_block(&raw) {
-                        if front_matter_field(block, "sort_by").as_deref() == Some("date") {
-                            *found = path.parent().map(Path::to_path_buf);
-                        }
+                    if zola::heading_kind_of(&raw) == Some(zola::HeadingKind::Blog) {
+                        *found = path.parent().map(Path::to_path_buf);
                     }
                 }
             }
@@ -278,16 +277,25 @@ pub fn list_page_sections() -> Vec<ContentSection> {
             continue;
         }
         let raw = std::fs::read_to_string(&index).ok();
-        let block = raw.as_deref().and_then(front_matter_block);
 
-        // A "blog heading" (a dated, chronological section like Blog) isn't
-        // a valid destination for a free-form page - only "page headings"
-        // are offered here. Posts still go through create_post/
-        // find_post_section, which uses this same sort_by convention.
-        if block.and_then(|b| front_matter_field(b, "sort_by")).as_deref() == Some("date") {
+        // Only a "page heading" is a valid destination for a free-form page.
+        // A "blog heading" (Blog) isn't - posts go through create_post/
+        // find_post_section instead. A "filtered-view heading" (Events: an
+        // algorithmic tag-filtered listing) or a "widget heading" (Plant
+        // Safari: a single bespoke embedded page) aren't containers at all -
+        // neither a page nor a post has anywhere real to nest under them.
+        // Unclassified (no explicit heading_kind, no sort_by = "date")
+        // defaults permissively to Page, matching every section that
+        // predates this convention.
+        let excluded = matches!(
+            raw.as_deref().and_then(zola::heading_kind_of),
+            Some(zola::HeadingKind::Blog) | Some(zola::HeadingKind::FilteredView) | Some(zola::HeadingKind::Widget)
+        );
+        if excluded {
             continue;
         }
 
+        let block = raw.as_deref().and_then(front_matter_block);
         let slug = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
         let title = block.and_then(|b| front_matter_field(b, "title")).unwrap_or_else(|| slug.clone());
         sections.push(ContentSection { slug, title });
