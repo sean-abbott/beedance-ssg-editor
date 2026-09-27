@@ -27,8 +27,8 @@ const { invoke } = window.__TAURI__.core;
 // help text) rather than two near-identical dialogs - the only real
 // difference is which Rust command runs and what the help text says.
 const NEW_CONTENT_HELP = {
-  post: "A post is dated content - a blog entry or event - that fades in relevance over time. It's not part of the site's permanent menu.",
-  page: "A page is a permanent, menu-linked fixture (like \"About\" or \"Events\"). Use this for content that stays relevant indefinitely.",
+  post: "A post is dated content - a blog entry or event - that fades in relevance over time. It always goes into whichever section is set up as the blog, not wherever you happen to be editing right now.",
+  page: "A page is a permanent, menu-linked fixture (like \"About\" or \"Biodiversity\") that nests under an existing section. A few sections that might look similar won't show up as a destination below - an auto-generated listing built entirely from tagged posts (like Events), or a single bespoke page (like Plant Safari), isn't a real container to add a page under.",
 };
 let newContentKind = "post";
 const newContentPanel = document.getElementById("new-content-panel");
