@@ -53,6 +53,15 @@ const fileSearchInput = document.getElementById("file-search");
 const fileSearchResults = document.getElementById("file-search-results");
 let labelToPath = new Map();
 let pathToLabel = new Map();
+// Titles mode's own section for each entry (undefined in Paths mode) -
+// used only to restore the section grouping/hierarchy as a set of headers
+// when showing the full list (an empty query), the same structure the old
+// <select>'s optgroups gave for free. A search actually in progress (a
+// non-empty query) drops this and shows a flat, fuzzy-sorted list instead -
+// once you're filtering across sections, the grouping stops being the
+// useful part, and each result's "(Group)" suffix still says which section
+// it's in.
+let labelToGroup = new Map();
 let fileSearchVisibleEntries = [];
 let fileSearchHighlightIndex = -1;
 export const editorEl = document.getElementById("editor");
@@ -165,15 +174,16 @@ const populateFileSelectGrouped = (entries) => {
       // group === label) - matching site-menu.js's own page-picker exactly,
       // and sidestepping any case where two different sections happen to
       // have a same-titled child page.
-      addSearchEntry(`${e.label} (${groupName})`, e.path);
+      addSearchEntry(`${e.label} (${groupName})`, e.path, groupName);
     }
     fileSelect.appendChild(optgroup);
   }
 };
 
-const addSearchEntry = (label, path) => {
+const addSearchEntry = (label, path, group) => {
   labelToPath.set(label, path);
   pathToLabel.set(path, label);
+  if (group !== undefined) labelToGroup.set(label, group);
 };
 
 const syncFileSearchDisplay = () => {
@@ -185,6 +195,7 @@ export const refreshFileList = async () => {
   fileSelect.innerHTML = "";
   labelToPath = new Map();
   pathToLabel = new Map();
+  labelToGroup = new Map();
   if (fileListMode === "paths") {
     const files = await invoke("list_editable_files");
     for (const f of files) {
@@ -242,24 +253,35 @@ const selectFileSearchEntry = (entry) => {
 };
 
 const updateFileSearchHighlight = () => {
-  [...fileSearchResults.children].forEach((el, i) => el.classList.toggle("active", i === fileSearchHighlightIndex));
-  fileSearchResults.children[fileSearchHighlightIndex]?.scrollIntoView({ block: "nearest" });
+  const resultEls = fileSearchResults.querySelectorAll(".file-search-result");
+  resultEls.forEach((el, i) => el.classList.toggle("active", i === fileSearchHighlightIndex));
+  resultEls[fileSearchHighlightIndex]?.scrollIntoView({ block: "nearest" });
 };
 
 // Shows the full list on focus (even before typing anything), then
 // fuzzy-filters it live as the query changes - the "show it, then narrow
 // it down" combobox behavior a bare <input list=...> datalist doesn't give.
+//
+// An empty query (just opened, nothing typed yet) in Titles mode restores
+// the section grouping/headers the old <select>'s optgroups gave - once
+// there's an actual query, matches drop the grouping and sort flat by
+// relevance instead, since results can span sections and the group no
+// longer has a single obvious place to show a header for it (each result's
+// own "(Group)" suffix still says which section it's in).
 const renderFileSearchResults = (query) => {
   const q = query.trim();
-  fileSearchVisibleEntries = [...labelToPath.keys()]
-    .filter((label) => fuzzyMatches(q, label))
-    .sort((a, b) => {
+  const showGrouped = q === "" && fileListMode === "titles";
+
+  let labels = [...labelToPath.keys()].filter((label) => fuzzyMatches(q, label));
+  if (!showGrouped) {
+    labels = labels.sort((a, b) => {
       const aPrefix = a.toLowerCase().startsWith(q.toLowerCase());
       const bPrefix = b.toLowerCase().startsWith(q.toLowerCase());
       if (aPrefix !== bPrefix) return aPrefix ? -1 : 1;
       return a.localeCompare(b);
-    })
-    .map((label) => ({ label, path: labelToPath.get(label) }));
+    });
+  }
+  fileSearchVisibleEntries = labels.map((label) => ({ label, path: labelToPath.get(label) }));
 
   fileSearchResults.innerHTML = "";
   if (fileSearchVisibleEntries.length === 0) {
@@ -270,7 +292,18 @@ const renderFileSearchResults = (query) => {
     fileSearchHighlightIndex = -1;
   } else {
     fileSearchHighlightIndex = 0;
+    let lastGroup = null;
     fileSearchVisibleEntries.forEach((entry) => {
+      if (showGrouped) {
+        const group = labelToGroup.get(entry.label);
+        if (group !== lastGroup) {
+          const header = document.createElement("div");
+          header.className = "file-search-group-header";
+          header.textContent = group;
+          fileSearchResults.appendChild(header);
+          lastGroup = group;
+        }
+      }
       const row = document.createElement("div");
       row.className = "file-search-result";
       row.textContent = entry.label;
