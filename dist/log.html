@@ -2,33 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Preview Server Log</title>
+  <title>Preview log</title>
+  <link rel="stylesheet" href="styles.css" />
   <style>
-    :root { color-scheme: light dark; }
     html, body { margin: 0; height: 100%; }
-    body {
-      background: #1c1c1e;
-      color: #eaeaec;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     #toolbar {
       display: flex;
       justify-content: flex-end;
       padding: 6px;
-      background: #222329;
-      border-bottom: 1px solid #35363c;
+      background: var(--panel-alt);
+      border-bottom: 1px solid var(--border);
     }
-    #toolbar button {
-      font: inherit;
-      font-size: 12px;
-      padding: 4px 10px;
-      cursor: pointer;
-      background: #2a2b31;
-      color: #eaeaec;
-      border: 1px solid #35363c;
-      border-radius: 6px;
-    }
-    #toolbar button:hover { filter: brightness(1.15); }
+    #toolbar button { font: inherit; font-size: 12px; }
     #log {
       margin: 0;
       padding: 10px;
@@ -37,10 +23,13 @@
       height: calc(100% - 37px);
       overflow: auto;
       font-size: 12px;
+      background: var(--bg);
+      color: var(--text);
     }
   </style>
 </head>
 <body>
+  <div class="bee-stripe"></div>
   <div id="toolbar">
     <button id="clear">Clear</button>
   </div>
@@ -52,7 +41,7 @@
     // Set by the Rust side's initialization_script before this page's own
     // script runs, with whatever lines already arrived before this window
     // existed to hear them (e.g. the preview server was already running
-    // when "Preview Server Log" was clicked).
+    // when "Preview log" was clicked).
     if (window.__BEEDANCE_LOG_BACKLOG__ && window.__BEEDANCE_LOG_BACKLOG__.length) {
       logEl.textContent = window.__BEEDANCE_LOG_BACKLOG__.join("\n") + "\n";
       logEl.scrollTop = logEl.scrollHeight;
@@ -75,5 +64,6 @@
       logEl.textContent = "";
     });
   </script>
+  <script type="module" src="theme.js"></script>
 </body>
 </html>

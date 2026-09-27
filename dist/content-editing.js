@@ -20,6 +20,7 @@ import {
   reviewModeActive,
   showError,
 } from "./editor-core.js";
+import { makeIcon } from "./icons.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -407,8 +408,9 @@ const renderTagsPanelChips = () => {
     chip.appendChild(label);
     const remove = document.createElement("button");
     remove.type = "button";
+    remove.className = "chip-remove";
     remove.setAttribute("aria-label", "Remove " + tag);
-    remove.textContent = "×";
+    remove.appendChild(makeIcon("close"));
     remove.addEventListener("click", () => {
       tagsPanelTags = tagsPanelTags.filter((t) => t !== tag);
       renderTagsPanelChips();

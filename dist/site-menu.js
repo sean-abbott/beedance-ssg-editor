@@ -16,6 +16,7 @@ import {
   refreshFileList,
   createSearchCombobox,
 } from "./editor-core.js";
+import { makeIcon } from "./icons.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -112,13 +113,11 @@ const renderSiteMenuList = () => {
     const dragHandle = document.createElement("span");
     dragHandle.className = "menu-entry-drag";
     dragHandle.title = "Drag to reorder";
-    // A drawn 3-bar grip rather than a Unicode glyph (the earlier "⠿" was
+    // An SVG grip icon rather than a Unicode glyph (the earlier "⠿" was
     // hard to see - too small/faint, and glyph rendering/legibility varies
-    // across this app's 3 target webviews anyway) - a plain CSS shape
-    // renders identically everywhere.
-    for (let bar = 0; bar < 3; bar++) {
-      dragHandle.appendChild(document.createElement("span")).className = "menu-entry-drag-bar";
-    }
+    // across this app's 3 target webviews anyway) - vector paths render
+    // identically everywhere, unlike font glyph coverage/hinting.
+    dragHandle.appendChild(makeIcon("grip"));
     dragHandle.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       const startIndex = i;

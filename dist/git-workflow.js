@@ -26,6 +26,7 @@ import {
   describeGitError,
   showError,
 } from "./editor-core.js";
+import { makeIcon } from "./icons.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -34,7 +35,10 @@ const localDraftsList = document.getElementById("local-drafts-list");
 const localDraftsDriftStatus = document.getElementById("local-drafts-drift-status");
 const localDraftsNewName = document.getElementById("local-drafts-new-name");
 const localDraftsStatus = document.getElementById("local-drafts-status");
-const localDraftsButton = document.getElementById("local-drafts-button");
+// The button itself is the branch dropdown's own toggle (menus.js wires
+// its open/close) - only this inner label span's text updates, so an
+// update never clobbers the branch icon/chevron sitting either side of it.
+const localDraftsButtonLabel = document.getElementById("local-drafts-button-label");
 const localDraftsNormal = document.getElementById("local-drafts-normal");
 const localDraftsReviewActive = document.getElementById("local-drafts-review-active");
 const localDraftsReviewActiveMessage = document.getElementById("local-drafts-review-active-message");
@@ -48,6 +52,8 @@ const reviewPrReviewActive = document.getElementById("review-pr-review-active");
 const reviewPrReviewActiveMessage = document.getElementById("review-pr-review-active-message");
 const reviewPrList = document.getElementById("review-pr-list");
 const reviewPrStatus = document.getElementById("review-pr-status");
+const reviewPrApprove = document.getElementById("review-pr-approve");
+const reviewPrApproveStatus = document.getElementById("review-pr-approve-status");
 
 const reviewModeBanner = document.getElementById("review-mode-banner");
 const reviewModeHeaderBadge = document.getElementById("review-mode-header-badge");
@@ -123,8 +129,24 @@ const applyReviewModeUI = () => {
     reviewPrReviewActiveMessage.textContent = message;
     reviewModeMessage.textContent = message + " Read only - editing is disabled.";
     reviewModeLink.href = reviewModeActive.url;
+    reviewPrApproveStatus.textContent = "";
+    reviewPrApprove.disabled = false;
   }
 };
+
+reviewPrApprove.addEventListener("click", async () => {
+  if (!reviewModeActive) return;
+  reviewPrApproveStatus.textContent = "Submitting approval...";
+  reviewPrApprove.disabled = true;
+  try {
+    await invoke("github_approve_pull_request", { prNumber: reviewModeActive.number });
+    reviewPrApproveStatus.textContent = "Approved.";
+  } catch (err) {
+    reviewPrApprove.disabled = false;
+    reviewPrApproveStatus.textContent = "";
+    showError(describeGitError(err));
+  }
+});
 
 const describeDrift = (drift) => {
   if (!drift.liveBranch) return "No live-site branch detected yet.";
@@ -142,11 +164,11 @@ const describeDrift = (drift) => {
 
 const updateBranchIndicator = (branches) => {
   if (reviewModeActive) {
-    localDraftsButton.textContent = `Reviewing PR #${reviewModeActive.number}`;
+    localDraftsButtonLabel.textContent = `Reviewing PR #${reviewModeActive.number}`;
     return;
   }
   const current = branches.find((b) => b.isCurrent);
-  localDraftsButton.textContent = "Branch: " + (current ? (current.isLive ? "Live site" : current.name) : "…");
+  localDraftsButtonLabel.textContent = current ? (current.isLive ? "Live site" : current.name) : "…";
 };
 
 const renderLocalDraftsList = (branches) => {
@@ -154,6 +176,7 @@ const renderLocalDraftsList = (branches) => {
   for (const branch of branches) {
     const row = document.createElement("div");
     row.className = "review-row" + (branch.isCurrent ? " active" : "");
+    row.appendChild(makeIcon("branch", "review-row-status-icon"));
     const label = document.createElement("span");
     label.className = "review-row-path";
     label.textContent = branch.isLive ? `Live site (${branch.name})` : branch.name;
@@ -243,6 +266,7 @@ const renderPrList = (prs) => {
   for (const pr of others) {
     const row = document.createElement("div");
     row.className = "review-row";
+    row.appendChild(makeIcon("pull-request", "review-row-status-icon"));
     const label = document.createElement("span");
     label.className = "review-row-path";
     label.textContent = `#${pr.number} ${pr.title}`;
@@ -342,7 +366,7 @@ document.getElementById("local-drafts-exit-review-inline").addEventListener("cli
 document.getElementById("review-pr-exit-review-inline").addEventListener("click", exitReviewMode);
 document.getElementById("review-mode-exit").addEventListener("click", exitReviewMode);
 
-document.getElementById("local-drafts-button").addEventListener("click", async () => {
+document.getElementById("branch-menu-switch-draft").addEventListener("click", async () => {
   localDraftsStatus.textContent = "";
   localDraftsPanel.style.display = "flex";
   await refreshLocalDrafts();
@@ -409,6 +433,14 @@ const REVIEW_STATUS_LABELS = {
   untracked: "New",
 };
 
+const REVIEW_STATUS_ICONS = {
+  modified: "pencil",
+  added: "doc-post",
+  deleted: "trash",
+  renamed: "doc",
+  untracked: "doc-post",
+};
+
 const renderReviewChangesList = () => {
   reviewChangesList.innerHTML = "";
   if (reviewChangesFiles.length === 0) {
@@ -420,7 +452,8 @@ const renderReviewChangesList = () => {
   }
   for (const file of reviewChangesFiles) {
     const row = document.createElement("div");
-    row.className = "review-row" + (file.path === reviewChangesSelected ? " active" : "");
+    row.className = `review-row status-${file.status}` + (file.path === reviewChangesSelected ? " active" : "");
+    row.appendChild(makeIcon(REVIEW_STATUS_ICONS[file.status] || "doc", "review-row-status-icon"));
     const pathSpan = document.createElement("span");
     pathSpan.className = "review-row-path";
     pathSpan.textContent = file.path;
@@ -507,7 +540,18 @@ document.getElementById("review-changes-push").addEventListener("click", async (
   reviewChangesStatus.textContent = "Sending changes...";
   try {
     await invoke("git_push");
-    reviewChangesStatus.textContent = "Sent.";
+    reviewChangesStatus.textContent = "Sent. Opening a pull request for review...";
+    try {
+      const branch = await invoke("current_branch");
+      const pr = await invoke("github_create_pull_request", { title: branch, body: "" });
+      reviewChangesStatus.textContent = `Sent. Pull request #${pr.number} is up for review.`;
+    } catch (prErr) {
+      // The branch itself sent fine - a PR is a separate, best-effort step
+      // on top of that, most commonly missing because no personal access
+      // token is configured yet (see github_create_pull_request's own
+      // errors) - so this doesn't get treated as the push itself failing.
+      reviewChangesStatus.textContent = "Sent, but couldn't open a pull request: " + prErr;
+    }
   } catch (err) {
     reviewChangesStatus.textContent = "";
     showError(describeGitError(err));

@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Preview</title>
+  <link rel="stylesheet" href="styles.css" />
   <style>
     html, body { margin: 0; height: 100%; }
     #toolbar {
@@ -10,18 +11,18 @@
       gap: 6px;
       align-items: center;
       padding: 6px;
-      background: #e8e8ea;
-      border-bottom: 1px solid #ccc;
+      background: var(--panel-alt);
+      border-bottom: 1px solid var(--border);
     }
     #toolbar button {
       font-size: 15px;
       padding: 4px 10px;
-      cursor: pointer;
     }
     #frame { width: 100%; height: calc(100% - 39px); border: none; display: block; }
   </style>
 </head>
 <body>
+  <div class="bee-stripe"></div>
   <div id="toolbar">
     <button id="back" title="Back" aria-label="Back">&larr;</button>
     <button id="forward" title="Forward" aria-label="Forward">&rarr;</button>
@@ -81,5 +82,6 @@
       navigateFrame(currentPath, currentPort);
     });
   </script>
+  <script type="module" src="theme.js"></script>
 </body>
 </html>

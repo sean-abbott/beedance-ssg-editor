@@ -9,6 +9,7 @@ mod menu;
 mod preview;
 mod r2;
 mod site;
+mod ui_settings;
 mod zola;
 
 use std::collections::{HashMap, HashSet};
@@ -22,6 +23,7 @@ use images::TierSettingsState;
 use preview::{LogBacklog, ServeState, LOG_LABEL, PREVIEW_LABEL};
 use r2::{R2PersonalConfigState, R2SiteConfigState};
 use site::{OpenFiles, SelfWriteTracker, WatcherState};
+use ui_settings::UiSettingsState;
 
 /// Kills the zola sidecar (if running) and closes the preview/log windows
 /// (if open) - called from both an ordinary main-window close AND an
@@ -61,6 +63,7 @@ fn main() {
         .manage(R2SiteConfigState(Mutex::new(r2::load_r2_site_config())))
         .manage(R2PersonalConfigState(Mutex::new(r2::load_r2_personal_config())))
         .manage(AuthorSettingsState(Mutex::new(content::load_author_settings())))
+        .manage(UiSettingsState(Mutex::new(ui_settings::load_ui_settings())))
         .manage(GitAuthConfigState(Mutex::new(git::load_git_auth_config())))
         .setup(|app| {
             site::spawn_content_watcher(app.handle().clone());
@@ -86,6 +89,8 @@ fn main() {
             git::git_check_main_drift,
             git::git_clone_repo,
             github::github_list_open_prs,
+            github::github_create_pull_request,
+            github::github_approve_pull_request,
             preview::zola_serve,
             preview::zola_stop,
             preview::open_log_window,
@@ -109,6 +114,8 @@ fn main() {
             content::rewrite_tag,
             content::get_author_settings,
             content::set_author_settings,
+            ui_settings::get_ui_settings,
+            ui_settings::set_ui_settings,
             content::set_front_matter_date,
             content::remove_front_matter_date,
             site::get_site_dir,

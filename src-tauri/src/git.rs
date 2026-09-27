@@ -251,7 +251,7 @@ fn local_branch_names(dir: &Path) -> Result<Vec<String>, String> {
 /// branch has nothing else it could mean. Anything more ambiguous than that
 /// (multiple branches, neither named main/master) returns None rather than
 /// guessing wrong - the UI just shows no branch as "live" in that case.
-fn guess_live_branch(dir: &Path) -> Option<String> {
+pub(crate) fn guess_live_branch(dir: &Path) -> Option<String> {
     let branches = local_branch_names(dir).ok()?;
     for candidate in ["main", "master"] {
         if branches.iter().any(|b| b == candidate) {

@@ -4,6 +4,8 @@
 // index.html script (see pws-zg1h) - this is the module every other one
 // depends on, not the other way around.
 
+import { makeIcon } from "./icons.js";
+
 const { invoke } = window.__TAURI__.core;
 
 // Translates common raw git/SSH failure text into something a non-technical
@@ -377,6 +379,8 @@ export const renderTabBar = () => {
     el.className = "tab" + (path === activeTab ? " active" : "");
     el.title = path;
 
+    el.appendChild(makeIcon("doc", "tab-icon"));
+
     if (tab.dirty) {
       const dot = document.createElement("span");
       dot.className = "tab-dot";
@@ -396,7 +400,7 @@ export const renderTabBar = () => {
 
     const close = document.createElement("button");
     close.className = "tab-close";
-    close.textContent = "×";
+    close.appendChild(makeIcon("close"));
     close.setAttribute("aria-label", "Close " + path);
     close.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -845,6 +849,7 @@ export let currentSiteDir = "";
 invoke("get_site_dir").then((dir) => {
   currentSiteDir = dir;
   siteDirEl.textContent = dir;
+  siteDirEl.title = dir;
 });
 
 refreshFileList().then(() => {
@@ -870,6 +875,7 @@ export const switchToSiteDir = async (folder) => {
   const result = await invoke("set_site_dir", { path: folder });
   currentSiteDir = folder;
   siteDirEl.textContent = result;
+  siteDirEl.title = result;
 
   await refreshFileList();
   if (fileSelect.value) openTab(fileSelect.value);

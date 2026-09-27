@@ -130,7 +130,7 @@ pub fn open_log_window(app: tauri::AppHandle, backlog: tauri::State<LogBacklog>)
     let backlog_json = serde_json::to_string(&*backlog.0.lock().unwrap()).map_err(|e| e.to_string())?;
 
     WebviewWindowBuilder::new(&app, LOG_LABEL, WebviewUrl::App("log.html".into()))
-        .title("Preview Server Log")
+        .title("Preview log")
         .inner_size(LOG_WINDOW_SIZE.0, LOG_WINDOW_SIZE.1)
         .initialization_script(&format!("window.__BEEDANCE_LOG_BACKLOG__ = {backlog_json};"))
         .build()

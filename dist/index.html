@@ -6,35 +6,63 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <div class="bee-stripe"></div>
+  <svg id="icon-sprite" style="display:none" aria-hidden="true">
+    <symbol id="icon-save" viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4z"/><path d="M8 4v6h8V4"/><path d="M8 20v-6h8v6"/></symbol>
+    <symbol id="icon-undo" viewBox="0 0 24 24"><path d="M9 7 4 12l5 5"/><path d="M4 12h11a5 5 0 0 1 0 10h-1"/></symbol>
+    <symbol id="icon-redo" viewBox="0 0 24 24"><path d="M15 7l5 5-5 5"/><path d="M20 12H9a5 5 0 0 0 0 10h1"/></symbol>
+    <symbol id="icon-link" viewBox="0 0 24 24"><path d="M9 15l6-6"/><path d="M13 6l1.5-1.5a3.5 3.5 0 0 1 5 5L18 11"/><path d="M11 18l-1.5 1.5a3.5 3.5 0 0 1-5-5L6 13"/></symbol>
+    <symbol id="icon-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5" fill="currentColor" stroke="none"/><path d="M21 16l-5-5-9 9"/></symbol>
+    <symbol id="icon-image-link" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="14" rx="2"/><circle cx="8" cy="10" r="1.3" fill="currentColor" stroke="none"/><path d="M17 15l-4-4-6 6"/><path d="M15 5.5l4-1.5-1.5 4"/><path d="M19 4l-4.5 4.5"/></symbol>
+    <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 9h16"/><path d="M8 3v4M16 3v4"/></symbol>
+    <symbol id="icon-tag" viewBox="0 0 24 24"><path d="M11 3H4v7l10 10 7-7L11 3z"/><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="icon-grip" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="15" cy="18" r="1.3"/></g></symbol>
+    <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+    <symbol id="icon-branch" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="6" r="2"/><path d="M7 8v8"/><path d="M9 6h6a2 2 0 0 1 2 2v0"/></symbol>
+    <symbol id="icon-pull-request" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="6" r="2"/><path d="M7 8v8"/><path d="M17 8a5 5 0 0 1-5 5h-1"/></symbol>
+    <symbol id="icon-external-link" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"/></symbol>
+    <symbol id="icon-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></symbol>
+    <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M21 21l-5.2-5.2"/></symbol>
+    <symbol id="icon-list-bullet" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="5" cy="7" r="1.3"/><circle cx="5" cy="12" r="1.3"/><circle cx="5" cy="17" r="1.3"/></g><path d="M9 7h11M9 12h11M9 17h11"/></symbol>
+    <symbol id="icon-list-numbered" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" font-family="ui-monospace, monospace" font-size="7"><text x="2.5" y="9">1</text><text x="2.5" y="14">2</text><text x="2.5" y="19">3</text></g><path d="M9 7h11M9 12h11M9 17h11"/></symbol>
+    <symbol id="icon-reload" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14.5-4.5M20 12a8 8 0 0 1-14.5 4.5"/><path d="M18 3v5h-5"/><path d="M6 21v-5h5"/></symbol>
+    <symbol id="icon-phone" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/></symbol>
+    <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3-11 11z"/><path d="M14 7l3 3"/></symbol>
+    <symbol id="icon-doc" viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/></symbol>
+    <symbol id="icon-doc-post" viewBox="0 0 24 24"><path d="M6 3h7l4 4v14H6z"/><path d="M13 3v4h4"/><path d="M9 12h6M9 15h6M9 9h3"/></symbol>
+    <symbol id="icon-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l4 3-4 3"/><path d="M13 15h4"/></symbol>
+  </svg>
   <header>
-    <h1>beedance-ssg-editor <span id="review-mode-header-badge" style="display: none; font-size: 12px; font-weight: 700; color: #b8860b; border: 1px solid #b8860b; border-radius: 999px; padding: 2px 8px; vertical-align: middle;">READ-ONLY &middot; REVIEWING</span></h1>
-    <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
-      <div id="site-dir" style="font-size: 12px; color: var(--muted);">(loading...)</div>
-      <button id="change-site" class="secondary" style="font-size: 11px; padding: 2px 8px;">Change site&hellip;</button>
-      <button id="open-settings" class="secondary" style="font-size: 11px; padding: 2px 8px;">Settings&hellip;</button>
-      <button id="open-log-window" class="secondary" style="font-size: 11px; padding: 2px 8px;">Preview Server Log</button>
+    <div class="header-titles">
+      <h1>beedance-ssg-editor <span id="review-mode-header-badge" style="display: none; font-size: 12px; font-weight: 700; color: #b8860b; border: 1px solid #b8860b; border-radius: 999px; padding: 2px 8px; vertical-align: middle;">READ-ONLY &middot; REVIEWING</span></h1>
     </div>
   </header>
 
-  <div id="onboarding-welcome-panel" style="position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(420px, 90%); padding: 16px; background: var(--panel);">
-      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Welcome</h3>
-      <p style="font-size: 13px; margin: 0 0 14px;">
+  <div id="onboarding-welcome-panel" class="modal-overlay" style="z-index: 20;">
+    <div class="modal">
+      <div class="modal-header"><h3>Welcome</h3></div>
+      <div class="modal-body">
+      <p style="margin-top: 0;">
         First, a couple of things worth setting up: your name (added to
         pages you edit) and, if you'll be syncing with GitHub, your access
         token. You can always change these later in Settings.
       </p>
-      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+      </div>
+      <div class="modal-footer">
         <button id="onboarding-welcome-skip" class="secondary">Skip setup for now</button>
         <button id="onboarding-welcome-continue">Continue</button>
       </div>
     </div>
   </div>
 
-  <div id="onboarding-site-panel" style="position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(460px, 90%); padding: 16px; background: var(--panel);">
-      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Choose a site</h3>
-      <p style="font-size: 13px; margin: 0 0 14px;">
+  <div id="onboarding-site-panel" class="modal-overlay" style="z-index: 20;">
+    <div class="modal">
+      <div class="modal-header"><h3>Choose a site</h3></div>
+      <div class="modal-body">
+      <p style="margin-top: 0;">
         Start with the bundled sample site to explore the app, or clone a
         real site's repository from GitHub.
       </p>
@@ -43,44 +71,50 @@
         <button id="onboarding-site-start-fresh" class="secondary">Start with the sample site</button>
       </div>
 
-      <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;">
-        <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Or clone a site from GitHub</legend>
+      <div class="card">
+        <div class="card-header"><h4>Or clone a site from GitHub</h4></div>
 
-        <label style="display: block; font-size: 13px; margin-bottom: 4px;">
+        <label class="field-label">
           Repository URL
-          <input type="text" id="onboarding-clone-url" style="width: 100%; margin-top: 4px;" placeholder="https://github.com/you/your-site.git" />
+          <input type="text" id="onboarding-clone-url" placeholder="https://github.com/you/your-site.git" />
         </label>
-        <p style="font-size: 11px; color: var(--muted); margin: 0 0 4px;">
+        <p class="card-description">
           Use the HTTPS link (from GitHub's own green "Code" button, the
           "HTTPS" tab) unless you already know what an SSH key is and have
           one set up on this machine.
         </p>
-        <div id="onboarding-clone-ssh-hint" style="display: none; font-size: 11px; color: #b8860b; margin: 0 0 8px;"></div>
+        <div id="onboarding-clone-ssh-hint" style="display: none; font-size: 11px; color: var(--warning); margin: 0 0 8px;"></div>
 
         <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 8px;">
           <button type="button" id="onboarding-clone-choose-folder" class="secondary">Choose destination folder&hellip;</button>
           <span id="onboarding-clone-destination" style="font-size: 12px; color: var(--muted);">(none chosen)</span>
         </div>
 
-        <div style="display: flex; justify-content: flex-end;">
+        <div class="card-footer">
           <button type="button" id="onboarding-clone-confirm">Clone</button>
         </div>
-      </fieldset>
+      </div>
 
       <div id="onboarding-site-status" style="font-size: 12px; color: var(--muted); margin: 10px 0 0;"></div>
+      </div>
     </div>
   </div>
 
-  <div id="settings-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(440px, 90%); max-height: 85vh; padding: 16px; background: var(--panel); display: flex; flex-direction: column;">
-      <h3 style="margin: 0 0 12px; font-size: 13px; color: var(--muted); flex-shrink: 0;">Settings</h3>
-
-      <div style="display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); flex-shrink: 0;">
-        <button type="button" class="secondary settings-tab-btn" data-settings-tab="site" style="border-radius: var(--radius) var(--radius) 0 0; border-bottom: none;">This site</button>
-        <button type="button" class="secondary settings-tab-btn" data-settings-tab="personal" style="border-radius: var(--radius) var(--radius) 0 0; border-bottom: none;">This installation</button>
+  <div id="settings-panel" class="modal-overlay">
+    <div class="modal modal-wide" style="max-height: 85vh;">
+      <div class="modal-header">
+        <svg class="icon" style="width:18px;height:18px;"><use href="#icon-gear"/></svg>
+        <h3>Settings</h3>
       </div>
 
-      <div style="overflow-y: auto; flex: 1 1 auto; min-height: 0;">
+      <div style="padding: var(--space-4) var(--space-5) 0;">
+        <div class="segmented">
+          <button type="button" class="settings-tab-btn" data-settings-tab="site">This site</button>
+          <button type="button" class="settings-tab-btn" data-settings-tab="personal">This installation</button>
+        </div>
+      </div>
+
+      <div class="modal-body">
         <div id="settings-tab-site" class="settings-tab">
           <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
             Shared with everyone who edits this site (committed to its own
@@ -88,8 +122,8 @@
             treated as though it's public even when it isn't.
           </p>
 
-          <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
-            <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Inserted image sizes</legend>
+          <div class="card">
+            <div class="card-header"><h4>Inserted image sizes</h4></div>
 
             <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 6px 10px; align-items: center; font-size: 13px;">
               <span>Web standard</span>
@@ -104,20 +138,20 @@
               <label>max <input type="number" id="tier-post-internal-cap" min="1" max="10000" style="width: 70px;" /> px</label>
               <label>quality <input type="number" id="tier-post-internal-quality" min="1" max="100" style="width: 55px;" /></label>
             </div>
-            <p style="font-size: 11px; color: var(--muted); margin: 6px 0 0;">
+            <p class="card-description" style="margin-top: 6px;">
               "Post internal" is for an image meant to float left/right with
               text wrapping around it - small enough that the float actually
               reads as a photo next to a paragraph, not a full-width image.
             </p>
-            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px;">
-              <div id="tier-settings-status" style="font-size: 12px; color: var(--muted);"></div>
+            <div class="card-footer">
+              <span id="tier-settings-status" class="status-line"></span>
               <button id="save-tier-settings" class="secondary">Save sizes</button>
             </div>
-          </fieldset>
+          </div>
 
-          <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
-            <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Image uploads (Cloudflare R2 bucket)</legend>
-            <p style="font-size: 12px; color: var(--muted); margin: 0 0 8px;">
+          <div class="card">
+            <div class="card-header"><h4>Image uploads (Cloudflare R2 bucket)</h4></div>
+            <p class="card-description">
               Which bucket this site uploads shared images to. Each person
               still needs their own credentials (see "This installation") to
               actually use it.
@@ -130,17 +164,17 @@
               <label for="r2-public-url-base">Public URL base</label>
               <input type="text" id="r2-public-url-base" placeholder="https://images.example.com" />
             </div>
-            <p style="font-size: 11px; color: var(--muted); margin: 6px 0 0;">
+            <p class="card-description" style="margin-top: 6px;">
               Public URL base needs the scheme (starts with "https://" or
               "http://") - this is fetched directly by a browser, not passed
               through the site. If you save without one, "https://" is added
               for you.
             </p>
-            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px;">
-              <div id="r2-site-settings-status" style="font-size: 12px; color: var(--muted);"></div>
+            <div class="card-footer">
+              <span id="r2-site-settings-status" class="status-line"></span>
               <button id="save-r2-site-settings" class="secondary">Save bucket settings</button>
             </div>
-          </fieldset>
+          </div>
         </div>
 
         <div id="settings-tab-personal" class="settings-tab" style="display: none;">
@@ -154,25 +188,34 @@
           </p>
           <div id="lan-address" style="font-size: 12px; margin-bottom: 16px;"></div>
 
-          <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
-            <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Author</legend>
-            <label style="display: block; font-size: 13px; margin-bottom: 4px;">
+          <div class="card">
+            <div class="card-header"><h4>Appearance</h4></div>
+            <p class="card-description">Applies immediately, this device only.</p>
+            <div class="theme-switcher">
+              <button type="button" data-theme-option="blue"><span class="theme-swatch" style="background:#3a6ff7;"></span>Blue</button>
+              <button type="button" data-theme-option="bee"><span class="theme-swatch" style="background:#f4b400;"></span>Bee</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h4>Author</h4></div>
+            <label class="field-label">
               Your name
-              <input type="text" id="author-display-name" style="width: 100%; margin-top: 4px;" placeholder="e.g. Sean" />
+              <input type="text" id="author-display-name" placeholder="e.g. Sean" />
             </label>
-            <p style="font-size: 12px; color: var(--muted); margin: 4px 0 0;">
+            <p class="card-description">
               Added to a page's contributor list on every save. Leave blank
               to skip attribution entirely.
             </p>
-            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px;">
-              <div id="author-settings-status" style="font-size: 12px; color: var(--muted);"></div>
+            <div class="card-footer">
+              <span id="author-settings-status" class="status-line"></span>
               <button id="save-author-settings" class="secondary">Save name</button>
             </div>
-          </fieldset>
+          </div>
 
-          <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
-            <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Image uploads - your credentials</legend>
-            <p style="font-size: 12px; color: var(--muted); margin: 0 0 8px;">
+          <div class="card">
+            <div class="card-header"><h4>Image uploads - your credentials</h4></div>
+            <p class="card-description">
               Personal to this installation - never shared or committed with
               the site.
             </p>
@@ -191,93 +234,95 @@
               <label for="r2-secret-access-key">Secret access key</label>
               <input type="password" id="r2-secret-access-key" placeholder="from beedance-cli create-user-key" />
             </div>
-            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px;">
-              <div id="r2-personal-settings-status" style="font-size: 12px; color: var(--muted);"></div>
+            <div class="card-footer">
+              <span id="r2-personal-settings-status" class="status-line"></span>
               <button id="save-r2-personal-settings" class="secondary">Save credentials</button>
             </div>
-          </fieldset>
+          </div>
 
-          <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
-            <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">GitHub sync</legend>
-            <p style="font-size: 12px; color: var(--muted); margin: 0 0 8px;">
+          <div class="card">
+            <div class="card-header"><h4>GitHub sync</h4></div>
+            <p class="card-description">
               Personal to this installation - never shared or committed with
               the site. Leave the token blank if you already sync over SSH
               (e.g. an SSH key set up on this machine); set one to sync over
               HTTPS instead.
             </p>
-            <p style="font-size: 12px; color: var(--muted); margin: 0 0 8px;">
+            <p class="card-description">
               A token is also required to look at someone else's draft from
               Local Drafts, even if you use SSH for your own syncing - that
               list comes directly from GitHub's website, which has no SSH
               equivalent.
             </p>
 
-            <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+            <label class="field-label">
               Repository URL
-              <input type="text" id="git-remote-url" style="width: 100%; margin-top: 4px;" placeholder="git@github.com:you/your-site.git" />
+              <input type="text" id="git-remote-url" placeholder="git@github.com:you/your-site.git" />
             </label>
 
-            <label style="display: block; font-size: 13px; margin-bottom: 4px;">
+            <label class="field-label">
               Personal access token (optional)
-              <input type="password" id="git-token" style="width: 100%; margin-top: 4px;" placeholder="only needed for HTTPS sync" />
+              <input type="password" id="git-token" placeholder="only needed for HTTPS sync" />
             </label>
-            <p style="font-size: 11px; color: var(--muted); margin: 4px 0 8px;">
+            <p class="card-description">
               Create a fine-grained token scoped to just this repository, with
               "Contents" read and write access, from
               <a id="github-token-help-link" href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens" rel="noopener">GitHub's own token settings help</a>.
             </p>
 
-            <label style="display: block; font-size: 13px; margin-bottom: 4px;">
+            <label class="field-label">
               Your GitHub username
-              <input type="text" id="git-username" style="width: 100%; margin-top: 4px;" placeholder="e.g. octocat" />
+              <input type="text" id="git-username" placeholder="e.g. octocat" />
             </label>
-            <p style="font-size: 11px; color: var(--muted); margin: 4px 0 0;">
+            <p class="card-description">
               Used only to tell your own pull requests apart from everyone
               else's when reviewing someone else's work.
             </p>
 
-            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px;">
-              <div id="git-auth-settings-status" style="font-size: 12px; color: var(--muted);"></div>
+            <div class="card-footer">
+              <span id="git-auth-settings-status" class="status-line"></span>
               <button id="save-git-auth-settings" class="secondary">Save</button>
             </div>
-          </fieldset>
+          </div>
         </div>
       </div>
 
-      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; flex-shrink: 0;">
+      <div class="modal-footer">
         <button id="close-settings" class="secondary">Close</button>
       </div>
     </div>
   </div>
 
-  <div id="new-content-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(380px, 90%); padding: 16px; background: var(--panel);">
-      <h3 id="new-content-title" style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">New post</h3>
+  <div id="new-content-panel" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header"><h3 id="new-content-title">New post</h3></div>
+      <div class="modal-body">
       <p id="new-content-help" style="font-size: 12px; color: var(--muted); margin: 0 0 10px;"></p>
 
-      <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+      <label class="field-label">
         Title
-        <input type="text" id="new-content-title-input" style="width: 100%; margin-top: 4px;" />
+        <input type="text" id="new-content-title-input" />
       </label>
 
-      <label id="new-content-section-row" style="display: none; font-size: 13px; margin-bottom: 8px;">
+      <label id="new-content-section-row" class="field-label" style="display: none;">
         Section (where it shows up in the menu)
-        <select id="new-content-section" style="width: 100%; margin-top: 4px;"></select>
+        <select id="new-content-section" style="width: 100%;"></select>
       </label>
 
-      <div id="new-content-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+      <div id="new-content-status" class="status-line" style="margin-bottom: 8px;"></div>
+      </div>
+      <div class="modal-footer">
         <button id="new-content-cancel" class="secondary">Cancel</button>
         <button id="new-content-confirm">Create</button>
       </div>
     </div>
   </div>
 
-  <div id="date-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(340px, 90%); padding: 16px; background: var(--panel);">
-      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Page date &amp; time</h3>
-      <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+  <div id="date-panel" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header"><h3>Page date &amp; time</h3></div>
+      <div class="modal-body">
+      <p style="margin-top: 0;">
         Controls sort order for dated content (like blog posts). Use this
         instead of typing a date by hand in the text - a badly-formatted
         date can fail the entire site's build, not just this page.
@@ -300,62 +345,65 @@
         <button type="button" id="date-panel-clear" class="secondary">Remove date</button>
       </div>
 
-      <div id="date-panel-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+      <div id="date-panel-status" class="status-line" style="margin-bottom: 8px;"></div>
+      </div>
+      <div class="modal-footer">
         <button id="date-panel-cancel" class="secondary">Cancel</button>
         <button id="date-panel-confirm">Save</button>
       </div>
     </div>
   </div>
 
-  <div id="rename-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(380px, 90%); padding: 16px; background: var(--panel);">
-      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Rename page</h3>
-      <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+  <div id="rename-panel" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header"><h3>Rename page</h3></div>
+      <div class="modal-body">
+      <p style="margin-top: 0;">
         Changes this page's title and web address. Doesn't move it to a
         different section.
       </p>
 
-      <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+      <label class="field-label">
         Title
-        <input type="text" id="rename-panel-input" style="width: 100%; margin-top: 4px;" />
+        <input type="text" id="rename-panel-input" />
       </label>
 
-      <div id="rename-panel-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+      <div id="rename-panel-status" class="status-line" style="margin-bottom: 8px;"></div>
+      </div>
+      <div class="modal-footer">
         <button id="rename-panel-cancel" class="secondary">Cancel</button>
         <button id="rename-panel-confirm">Rename</button>
       </div>
     </div>
   </div>
 
-  <div id="confirm-panel" style="position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(360px, 90%); padding: 16px; background: var(--panel);">
-      <h3 id="confirm-panel-title" style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Are you sure?</h3>
-      <p id="confirm-panel-message" style="font-size: 13px; margin: 0 0 14px;"></p>
-      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+  <div id="confirm-panel" class="modal-overlay" style="z-index: 20;">
+    <div class="modal">
+      <div class="modal-header"><h3 id="confirm-panel-title">Are you sure?</h3></div>
+      <div class="modal-body"><p id="confirm-panel-message" style="margin: 0;"></p></div>
+      <div class="modal-footer">
         <button id="confirm-panel-cancel" class="secondary">Cancel</button>
         <button id="confirm-panel-confirm">Confirm</button>
       </div>
     </div>
   </div>
 
-  <div id="error-panel" style="position: fixed; inset: 0; z-index: 30; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(560px, 92%); max-height: 80vh; padding: 16px; background: var(--panel); display: flex; flex-direction: column;">
-      <h3 style="margin: 0 0 8px; font-size: 13px; color: #b8433b;">Something went wrong</h3>
-      <pre id="error-panel-message" style="flex: 1; overflow: auto; margin: 0; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); font-size: 12px; white-space: pre-wrap; word-break: break-word;"></pre>
-      <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+  <div id="error-panel" class="modal-overlay" style="z-index: 30;">
+    <div class="modal modal-wide" style="max-height: 80vh;">
+      <div class="modal-header"><h3 style="color: var(--danger);">Something went wrong</h3></div>
+      <div class="modal-body" style="flex: 1; display: flex;">
+        <pre id="error-panel-message" style="flex: 1; overflow: auto; margin: 0; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); font-size: 12px; white-space: pre-wrap; word-break: break-word;"></pre>
+      </div>
+      <div class="modal-footer">
         <button id="error-panel-close">OK</button>
       </div>
     </div>
   </div>
 
-  <div id="tags-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(380px, 90%); padding: 16px; background: var(--panel);">
-      <h3 style="margin: 0 0 10px; font-size: 13px; color: var(--muted);">Tags</h3>
-
+  <div id="tags-panel" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header"><h3>Tags</h3></div>
+      <div class="modal-body">
       <div id="tags-panel-chips" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; min-height: 24px;"></div>
 
       <div style="display: flex; gap: 6px; margin-bottom: 8px;">
@@ -364,9 +412,9 @@
       </div>
       <datalist id="tags-panel-datalist"></datalist>
 
-      <div id="tags-panel-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
-
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+      <div id="tags-panel-status" class="status-line" style="margin-bottom: 8px;"></div>
+      </div>
+      <div class="modal-footer" style="justify-content: space-between;">
         <button type="button" id="manage-tags-open" class="secondary" style="font-size: 11px; padding: 4px 8px;">Manage tags&hellip;</button>
         <div style="display: flex; gap: 8px;">
           <button id="tags-panel-cancel" class="secondary">Cancel</button>
@@ -376,10 +424,11 @@
     </div>
   </div>
 
-  <div id="manage-tags-panel" style="position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(440px, 92%); max-height: 85vh; overflow-y: auto; padding: 16px; background: var(--panel);">
-      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Manage tags</h3>
-      <p style="font-size: 12px; color: var(--muted); margin: 0 0 12px;">
+  <div id="manage-tags-panel" class="modal-overlay" style="z-index: 20;">
+    <div class="modal">
+      <div class="modal-header"><h3>Manage tags</h3></div>
+      <div class="modal-body">
+      <p style="margin-top: 0;">
         Renaming or deleting a tag here changes it on every post across the
         whole site, not just the one you were editing. Renaming a tag to a
         name that already exists merges the two.
@@ -387,18 +436,19 @@
 
       <div id="manage-tags-list" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;"></div>
 
-      <div id="manage-tags-status" class="status-line" style="font-size: 12px; margin-bottom: 8px;"></div>
-
-      <div style="display: flex; justify-content: flex-end;">
+      <div id="manage-tags-status" class="status-line" style="margin-bottom: 8px;"></div>
+      </div>
+      <div class="modal-footer">
         <button id="manage-tags-close" class="secondary">Close</button>
       </div>
     </div>
   </div>
 
-  <div id="site-menu-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(820px, 96%); max-height: 85vh; overflow-y: auto; padding: 16px; background: var(--panel);">
-      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Site menu</h3>
-      <p style="font-size: 12px; color: var(--muted); margin: 0 0 12px;">
+  <div id="site-menu-panel" class="modal-overlay">
+    <div class="modal modal-xwide" style="max-height: 85vh;">
+      <div class="modal-header"><h3>Site menu</h3></div>
+      <div class="modal-body">
+      <p style="margin-top: 0;">
         The site's main navigation, top to bottom is left to right. Link to
         an existing page, or paste a web address for anything else.
       </p>
@@ -407,9 +457,9 @@
 
       <button type="button" id="site-menu-add" class="secondary" style="margin-bottom: 10px;">Add link&hellip;</button>
 
-      <div id="site-menu-status" class="status-line" style="font-size: 12px; margin-bottom: 8px;"></div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+      <div id="site-menu-status" class="status-line" style="margin-bottom: 8px;"></div>
+      </div>
+      <div class="modal-footer">
         <button id="site-menu-close" class="secondary">Close</button>
         <button id="site-menu-save" class="secondary">Save</button>
         <button id="site-menu-save-close">Save and close</button>
@@ -417,42 +467,42 @@
     </div>
   </div>
 
-  <div id="site-menu-create-panel" style="position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(380px, 90%); padding: 16px; background: var(--panel);">
-      <h3 id="site-menu-create-title" style="margin: 0 0 10px; font-size: 13px; color: var(--muted);">New page</h3>
-
-      <label style="display: block; margin-bottom: 8px;">
+  <div id="site-menu-create-panel" class="modal-overlay" style="z-index: 20;">
+    <div class="modal">
+      <div class="modal-header"><h3 id="site-menu-create-title">New page</h3></div>
+      <div class="modal-body">
+      <label class="field-label">
         Title
-        <input type="text" id="site-menu-create-input" style="width: 100%;" />
+        <input type="text" id="site-menu-create-input" />
       </label>
 
-      <label id="site-menu-create-section-row" style="display: block; margin-bottom: 8px;">
+      <label id="site-menu-create-section-row" class="field-label">
         Section
         <select id="site-menu-create-section" style="width: 100%;"></select>
       </label>
 
-      <div id="site-menu-create-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+      <div id="site-menu-create-status" class="status-line" style="margin-bottom: 8px;"></div>
+      </div>
+      <div class="modal-footer">
         <button id="site-menu-create-cancel" class="secondary">Cancel</button>
         <button id="site-menu-create-confirm">Create</button>
       </div>
     </div>
   </div>
 
-  <div id="local-drafts-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(440px, 90%); max-height: 85vh; overflow-y: auto; padding: 16px; background: var(--panel);">
-      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Local drafts</h3>
-
+  <div id="local-drafts-panel" class="modal-overlay">
+    <div class="modal" style="max-height: 85vh;">
+      <div class="modal-header"><h3>Local drafts</h3></div>
+      <div class="modal-body">
       <div id="local-drafts-review-active" style="display: none;">
-        <p id="local-drafts-review-active-message" style="font-size: 13px; margin: 0 0 14px;"></p>
+        <p id="local-drafts-review-active-message" style="margin-top: 0;"></p>
         <div style="display: flex; justify-content: flex-end;">
           <button id="local-drafts-exit-review-inline" class="secondary">Exit review, back to editing</button>
         </div>
       </div>
 
       <div id="local-drafts-normal">
-        <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+        <p style="margin-top: 0;">
           A draft is a local branch - its own independent copy of the site to
           edit without touching the live site until you're ready.
         </p>
@@ -467,27 +517,29 @@
         </div>
       </div>
 
-      <div id="local-drafts-status" style="font-size: 12px; color: var(--muted); margin: 8px 0;"></div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+      <div id="local-drafts-status" class="status-line" style="margin: 8px 0;"></div>
+      </div>
+      <div class="modal-footer">
         <button id="local-drafts-close" class="secondary">Close</button>
       </div>
     </div>
   </div>
 
-  <div id="review-pr-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(440px, 90%); max-height: 85vh; overflow-y: auto; padding: 16px; background: var(--panel);">
-      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Review a pull request</h3>
-
+  <div id="review-pr-panel" class="modal-overlay">
+    <div class="modal" style="max-height: 85vh;">
+      <div class="modal-header"><h3>Review someone's draft</h3></div>
+      <div class="modal-body">
       <div id="review-pr-review-active" style="display: none;">
-        <p id="review-pr-review-active-message" style="font-size: 13px; margin: 0 0 14px;"></p>
-        <div style="display: flex; justify-content: flex-end;">
+        <p id="review-pr-review-active-message" style="margin-top: 0;"></p>
+        <div id="review-pr-approve-status" class="status-line" style="margin: 0 0 8px;"></div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button id="review-pr-approve" class="secondary">Approve</button>
           <button id="review-pr-exit-review-inline" class="secondary">Exit review, back to editing</button>
         </div>
       </div>
 
       <div id="review-pr-normal">
-        <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+        <p style="margin-top: 0;">
           Read-only - you can't edit while reviewing. Needs a repository
           connected in Settings &rarr; GitHub sync.
         </p>
@@ -495,18 +547,19 @@
         <div id="review-pr-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin-top: 10px;"></div>
       </div>
 
-      <div id="review-pr-status" style="font-size: 12px; color: var(--muted); margin: 8px 0;"></div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+      <div id="review-pr-status" class="status-line" style="margin: 8px 0;"></div>
+      </div>
+      <div class="modal-footer">
         <button id="review-pr-close" class="secondary">Close</button>
       </div>
     </div>
   </div>
 
-  <div id="review-changes-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(900px, 95%); height: min(640px, 85vh); padding: 16px; background: var(--panel); display: flex; flex-direction: column;">
-      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted); flex-shrink: 0;">Review changes</h3>
-      <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px; flex-shrink: 0;">
+  <div id="review-changes-panel" class="modal-overlay">
+    <div class="modal modal-xwide" style="height: min(640px, 85vh);">
+      <div class="modal-header"><h3>Review changes</h3></div>
+      <div class="modal-body" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+      <p style="margin: 0 0 10px; flex-shrink: 0;">
         Everything changed since the last save point. Committing saves this
         as a checkpoint you can always come back to.
       </p>
@@ -516,17 +569,20 @@
         <pre id="review-changes-diff" style="flex: 1; margin: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word;">Select a file to see its changes.</pre>
       </div>
 
-      <div id="review-changes-status" style="font-size: 12px; color: var(--muted); margin: 10px 0 6px; flex-shrink: 0;"></div>
+      <div id="review-changes-status" class="status-line" style="margin: 10px 0 6px; flex-shrink: 0;"></div>
 
       <div style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
         <input type="text" id="review-changes-commit-msg" placeholder="Describe what changed" style="flex: 1;" />
-        <button id="review-changes-close" class="secondary">Close</button>
         <button id="review-changes-commit">Commit</button>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 8px; align-items: center; margin-top: 8px; flex-shrink: 0;">
         <span style="font-size: 12px; color: var(--muted);">Sync with the shared copy (set up in Settings &rarr; GitHub sync):</span>
         <button id="review-changes-pull" class="secondary">Get latest</button>
         <button id="review-changes-push" class="secondary">Send changes</button>
+      </div>
+      </div>
+      <div class="modal-footer">
+        <button id="review-changes-close" class="secondary">Close</button>
       </div>
     </div>
   </div>
@@ -547,7 +603,7 @@
     <span id="external-content-message"></span>
   </div>
 
-  <details>
+  <details id="debug-tools-details" style="display: none;">
     <summary>debug tools</summary>
 
     <section>
@@ -580,14 +636,71 @@
     </section>
   </details>
 
-  <main>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-site" id="change-site" title="Change site&hellip;">
+        <svg class="icon"><use href="#icon-folder"/></svg>
+        <span class="site-name" id="site-dir">(loading...)</span>
+        <svg class="icon"><use href="#icon-chevron-down"/></svg>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="active"><svg class="icon"><use href="#icon-doc-post"/></svg>Editor</a>
+        <a id="sidebar-nav-pages"><svg class="icon"><use href="#icon-doc"/></svg>Pages</a>
+        <a id="sidebar-nav-media" title="Not built yet" style="opacity: 0.5; cursor: default;"><svg class="icon"><use href="#icon-image"/></svg>Media</a>
+        <a id="sidebar-nav-tags"><svg class="icon"><use href="#icon-tag"/></svg>Tags</a>
+        <a id="open-settings"><svg class="icon"><use href="#icon-gear"/></svg>Settings</a>
+      </nav>
+
+      <div class="sidebar-spacer"></div>
+
+      <div class="sidebar-divider"></div>
+      <nav class="sidebar-nav">
+        <a id="sidebar-nav-debug" class="debug-link"><svg class="icon"><use href="#icon-terminal"/></svg>Debug tools</a>
+      </nav>
+    </aside>
+
+    <div class="app-main">
     <div class="toolbar">
-      <button id="preview-start">Start preview</button>
-      <button id="preview-stop" class="secondary">Stop preview</button>
-      <button id="new-post" class="secondary">New post&hellip;</button>
-      <button id="new-page" class="secondary">New page&hellip;</button>
-      <button id="site-menu-button" class="secondary" title="Edit the site's main navigation">Site menu&hellip;</button>
-      <button id="manage-tags-button" class="secondary" title="Delete, rename, or merge a tag across the whole site">Manage tags&hellip;</button>
+      <div class="menu" id="file-menu">
+        <button class="secondary" title="File actions"><svg class="icon"><use href="#icon-doc"/></svg>File<svg class="icon" style="width:12px;height:12px;"><use href="#icon-chevron-down"/></svg></button>
+        <div class="menu-dropdown">
+          <button id="new-post"><svg class="icon"><use href="#icon-doc-post"/></svg>New post&hellip;</button>
+          <button id="new-page"><svg class="icon"><use href="#icon-doc"/></svg>New page&hellip;</button>
+          <button id="site-menu-button" title="Edit the site's main navigation"><svg class="icon"><use href="#icon-external-link"/></svg>Site menu&hellip;</button>
+          <button id="manage-tags-button" title="Delete, rename, or merge a tag across the whole site"><svg class="icon"><use href="#icon-tag"/></svg>Manage tags&hellip;</button>
+          <div class="menu-divider"></div>
+          <button id="rename-content"><svg class="icon"><use href="#icon-pencil"/></svg>Rename&hellip;</button>
+          <button id="delete-content"><svg class="icon"><use href="#icon-trash"/></svg>Delete&hellip;</button>
+          <div class="menu-divider"></div>
+          <button id="reload"><svg class="icon"><use href="#icon-reload"/></svg>Reload from disk</button>
+          <button id="refresh-files" class="menu-item-muted" title="Rescan for template files (e.g. after just add-theme)"><svg class="icon"><use href="#icon-reload"/></svg>Rescan templates</button>
+        </div>
+      </div>
+
+      <div class="menu" id="insert-menu">
+        <button class="secondary" title="Insert into the page"><svg class="icon"><use href="#icon-image"/></svg>Insert<svg class="icon" style="width:12px;height:12px;"><use href="#icon-chevron-down"/></svg></button>
+        <div class="menu-dropdown">
+          <button id="fmt-image" title="Insert image"><svg class="icon"><use href="#icon-image"/></svg>Image&hellip;</button>
+          <button id="fmt-image-url" title="Insert image from a web link"><svg class="icon"><use href="#icon-image-link"/></svg>Image from a web link&hellip;</button>
+          <button id="fmt-date" title="Set this page's date/time"><svg class="icon"><use href="#icon-calendar"/></svg>Date/time&hellip;</button>
+          <button id="fmt-tags" title="Add/remove tags"><svg class="icon"><use href="#icon-tag"/></svg>Tags&hellip;</button>
+        </div>
+      </div>
+
+      <div class="menu" id="branch-menu">
+        <button class="secondary" title="Drafts and syncing" id="local-drafts-button">
+          <svg class="icon"><use href="#icon-branch"/></svg>
+          <span id="local-drafts-button-label">&hellip;</span>
+          <svg class="icon" style="width:12px;height:12px;"><use href="#icon-chevron-down"/></svg>
+        </button>
+        <div class="menu-dropdown">
+          <button id="branch-menu-switch-draft" title="Switch drafts, or start a new one"><svg class="icon"><use href="#icon-branch"/></svg>Switch or start a draft&hellip;</button>
+          <button id="review-changes"><svg class="icon"><use href="#icon-doc"/></svg>Review changes&hellip;</button>
+          <button id="review-pr-button" title="Look at someone else's draft, read-only"><svg class="icon"><use href="#icon-pull-request"/></svg>Review someone's draft&hellip;</button>
+        </div>
+      </div>
+
       <label>
         Open file:
         <span style="position: relative; display: inline-block;">
@@ -596,37 +709,40 @@
         </span>
         <select id="file-select" style="display: none;"></select>
         <button id="file-list-mode-toggle" class="secondary" title="Switch between page titles and raw file paths">Show: Titles</button>
-        <button id="refresh-files" class="secondary" title="Rescan for template files (e.g. after just add-theme)">rescan</button>
       </label>
-      <label><input type="checkbox" id="phone-toggle" /> Phone preview</label>
-      <button id="rename-content" class="secondary">Rename&hellip;</button>
-      <button id="delete-content" class="secondary">Delete&hellip;</button>
-      <button id="local-drafts-button" class="secondary" title="Switch drafts, or start a new one">Branch: &hellip;</button>
-      <button id="review-changes" class="secondary">Review changes&hellip;</button>
-      <button id="review-pr-button" class="secondary" title="Look at someone else's pull request, read-only">Review a PR&hellip;</button>
-      <button id="reload" class="secondary">Reload from disk</button>
-      <button id="save">Save</button>
+
+      <div class="toolbar-group" style="margin-left: auto; border-right: none;">
+        <button id="preview-start" title="Start the local preview server"><svg class="icon"><use href="#icon-external-link"/></svg>Start preview</button>
+        <button id="preview-stop" class="secondary" title="Stop the preview server">Stop preview</button>
+        <label class="secondary" style="display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:var(--radius); padding:6px 10px; cursor:pointer;">
+          <input type="checkbox" id="phone-toggle" style="width:auto; border:none; padding:0;" /><svg class="icon"><use href="#icon-phone"/></svg>Phone preview
+        </label>
+        <button id="open-log-window" class="secondary" title="Live output from the preview server (helpful when a page fails to build)"><svg class="icon"><use href="#icon-terminal"/></svg>Preview log</button>
+      </div>
+
       <span id="editor-status" class="status"></span>
+      <button id="save" title="Save (Ctrl+S)"><svg class="icon"><use href="#icon-save"/></svg>Save</button>
     </div>
 
     <div id="tab-bar"></div>
-    <div id="format-toolbar" class="toolbar" style="margin: 0; padding: 6px; border: 1px solid var(--border); border-bottom: none; background: color-mix(in srgb, var(--panel) 92%, var(--text));">
-      <button id="undo-button" class="secondary" title="Undo (Ctrl+Z)">&#8630; Undo</button>
-      <button id="redo-button" class="secondary" title="Redo (Ctrl+Shift+Z)">&#8631; Redo</button>
-      <span style="border-left: 1px solid var(--border); height: 16px;"></span>
-      <button id="fmt-bold" class="secondary" title="Bold"><strong>B</strong></button>
-      <button id="fmt-italic" class="secondary" title="Italic"><em>I</em></button>
-      <button id="fmt-code" class="secondary" title="Inline code">{ }</button>
-      <button id="fmt-link" class="secondary" title="Link">Link</button>
-      <button id="fmt-h2" class="secondary" title="Heading">H2</button>
-      <button id="fmt-h3" class="secondary" title="Subheading">H3</button>
-      <button id="fmt-quote" class="secondary" title="Quote">&ldquo;&rdquo;</button>
-      <button id="fmt-ul" class="secondary" title="Bulleted list">&bull; List</button>
-      <button id="fmt-ol" class="secondary" title="Numbered list">1. List</button>
-      <button id="fmt-image" class="secondary" title="Insert image">&#128247; Image</button>
-      <button id="fmt-image-url" class="secondary" title="Insert image from a web link">&#128279; Image URL&hellip;</button>
-      <button id="fmt-date" class="secondary" title="Set this page's date/time">&#128197; Date&hellip;</button>
-      <button id="fmt-tags" class="secondary" title="Add/remove tags">&#127991;&#65039; Tags&hellip;</button>
+    <div id="format-toolbar" class="toolbar">
+      <div class="toolbar-group" title="History">
+        <button id="undo-button" class="secondary btn-icon" title="Undo (Ctrl+Z)"><svg class="icon"><use href="#icon-undo"/></svg></button>
+        <button id="redo-button" class="secondary btn-icon" title="Redo (Ctrl+Shift+Z)"><svg class="icon"><use href="#icon-redo"/></svg></button>
+      </div>
+      <div class="toolbar-group" title="Inline formatting">
+        <button id="fmt-bold" class="secondary btn-icon" title="Bold"><strong>B</strong></button>
+        <button id="fmt-italic" class="secondary btn-icon" title="Italic"><em>I</em></button>
+        <button id="fmt-code" class="secondary btn-icon" title="Inline code" style="font-family: monospace;">{ }</button>
+        <button id="fmt-link" class="secondary btn-icon" title="Link"><svg class="icon"><use href="#icon-link"/></svg></button>
+      </div>
+      <div class="toolbar-group" style="border-right: none;" title="Block formatting">
+        <button id="fmt-h2" class="secondary btn-icon" title="Heading" style="font-weight:700;">H2</button>
+        <button id="fmt-h3" class="secondary btn-icon" title="Subheading" style="font-weight:700; font-size: 11px;">H3</button>
+        <button id="fmt-quote" class="secondary btn-icon" title="Quote">&ldquo;</button>
+        <button id="fmt-ul" class="secondary btn-icon" title="Bulleted list"><svg class="icon"><use href="#icon-list-bullet"/></svg></button>
+        <button id="fmt-ol" class="secondary btn-icon" title="Numbered list"><svg class="icon"><use href="#icon-list-numbered"/></svg></button>
+      </div>
     </div>
     <div id="image-align-toolbar" style="display: none; align-items: center; gap: 8px; padding: 6px; border: 1px solid var(--border); border-top: none; border-bottom: none; background: color-mix(in srgb, var(--panel) 96%, var(--accent)); font-size: 12px;">
       <span style="color: var(--muted);">Image alignment:</span>
@@ -640,22 +756,22 @@
       <button type="button" id="image-delete-button" class="secondary" hidden>Delete image&hellip;</button>
       <span id="image-align-status" style="color: var(--muted);"></span>
     </div>
-    <div class="panel" style="border-radius: 0 0 var(--radius) var(--radius);">
+    <div class="panel" style="border-radius: 0 0 var(--radius) var(--radius); flex: 1;">
       <textarea id="editor" spellcheck="false"></textarea>
 
-      <div id="insert-image-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-        <div class="panel" style="width: min(420px, 90%); padding: 16px; background: var(--panel);">
-          <h3 id="insert-panel-title" style="margin: 0 0 10px; font-size: 13px; color: var(--muted);">Insert image</h3>
-
+      <div id="insert-image-panel" class="modal-overlay">
+        <div class="modal">
+          <div class="modal-header"><h3 id="insert-panel-title">Insert image</h3></div>
+          <div class="modal-body">
           <img id="insert-image-preview" style="max-width: 100%; max-height: 200px; display: block; margin: 0 auto 12px; border-radius: var(--radius);" />
 
-          <label style="display: block; margin-bottom: 8px; font-size: 13px;">
+          <label class="field-label">
             Alt text
-            <input id="insert-image-alt" type="text" style="width: 100%; margin-top: 4px;" placeholder="Describe the image for screen readers" />
+            <input id="insert-image-alt" type="text" placeholder="Describe the image for screen readers" />
           </label>
 
-          <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; padding: 8px;">
-            <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Size</legend>
+          <div class="card">
+            <div class="card-header"><h4>Size</h4></div>
             <div id="insert-image-current-size" style="font-size: 12px; color: var(--muted); margin-bottom: 6px;"></div>
             <div style="display: flex; gap: 8px; margin-bottom: 8px;">
               <button type="button" class="secondary" id="insert-preset-web">Web standard</button>
@@ -667,31 +783,32 @@
               <label>Height <input type="number" id="insert-image-height" min="1" style="width: 75px;" /> px</label>
               <label>Quality <input type="number" id="insert-image-quality" min="1" max="100" style="width: 55px;" /></label>
             </div>
-          </fieldset>
+          </div>
 
-          <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 8px;">
-            <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Where it lives</legend>
+          <div class="card">
+            <div class="card-header"><h4>Where it lives</h4></div>
             <label style="display: block; font-size: 13px; margin-bottom: 4px;">
               <input type="radio" name="insert-image-placement" value="static" checked /> <span id="insert-placement-static-label">Shared images folder (reusable across pages)</span>
             </label>
             <label style="display: block; font-size: 13px;">
               <input type="radio" name="insert-image-placement" value="bundle" /> With this page only
             </label>
-          </fieldset>
+          </div>
 
-          <div id="insert-image-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
-
-          <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <div id="insert-image-status" class="status-line" style="margin-bottom: 8px;"></div>
+          </div>
+          <div class="modal-footer">
             <button id="insert-image-cancel" class="secondary">Cancel</button>
             <button id="insert-image-confirm">Insert</button>
           </div>
         </div>
       </div>
 
-      <div id="resize-image-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-        <div class="panel" style="width: min(360px, 90%); padding: 16px; background: var(--panel);">
-          <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Resize image</h3>
-          <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+      <div id="resize-image-panel" class="modal-overlay">
+        <div class="modal">
+          <div class="modal-header"><h3>Resize image</h3></div>
+          <div class="modal-body">
+          <p style="margin-top: 0;">
             Shrinks the actual image file on disk and overwrites it. This
             can't be undone, and the image can't be made bigger again
             afterward.
@@ -709,46 +826,48 @@
             <label>Height <input type="number" id="resize-height" min="1" style="width: 80px;" /> px</label>
           </div>
 
-          <div id="resize-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
-
-          <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <div id="resize-status" class="status-line" style="margin-bottom: 8px;"></div>
+          </div>
+          <div class="modal-footer">
             <button id="resize-cancel" class="secondary">Cancel</button>
             <button id="resize-confirm">Shrink image</button>
           </div>
         </div>
       </div>
 
-      <div id="insert-url-image-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-        <div class="panel" style="width: min(420px, 90%); padding: 16px; background: var(--panel);">
-          <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Insert image from a web link</h3>
-          <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+      <div id="insert-url-image-panel" class="modal-overlay">
+        <div class="modal">
+          <div class="modal-header"><h3>Insert image from a web link</h3></div>
+          <div class="modal-body">
+          <p style="margin-top: 0;">
             Links to the image where it already lives - nothing is
             downloaded or stored in this site. If that page ever goes away,
             the image stops showing here too.
           </p>
 
-          <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+          <label class="field-label">
             Image URL
-            <input type="url" id="url-image-url" style="width: 100%; margin-top: 4px;" placeholder="https://..." />
+            <input type="url" id="url-image-url" placeholder="https://..." />
           </label>
 
           <img id="url-image-preview" style="max-width: 100%; max-height: 200px; display: none; margin: 0 auto 10px; border-radius: var(--radius);" />
 
-          <label style="display: block; margin-bottom: 8px; font-size: 13px;">
+          <label class="field-label">
             Alt text
-            <input id="url-image-alt" type="text" style="width: 100%; margin-top: 4px;" placeholder="Describe the image for screen readers" />
+            <input id="url-image-alt" type="text" placeholder="Describe the image for screen readers" />
           </label>
 
-          <div id="url-image-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
-
-          <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <div id="url-image-status" class="status-line" style="margin-bottom: 8px;"></div>
+          </div>
+          <div class="modal-footer">
             <button id="url-image-cancel" class="secondary">Cancel</button>
             <button id="url-image-confirm">Insert</button>
           </div>
         </div>
       </div>
     </div>
-  </main>
+    </div>
+  </div>
 
   <script type="module" src="app.js"></script>
 </body>
