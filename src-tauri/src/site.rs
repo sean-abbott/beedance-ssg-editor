@@ -89,9 +89,26 @@ const ONBOARDING_MARKER_FILE: &str = "onboarding-complete";
 /// that never writes that file at all. `just uninstall` removes this
 /// alongside the rest of config_dir(), correctly making onboarding run again
 /// on the next launch.
+///
+/// An install that predates onboarding existing at all has OTHER files here
+/// (site_dir, author-settings.json, etc.) but never had a chance to write
+/// this marker - found the hard way (an already-fully-set-up install got the
+/// welcome popup on its next launch). Treated as already onboarded, and the
+/// marker gets written immediately so this stays a plain file-exists check
+/// from here on, without needing to know every other config file's name.
 #[tauri::command]
 pub fn has_completed_onboarding() -> bool {
-    config_dir().map(|dir| dir.join(ONBOARDING_MARKER_FILE).exists()).unwrap_or(false)
+    let Some(dir) = config_dir() else { return false };
+    if dir.join(ONBOARDING_MARKER_FILE).exists() {
+        return true;
+    }
+    let has_pre_existing_config =
+        std::fs::read_dir(&dir).map(|mut entries| entries.next().is_some()).unwrap_or(false);
+    if has_pre_existing_config {
+        let _ = std::fs::write(dir.join(ONBOARDING_MARKER_FILE), "");
+        return true;
+    }
+    false
 }
 
 #[tauri::command]

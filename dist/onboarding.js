@@ -36,6 +36,11 @@ const openSiteStep = () => {
 };
 
 document.getElementById("onboarding-welcome-continue").addEventListener("click", () => {
+  // Has to actually hide first - it sits at a higher z-index than
+  // settings-panel, so without this, "open-settings" below opens Settings
+  // invisibly underneath the still-shown welcome overlay, and Continue
+  // looks like it does nothing at all.
+  welcomePanel.style.display = "none";
   // Reuses the real Settings dialog (settings.js already owns its load/
   // save logic) instead of a separate onboarding-specific form - clicking
   // its own buttons fires the exact same wiring a real click would.
