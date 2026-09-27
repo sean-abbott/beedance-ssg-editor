@@ -10,7 +10,10 @@ use std::time::Instant;
 use image::codecs::jpeg::JpegEncoder;
 use image::{imageops::FilterType, ImageFormat, ImageReader};
 
-use crate::r2::{r2_fully_configured, r2_public_url_base, upload_to_r2, R2PersonalConfigState, R2SiteConfigState};
+use crate::r2::{
+    delete_from_r2, r2_fully_configured, r2_key_from_url, r2_public_url_base, upload_to_r2, R2PersonalConfigState,
+    R2SiteConfigState,
+};
 use crate::site::{resolve_site_path, site_config_dir, site_dir, OpenFiles, SelfWriteTracker};
 use crate::zola;
 
@@ -515,4 +518,25 @@ pub fn read_image_preview(path: String) -> Result<String, String> {
     };
     let encoded = STANDARD.encode(bytes);
     Ok(format!("data:{mime};base64,{encoded}"))
+}
+
+/// Explicitly deletes an R2-hosted image (the "Delete image" button in the
+/// alignment toolbar, next to Resize/Localize) - conceived as the everyday
+/// way to actually replace one: delete the old one here first (removing
+/// both its storage and its reference in one action), then insert the new
+/// one normally, rather than the app trying to infer "this was a replace"
+/// from a freeform text edit. See pws-6ryi - this and delete_content's own
+/// best-effort cleanup are the two places R2 objects actually get removed;
+/// there's still no periodic sweep for anything that slips past both.
+#[tauri::command]
+pub fn delete_r2_image_by_url(
+    url: String,
+    r2_site: tauri::State<R2SiteConfigState>,
+    r2_personal: tauri::State<R2PersonalConfigState>,
+) -> Result<(), String> {
+    let site_cfg = r2_site.0.lock().unwrap().clone();
+    let personal_cfg = r2_personal.0.lock().unwrap().clone();
+    let key = r2_key_from_url(&site_cfg, &url)
+        .ok_or_else(|| "This image isn't hosted in this site's R2 bucket - nothing to delete remotely.".to_string())?;
+    delete_from_r2(&site_cfg, &personal_cfg, &key)
 }

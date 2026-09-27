@@ -41,12 +41,13 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Same package list as build.Dockerfile (already verified working
-      # there), plus patchelf/xdg-utils, which that image never needed since
-      # it only ever ran `cargo check`, never a real bundle (AppImage
-      # creation needs patchelf; the .desktop entry needs xdg-utils).
+      # there), plus xdg-utils for the .desktop entry .deb/.rpm bundling
+      # needs. No patchelf - that's specifically an AppImage-bundling
+      # requirement (patches the ELF interpreter/rpath for portability),
+      # and tauri.conf.json's bundle.targets deliberately excludes AppImage.
       - name: Install Linux system dependencies
         if: matrix.platform == 'ubuntu-26.04'
         run: |
@@ -63,7 +64,6 @@ jobs:
             librsvg2-dev \
             pkg-config \
             libdbus-1-dev \
-            patchelf \
             xdg-utils
 
       - name: Install Rust
@@ -109,7 +109,7 @@ jobs:
           releaseBody: |
             See the assets below to download and install - macOS
             (`aarch64` for Apple Silicon, `x86_64` for Intel), Windows
-            (`.msi`), or Linux (`.deb`/`.rpm`/`.AppImage`). See the README's
-            "Install" section for first-run instructions.
+            (`.msi`), or Linux (`.deb`/`.rpm`). See the README's "Install"
+            section for first-run instructions.
           releaseDraft: true
           args: ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }}

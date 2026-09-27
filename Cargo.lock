@@ -343,6 +343,7 @@ dependencies = [
  "image",
  "local-ip-address",
  "notify",
+ "regex",
  "rust-s3",
  "rustls",
  "serde",

@@ -12,8 +12,8 @@ no build tools or command line needed.
 - **macOS**: download the `.dmg` (`aarch64` for Apple Silicon Macs, `x86_64`
   for Intel), open it, and drag the app into Applications.
 - **Windows**: download and run the `.msi` installer.
-- **Linux**: download the `.deb`, `.rpm`, or `.AppImage`, whichever matches
-  your distribution - or just download the plain binary and run it directly.
+- **Linux**: download the `.deb` or `.rpm`, whichever matches your
+  distribution.
 
 ## About the security warning on first launch
 

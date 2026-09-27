@@ -14,6 +14,7 @@ import {
   wirePanelKeys,
   emitEdited,
   currentSiteDir,
+  askConfirm,
 } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -450,12 +451,20 @@ const findImageAtCursor = () => {
 
 const imageAlignToolbar = document.getElementById("image-align-toolbar");
 const imageLocalizeButton = document.getElementById("image-localize-button");
+const imageDeleteButton = document.getElementById("image-delete-button");
 const imageAlignStatus = document.getElementById("image-align-status");
 
 const isRemoteUrl = (src) => /^https?:\/\//i.test(src);
 
+// Tracks whatever's currently under the cursor, since the delete button's
+// own click handler needs found.start/end/src again and re-deriving it via
+// findImageAtCursor() a second time would break if the user's selection
+// moved between opening the toolbar and clicking the button.
+let currentImageAtCursor = null;
+
 const updateImageAlignToolbar = () => {
   const found = activeTab ? findImageAtCursor() : null;
+  currentImageAtCursor = found;
   if (!found) {
     imageAlignToolbar.style.display = "none";
     return;
@@ -465,9 +474,15 @@ const updateImageAlignToolbar = () => {
     btn.classList.toggle("align-active", btn.dataset.align === found.align);
   });
   // Resize acts on a local file; localize is the opposite case (a
-  // reference this app doesn't own the bytes for yet) - never both.
+  // reference this app doesn't own the bytes for yet) - never both. Delete
+  // (removing it from storage, not just this page) only makes sense for a
+  // remote reference too - shown alongside Localize, a different action on
+  // the same kind of reference. delete_r2_image_by_url itself is the
+  // definitive answer on whether this app actually owns the object (this
+  // site's own R2 bucket, not just any remote URL) - not re-derived here.
   const remote = isRemoteUrl(found.src);
   imageLocalizeButton.hidden = !remote;
+  imageDeleteButton.hidden = !remote;
   document.getElementById("image-resize-button").hidden = remote;
   imageAlignStatus.textContent = "";
 };
@@ -527,6 +542,31 @@ document.getElementById("image-localize-button").addEventListener("click", async
   const found = findImageAtCursor();
   if (!found || !isRemoteUrl(found.src)) return;
   await openLocalizePanel(found);
+});
+
+// The everyday way to actually replace an image: delete the old one here
+// first (removing both its storage and its reference from the page in one
+// action), then insert the new one normally - see pws-6ryi.
+document.getElementById("image-delete-button").addEventListener("click", async () => {
+  const found = currentImageAtCursor;
+  if (!found || !isRemoteUrl(found.src)) return;
+  const proceed = await askConfirm(
+    "Delete this image?",
+    "Removes it from storage and from this page. This can't be undone.",
+    "Delete"
+  );
+  if (!proceed) return;
+  try {
+    await invoke("delete_r2_image_by_url", { url: found.src });
+    const value = editorEl.value;
+    editorEl.value = value.slice(0, found.start) + value.slice(found.end);
+    editorEl.focus();
+    emitEdited();
+    updateImageAlignToolbar();
+    imageAlignStatus.textContent = "Deleted.";
+  } catch (err) {
+    imageAlignStatus.textContent = "ERROR: " + err;
+  }
 });
 
 document.getElementById("image-resize-button").addEventListener("click", async () => {

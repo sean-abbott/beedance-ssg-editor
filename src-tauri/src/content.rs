@@ -4,13 +4,16 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::time::Instant;
+
+use regex::Regex;
 
 use crate::frontmatter::{
     append_author, content_slug, format_toml_string_array, front_matter_block, front_matter_field, front_matter_lines,
     parse_toml_string_array, reassemble, stamp_table_field, stamp_top_level_field,
 };
+use crate::r2::{R2PersonalConfigState, R2SiteConfigState};
 use crate::site::{collect_files_with_ext, config_dir, resolve_site_path, site_dir, OpenFiles, SelfWriteTracker};
 use crate::zola;
 
@@ -334,6 +337,25 @@ pub fn create_page(title: String, section: String, datetime: String, author: Opt
         .map_err(|e| e.to_string())
 }
 
+// Same two forms images.js's own MD_IMAGE_RE/HTML_IMAGE_RE match on the
+// frontend (alignment toolbar) - only the URL capture group is needed here,
+// not alt text/style. Compiled once (LazyLock, stable since Rust 1.80) since
+// unlike that frontend scan, which runs on every cursor movement,
+// extract_image_urls only runs on content deletion - still no reason to
+// recompile the same pattern per call.
+static MD_IMAGE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"!\[[^\]]*\]\(([^)\s]+)\)").unwrap());
+static HTML_IMAGE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<img src="([^"]*)""#).unwrap());
+
+/// Finds every image URL referenced in `content`, both markdown (`![alt](url)`)
+/// and this app's own raw `<img src="url" ...>` form (used for alignment).
+fn extract_image_urls(content: &str) -> Vec<String> {
+    MD_IMAGE_RE
+        .captures_iter(content)
+        .chain(HTML_IMAGE_RE.captures_iter(content))
+        .map(|c| c[1].to_string())
+        .collect()
+}
+
 /// Deletes a content file (or, for a page bundle, its whole directory - a
 /// bundle's co-located assets have nowhere else to go). Refuses to delete a
 /// section index (_index.md): that would take every page nested under it
@@ -341,7 +363,13 @@ pub fn create_page(title: String, section: String, datetime: String, author: Opt
 /// not supported here, a real "delete section" action would need its own,
 /// more deliberate confirmation flow.
 #[tauri::command]
-pub fn delete_content(path: String, tracker: tauri::State<SelfWriteTracker>, open_files: tauri::State<OpenFiles>) -> Result<(), String> {
+pub fn delete_content(
+    path: String,
+    tracker: tauri::State<SelfWriteTracker>,
+    open_files: tauri::State<OpenFiles>,
+    r2_site: tauri::State<R2SiteConfigState>,
+    r2_personal: tauri::State<R2PersonalConfigState>,
+) -> Result<(), String> {
     let full = resolve_site_path(&path)?;
     if !full.exists() {
         return Err("That file doesn't exist.".to_string());
@@ -352,6 +380,20 @@ pub fn delete_content(path: String, tracker: tauri::State<SelfWriteTracker>, ope
         return Err(
             "Deleting a whole section isn't supported yet - delete its individual pages first.".to_string(),
         );
+    }
+
+    // Best-effort R2 cleanup - a failure here should never block deleting
+    // the page itself, which is what the user actually asked for. Silently
+    // ignoring individual delete failures (e.g. a network hiccup) is
+    // preferable to losing the ability to delete the page over it.
+    if let Ok(text) = std::fs::read_to_string(&full) {
+        let site_cfg = r2_site.0.lock().unwrap().clone();
+        let personal_cfg = r2_personal.0.lock().unwrap().clone();
+        for url in extract_image_urls(&text) {
+            if let Some(key) = crate::r2::r2_key_from_url(&site_cfg, &url) {
+                let _ = crate::r2::delete_from_r2(&site_cfg, &personal_cfg, &key);
+            }
+        }
     }
 
     tracker.0.lock().unwrap().insert(full.clone(), Instant::now());

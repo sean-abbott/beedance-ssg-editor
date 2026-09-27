@@ -122,6 +122,7 @@ fn main() {
             images::resize_image_in_place,
             images::get_image_dimensions,
             images::localize_remote_image,
+            images::delete_r2_image_by_url,
             r2::get_r2_site_config,
             r2::set_r2_site_config,
             r2::get_r2_personal_config,

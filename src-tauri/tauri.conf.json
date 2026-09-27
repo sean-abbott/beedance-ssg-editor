@@ -20,7 +20,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["deb", "rpm", "nsis", "msi", "app", "dmg"],
     "externalBin": ["binaries/zola"],
     "icon": [
       "icons/32x32.png",

@@ -113,6 +113,21 @@ pub fn r2_public_url_base(site: &R2SiteConfig) -> &str {
     &site.public_url_base
 }
 
+/// The R2 object key for `url`, if it's actually one of this site's own R2-
+/// hosted images (i.e. starts with the site's own public_url_base) - None
+/// for anything else (a static/bundle-local image, or a genuinely external
+/// URL someone linked to via "Insert image from URL"), which callers should
+/// leave alone rather than trying to delete something this app doesn't own.
+pub fn r2_key_from_url(site: &R2SiteConfig, url: &str) -> Option<String> {
+    let base = site.public_url_base.trim_end_matches('/');
+    if base.is_empty() {
+        return None;
+    }
+    url.strip_prefix(base)
+        .map(|rest| rest.trim_start_matches('/').to_string())
+        .filter(|key| !key.is_empty())
+}
+
 pub fn upload_to_r2(site: &R2SiteConfig, personal: &R2PersonalConfig, key: &str, content: &[u8]) -> Result<(), String> {
     use s3::bucket::Bucket;
     use s3::creds::Credentials;
@@ -133,5 +148,33 @@ pub fn upload_to_r2(site: &R2SiteConfig, personal: &R2PersonalConfig, key: &str,
     let bucket = Bucket::new(&site.bucket, region, credentials).map_err(|e| e.to_string())?;
 
     bucket.put_object(key, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Removes an R2 object outright - upload_to_r2 was, until now, the ONLY R2
+/// network operation anywhere in this codebase, so an object never got
+/// cleaned up no matter how a page stopped referencing it (deleted,
+/// replaced, edited by hand) - see pws-6ryi. Mirrors upload_to_r2's own
+/// bucket-construction exactly.
+pub fn delete_from_r2(site: &R2SiteConfig, personal: &R2PersonalConfig, key: &str) -> Result<(), String> {
+    use s3::bucket::Bucket;
+    use s3::creds::Credentials;
+    use s3::region::Region;
+
+    let region = Region::Custom {
+        region: "auto".to_string(),
+        endpoint: format!("https://{}.r2.cloudflarestorage.com", personal.account_id),
+    };
+    let credentials = Credentials::new(
+        Some(&personal.access_key_id),
+        Some(&personal.secret_access_key),
+        None,
+        None,
+        None,
+    )
+    .map_err(|e| e.to_string())?;
+    let bucket = Bucket::new(&site.bucket, region, credentials).map_err(|e| e.to_string())?;
+
+    bucket.delete_object(key).map_err(|e| e.to_string())?;
     Ok(())
 }
