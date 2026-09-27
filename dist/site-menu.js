@@ -3,6 +3,10 @@
 // menu.rs) - the same {name, url} shape the bundled sample site's Abridge
 // theme already reads natively, so this same editor works whether or not
 // the site's actual theme happens to be Abridge.
+//
+// Flat, single-level only - neither this data model nor the site's own
+// template render a submenu/dropdown for a page's children. Multi-level
+// nav editing is separate, not-yet-built future work (see pws-ws2).
 
 import { wirePanelKeys, showError, nowForZola, currentAuthorName } from "./editor-core.js";
 
@@ -12,18 +16,31 @@ const siteMenuPanel = document.getElementById("site-menu-panel");
 const siteMenuList = document.getElementById("site-menu-list");
 const siteMenuStatus = document.getElementById("site-menu-status");
 
-// {name, kind, pageUrl, externalUrl, newTitle, newSection} per row - the
-// per-kind fields (pageUrl/externalUrl/newTitle/newSection) are all kept
-// side by side rather than a single "value" so switching the kind dropdown
-// back and forth never loses whatever was already typed/chosen in the
-// others.
+const createPanel = document.getElementById("site-menu-create-panel");
+const createTitleEl = document.getElementById("site-menu-create-title");
+const createInput = document.getElementById("site-menu-create-input");
+const createSectionRow = document.getElementById("site-menu-create-section-row");
+const createSectionSelect = document.getElementById("site-menu-create-section");
+const createStatus = document.getElementById("site-menu-create-status");
+
+// {name, kind: "page"|"external", pageUrl, externalUrl} per row - pageUrl/
+// externalUrl are kept side by side rather than a single "value" so
+// switching the kind dropdown back and forth never loses whatever was
+// already chosen/typed in the other one. "New page.../New section..." are
+// transient kindSelect choices, not a durable row.kind - picking one opens
+// createPanel instead (see openCreatePanel), and the row itself only ever
+// settles back into "page" (on success) or whatever it already was (on
+// cancel).
 let rows = [];
 // {path, label} for every content file (not templates) - populates each
 // row's "existing page" dropdown.
 let linkablePages = [];
-// {slug, title} for every top-level section - populates "New page..."'s
-// own parent-section dropdown (same source create_page's own dialog uses).
+// {slug, title} for every top-level section - populates the create-page
+// popup's own parent-section dropdown (same source create_page's own
+// standalone dialog uses).
 let sections = [];
+// Which row/kind createPanel is currently working on.
+let pendingCreate = null;
 
 const zolaUrlForPage = (path) => "@/" + path.replace(/^content\//, "");
 
@@ -37,12 +54,33 @@ const refreshPagesAndSections = async () => {
   sections = sectionList;
 };
 
+const openCreatePanel = (row, kind) => {
+  pendingCreate = { row, kind };
+  createTitleEl.textContent = kind === "new-page" ? "New page" : "New section";
+  createInput.value = "";
+  createStatus.textContent = "";
+  createSectionRow.style.display = kind === "new-page" ? "block" : "none";
+  if (kind === "new-page") {
+    createSectionSelect.innerHTML = "";
+    for (const s of sections) {
+      const opt = document.createElement("option");
+      opt.value = s.slug;
+      opt.textContent = s.title;
+      createSectionSelect.appendChild(opt);
+    }
+    if (sections.length === 0) {
+      createStatus.textContent = "This site has no existing sections to add a page to yet.";
+    }
+  }
+  createPanel.style.display = "flex";
+  createInput.focus();
+};
+
 const renderSiteMenuList = () => {
   siteMenuList.innerHTML = "";
   rows.forEach((row, i) => {
     const el = document.createElement("div");
     el.className = "menu-entry-row";
-    el.style.flexWrap = "wrap";
 
     const up = document.createElement("button");
     up.type = "button";
@@ -99,8 +137,17 @@ const renderSiteMenuList = () => {
       pageSelect.appendChild(opt);
     }
     pageSelect.value = row.pageUrl;
+    // The select itself is narrower than some labels (see the truncated
+    // "Bio…"/"Plai…" screenshots this was reported against) - a hover
+    // tooltip with the full label is a cheap partial mitigation alongside
+    // the panel width increase.
+    const updatePageSelectTitle = () => {
+      pageSelect.title = pageSelect.selectedOptions[0]?.textContent || "";
+    };
+    updatePageSelectTitle();
     pageSelect.addEventListener("change", () => {
       row.pageUrl = pageSelect.value;
+      updatePageSelectTitle();
     });
 
     const urlInput = document.createElement("input");
@@ -112,114 +159,24 @@ const renderSiteMenuList = () => {
       row.externalUrl = urlInput.value;
     });
 
-    // "New page..." - a title plus a parent section (create_page's own
-    // dialog offers the same choice), created immediately on its own
-    // "Create" click rather than deferred to the panel's overall Save, so a
-    // duplicate-title/empty-section error surfaces right where it happened
-    // instead of after everything else in the panel already looked saved.
-    const newPageWrap = document.createElement("span");
-    newPageWrap.style.cssText = "display: flex; gap: 4px; flex: 1; min-width: 0;";
-    const newPageTitle = document.createElement("input");
-    newPageTitle.type = "text";
-    newPageTitle.placeholder = "New page title";
-    newPageTitle.style.flex = "1";
-    newPageTitle.value = row.newTitle;
-    newPageTitle.addEventListener("input", () => {
-      row.newTitle = newPageTitle.value;
-    });
-    const newPageSection = document.createElement("select");
-    for (const s of sections) {
-      const opt = document.createElement("option");
-      opt.value = s.slug;
-      opt.textContent = s.title;
-      newPageSection.appendChild(opt);
-    }
-    if (row.newSection) newPageSection.value = row.newSection;
-    newPageSection.addEventListener("change", () => {
-      row.newSection = newPageSection.value;
-    });
-    const newPageCreate = document.createElement("button");
-    newPageCreate.type = "button";
-    newPageCreate.className = "secondary";
-    newPageCreate.textContent = "Create";
-    newPageCreate.addEventListener("click", async () => {
-      const title = newPageTitle.value.trim();
-      if (!title) {
-        siteMenuStatus.textContent = "Enter a title for the new page first.";
-        return;
-      }
-      if (!newPageSection.value) {
-        siteMenuStatus.textContent = "This site has no existing sections to add a page to yet - create a section first.";
-        return;
-      }
-      siteMenuStatus.textContent = "Creating page...";
-      try {
-        const path = await invoke("create_page", {
-          title,
-          section: newPageSection.value,
-          datetime: nowForZola(),
-          author: currentAuthorName,
-        });
-        await refreshPagesAndSections();
-        row.kind = "page";
-        row.pageUrl = zolaUrlForPage(path);
-        if (!row.name.trim()) row.name = title;
-        siteMenuStatus.textContent = "";
-        renderSiteMenuList();
-      } catch (err) {
-        siteMenuStatus.textContent = "";
-        showError(err);
-      }
-    });
-    newPageWrap.append(newPageTitle, newPageSection, newPageCreate);
-
-    // "New section..." - a brand-new top-level section (its own
-    // content/<slug>/_index.md), a sibling of About/Biodiversity/etc.
-    const newSectionWrap = document.createElement("span");
-    newSectionWrap.style.cssText = "display: flex; gap: 4px; flex: 1; min-width: 0;";
-    const newSectionTitle = document.createElement("input");
-    newSectionTitle.type = "text";
-    newSectionTitle.placeholder = "New section title";
-    newSectionTitle.style.flex = "1";
-    newSectionTitle.value = row.newTitle;
-    newSectionTitle.addEventListener("input", () => {
-      row.newTitle = newSectionTitle.value;
-    });
-    const newSectionCreate = document.createElement("button");
-    newSectionCreate.type = "button";
-    newSectionCreate.className = "secondary";
-    newSectionCreate.textContent = "Create";
-    newSectionCreate.addEventListener("click", async () => {
-      const title = newSectionTitle.value.trim();
-      if (!title) {
-        siteMenuStatus.textContent = "Enter a title for the new section first.";
-        return;
-      }
-      siteMenuStatus.textContent = "Creating section...";
-      try {
-        const path = await invoke("create_section", { title, author: currentAuthorName });
-        await refreshPagesAndSections();
-        row.kind = "page";
-        row.pageUrl = zolaUrlForPage(path);
-        if (!row.name.trim()) row.name = title;
-        siteMenuStatus.textContent = "";
-        renderSiteMenuList();
-      } catch (err) {
-        siteMenuStatus.textContent = "";
-        showError(err);
-      }
-    });
-    newSectionWrap.append(newSectionTitle, newSectionCreate);
-
     const applyKindVisibility = () => {
-      pageSelect.style.display = kindSelect.value === "page" ? "" : "none";
-      urlInput.style.display = kindSelect.value === "external" ? "" : "none";
-      newPageWrap.style.display = kindSelect.value === "new-page" ? "flex" : "none";
-      newSectionWrap.style.display = kindSelect.value === "new-section" ? "flex" : "none";
+      pageSelect.style.display = row.kind === "page" ? "" : "none";
+      urlInput.style.display = row.kind === "external" ? "" : "none";
     };
     applyKindVisibility();
     kindSelect.addEventListener("change", () => {
-      row.kind = kindSelect.value;
+      const chosen = kindSelect.value;
+      if (chosen === "new-page" || chosen === "new-section") {
+        // Doesn't change row.kind (or the row's layout) at all yet - only a
+        // successful create in the popup does that (see
+        // site-menu-create-confirm). Snap the dropdown back to what the
+        // row actually still is right away, rather than leaving it showing
+        // a transient choice the row hasn't adopted.
+        kindSelect.value = row.kind;
+        openCreatePanel(row, chosen);
+        return;
+      }
+      row.kind = chosen;
       applyKindVisibility();
     });
 
@@ -233,7 +190,7 @@ const renderSiteMenuList = () => {
       renderSiteMenuList();
     });
 
-    el.append(up, down, nameInput, kindSelect, pageSelect, urlInput, newPageWrap, newSectionWrap, remove);
+    el.append(up, down, nameInput, kindSelect, pageSelect, urlInput, remove);
     siteMenuList.appendChild(el);
   });
 };
@@ -251,8 +208,6 @@ document.getElementById("site-menu-button").addEventListener("click", async () =
         kind: isExternal ? "external" : "page",
         pageUrl: isExternal ? (linkablePages[0] ? zolaUrlForPage(linkablePages[0].path) : "") : e.url,
         externalUrl: isExternal ? e.url : "",
-        newTitle: "",
-        newSection: "",
       };
     });
     renderSiteMenuList();
@@ -268,20 +223,55 @@ document.getElementById("site-menu-add").addEventListener("click", () => {
     kind: "page",
     pageUrl: linkablePages[0] ? zolaUrlForPage(linkablePages[0].path) : "",
     externalUrl: "",
-    newTitle: "",
-    newSection: "",
   });
   renderSiteMenuList();
+});
+
+document.getElementById("site-menu-create-cancel").addEventListener("click", () => {
+  createPanel.style.display = "none";
+  pendingCreate = null;
+});
+
+document.getElementById("site-menu-create-confirm").addEventListener("click", async () => {
+  if (!pendingCreate) return;
+  const { row, kind } = pendingCreate;
+  const title = createInput.value.trim();
+  if (!title) {
+    createStatus.textContent = "Enter a title first.";
+    return;
+  }
+  if (kind === "new-page" && !createSectionSelect.value) {
+    createStatus.textContent = "Choose a section first.";
+    return;
+  }
+  createStatus.textContent = "Creating...";
+  try {
+    const path =
+      kind === "new-page"
+        ? await invoke("create_page", {
+            title,
+            section: createSectionSelect.value,
+            datetime: nowForZola(),
+            author: currentAuthorName,
+          })
+        : await invoke("create_section", { title, author: currentAuthorName });
+    await refreshPagesAndSections();
+    row.kind = "page";
+    row.pageUrl = zolaUrlForPage(path);
+    if (!row.name.trim()) row.name = title;
+    createPanel.style.display = "none";
+    pendingCreate = null;
+    renderSiteMenuList();
+  } catch (err) {
+    createStatus.textContent = "";
+    showError(err);
+  }
 });
 
 document.getElementById("site-menu-save").addEventListener("click", async () => {
   const entries = [];
   for (const row of rows) {
     const name = row.name.trim();
-    if (row.kind === "new-page" || row.kind === "new-section") {
-      siteMenuStatus.textContent = 'Finish creating every "New page"/"New section" entry (or remove it) before saving.';
-      return;
-    }
     const url = row.kind === "external" ? row.externalUrl.trim() : row.pageUrl;
     if (!name || !url) {
       siteMenuStatus.textContent = "Every link needs a label and a destination.";
@@ -304,3 +294,4 @@ document.getElementById("site-menu-close").addEventListener("click", () => {
 });
 
 wirePanelKeys(siteMenuPanel, "site-menu-save", "site-menu-close");
+wirePanelKeys(createPanel, "site-menu-create-confirm", "site-menu-create-cancel");
