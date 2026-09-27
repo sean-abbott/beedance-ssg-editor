@@ -38,6 +38,18 @@
     }
     header h1 { margin: 0; font-size: 16px; font-weight: 600; }
 
+    /* Reviewing someone else's pull request read-only (git-workflow.js) -
+       a thick frame around the whole window plus a tinted header, so it's
+       obvious at a glance regardless of which part of the screen you're
+       looking at, not just from the banner text. */
+    body.review-mode-active {
+      outline: 6px solid #b8860b;
+      outline-offset: -6px;
+    }
+    body.review-mode-active header {
+      background: color-mix(in srgb, #b8860b 18%, var(--panel));
+    }
+
     main { padding: 16px 20px; }
 
     .toolbar {

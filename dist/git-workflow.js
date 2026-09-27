@@ -34,8 +34,19 @@ const localDraftsButton = document.getElementById("local-drafts-button");
 const localDraftsNormal = document.getElementById("local-drafts-normal");
 const localDraftsReviewActive = document.getElementById("local-drafts-review-active");
 const localDraftsReviewActiveMessage = document.getElementById("local-drafts-review-active-message");
-const localDraftsPrList = document.getElementById("local-drafts-pr-list");
+
+// A top-level dialog of its own (beside "Branch: …" and "Review changes…"),
+// not nested inside Local Drafts - found the hard way that nesting it two
+// levels deep made it hard to discover at all.
+const reviewPrPanel = document.getElementById("review-pr-panel");
+const reviewPrNormal = document.getElementById("review-pr-normal");
+const reviewPrReviewActive = document.getElementById("review-pr-review-active");
+const reviewPrReviewActiveMessage = document.getElementById("review-pr-review-active-message");
+const reviewPrList = document.getElementById("review-pr-list");
+const reviewPrStatus = document.getElementById("review-pr-status");
+
 const reviewModeBanner = document.getElementById("review-mode-banner");
+const reviewModeHeaderBadge = document.getElementById("review-mode-header-badge");
 const reviewModeMessage = document.getElementById("review-mode-message");
 const reviewModeLink = document.getElementById("review-mode-link");
 // Same reasoning as settings.js's help link - target="_blank" doesn't
@@ -87,10 +98,19 @@ const applyReviewModeUI = () => {
   }
   localDraftsNormal.style.display = active ? "none" : "block";
   localDraftsReviewActive.style.display = active ? "block" : "none";
+  reviewPrNormal.style.display = active ? "none" : "block";
+  reviewPrReviewActive.style.display = active ? "block" : "none";
   reviewModeBanner.style.display = active ? "flex" : "none";
+  // Broad, ambient signal (a frame around the whole window, a badge next
+  // to the app's own title) so read-only mode is obvious regardless of
+  // which part of the screen you're looking at - the banner alone was easy
+  // to miss.
+  document.body.classList.toggle("review-mode-active", active);
+  reviewModeHeaderBadge.style.display = active ? "inline-block" : "none";
   if (active) {
     const message = `Reviewing PR #${reviewModeActive.number}: "${reviewModeActive.title}" by ${reviewModeActive.authorLogin}.`;
     localDraftsReviewActiveMessage.textContent = message;
+    reviewPrReviewActiveMessage.textContent = message;
     reviewModeMessage.textContent = message + " Read only - editing is disabled.";
     reviewModeLink.href = reviewModeActive.url;
   }
@@ -196,7 +216,7 @@ const switchDraft = async (name) => {
 };
 
 const renderPrList = (prs) => {
-  localDraftsPrList.innerHTML = "";
+  reviewPrList.innerHTML = "";
   const others = prs.filter(
     (pr) => !currentGithubUsername || pr.authorLogin.toLowerCase() !== currentGithubUsername.toLowerCase()
   );
@@ -206,7 +226,7 @@ const renderPrList = (prs) => {
     empty.textContent = currentGithubUsername
       ? "No open pull requests from anyone else right now."
       : "No open pull requests right now. Set your GitHub username in Settings to filter out your own.";
-    localDraftsPrList.appendChild(empty);
+    reviewPrList.appendChild(empty);
     return;
   }
   for (const pr of others) {
@@ -226,19 +246,28 @@ const renderPrList = (prs) => {
       row.style.opacity = "0.6";
       row.style.cursor = "default";
     }
-    localDraftsPrList.appendChild(row);
+    reviewPrList.appendChild(row);
   }
 };
 
-document.getElementById("local-drafts-load-prs").addEventListener("click", async () => {
-  localDraftsPrList.innerHTML = "";
-  localDraftsStatus.textContent = "Loading pull requests...";
+document.getElementById("review-pr-button").addEventListener("click", async () => {
+  reviewPrStatus.textContent = "";
+  reviewPrPanel.style.display = "flex";
+});
+
+document.getElementById("review-pr-close").addEventListener("click", () => {
+  reviewPrPanel.style.display = "none";
+});
+
+document.getElementById("review-pr-load").addEventListener("click", async () => {
+  reviewPrList.innerHTML = "";
+  reviewPrStatus.textContent = "Loading pull requests...";
   try {
     const prs = await invoke("github_list_open_prs");
     renderPrList(prs);
-    localDraftsStatus.textContent = "";
+    reviewPrStatus.textContent = "";
   } catch (err) {
-    localDraftsStatus.textContent = "ERROR: " + err;
+    reviewPrStatus.textContent = "ERROR: " + err;
   }
 });
 
@@ -251,7 +280,7 @@ const startReviewingPr = async (pr) => {
     "Review"
   );
   if (!proceed) return;
-  localDraftsStatus.textContent = "Loading...";
+  reviewPrStatus.textContent = "Loading...";
   try {
     if (activeTab) {
       cancelTabAutosave(activeTab);
@@ -268,10 +297,10 @@ const startReviewingPr = async (pr) => {
     applyReviewModeUI();
     await refreshFileList();
     if (fileSelect.value) await openTab(fileSelect.value);
-    localDraftsPanel.style.display = "none";
-    localDraftsStatus.textContent = "";
+    reviewPrPanel.style.display = "none";
+    reviewPrStatus.textContent = "";
   } catch (err) {
-    localDraftsStatus.textContent = "ERROR: " + err;
+    reviewPrStatus.textContent = "ERROR: " + err;
   }
 };
 
@@ -296,6 +325,7 @@ const exitReviewMode = async () => {
 };
 
 document.getElementById("local-drafts-exit-review-inline").addEventListener("click", exitReviewMode);
+document.getElementById("review-pr-exit-review-inline").addEventListener("click", exitReviewMode);
 document.getElementById("review-mode-exit").addEventListener("click", exitReviewMode);
 
 document.getElementById("local-drafts-button").addEventListener("click", async () => {
@@ -489,6 +519,7 @@ listen("branch-changed", async () => {
 
 wirePanelKeys(reviewChangesPanel, "review-changes-commit", "review-changes-close");
 wirePanelKeys(localDraftsPanel, null, "local-drafts-close");
+wirePanelKeys(reviewPrPanel, null, "review-pr-close");
 
 // Startup drift check, per pws-y8t's design - a network call (fetch
 // against origin) when a remote's configured, so this runs in the

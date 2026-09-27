@@ -7,7 +7,7 @@
 </head>
 <body>
   <header>
-    <h1>beedance-ssg-editor</h1>
+    <h1>beedance-ssg-editor <span id="review-mode-header-badge" style="display: none; font-size: 12px; font-weight: 700; color: #b8860b; border: 1px solid #b8860b; border-radius: 999px; padding: 2px 8px; vertical-align: middle;">READ-ONLY &middot; REVIEWING</span></h1>
     <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
       <div id="site-dir" style="font-size: 12px; color: var(--muted);">(loading...)</div>
       <button id="change-site" class="secondary" style="font-size: 11px; padding: 2px 8px;">Change site&hellip;</button>
@@ -333,22 +333,40 @@
           <input type="text" id="local-drafts-new-name" placeholder="New draft name" style="flex: 1;" />
           <button type="button" id="local-drafts-new-confirm" class="secondary">New draft</button>
         </div>
-
-        <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;">
-          <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Review someone else's work</legend>
-          <p style="font-size: 12px; color: var(--muted); margin: 0 0 8px;">
-            Read-only - you can't edit while reviewing. Needs a repository
-            connected in Settings &rarr; GitHub sync.
-          </p>
-          <button type="button" id="local-drafts-load-prs" class="secondary">Show open pull requests</button>
-          <div id="local-drafts-pr-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; margin-top: 8px;"></div>
-        </fieldset>
       </div>
 
       <div id="local-drafts-status" style="font-size: 12px; color: var(--muted); margin: 8px 0;"></div>
 
       <div style="display: flex; justify-content: flex-end; gap: 8px;">
         <button id="local-drafts-close" class="secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="review-pr-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
+    <div class="panel" style="width: min(440px, 90%); max-height: 85vh; overflow-y: auto; padding: 16px; background: var(--panel);">
+      <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Review a pull request</h3>
+
+      <div id="review-pr-review-active" style="display: none;">
+        <p id="review-pr-review-active-message" style="font-size: 13px; margin: 0 0 14px;"></p>
+        <div style="display: flex; justify-content: flex-end;">
+          <button id="review-pr-exit-review-inline" class="secondary">Exit review, back to editing</button>
+        </div>
+      </div>
+
+      <div id="review-pr-normal">
+        <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+          Read-only - you can't edit while reviewing. Needs a repository
+          connected in Settings &rarr; GitHub sync.
+        </p>
+        <button type="button" id="review-pr-load" class="secondary">Show open pull requests</button>
+        <div id="review-pr-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin-top: 10px;"></div>
+      </div>
+
+      <div id="review-pr-status" style="font-size: 12px; color: var(--muted); margin: 8px 0;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="review-pr-close" class="secondary">Close</button>
       </div>
     </div>
   </div>
@@ -447,6 +465,7 @@
       <button id="delete-content" class="secondary">Delete&hellip;</button>
       <button id="local-drafts-button" class="secondary" title="Switch drafts, or start a new one">Branch: &hellip;</button>
       <button id="review-changes" class="secondary">Review changes&hellip;</button>
+      <button id="review-pr-button" class="secondary" title="Look at someone else's pull request, read-only">Review a PR&hellip;</button>
       <button id="reload" class="secondary">Reload from disk</button>
       <button id="save">Save</button>
       <span id="editor-status" class="status"></span>
