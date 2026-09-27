@@ -305,13 +305,10 @@ pub fn list_page_sections() -> Vec<ContentSection> {
 }
 
 /// Creates a new page nested under an existing top-level section (e.g. a new
-/// page under "Biodiversity") rather than as its own top-level section -
-/// this site's nav is hardcoded in the template, so a brand-new top-level
-/// section has no way to become reachable from the menu until the nav is
-/// rebuilt on a data-driven convention (e.g. a `[[extra.menu]]` array read by
-/// the base template, instead of literal `<a>` tags). Nesting under an
-/// existing section instead works today: the default section.html template
-/// already lists section.pages automatically.
+/// page under "Biodiversity") - see create_section for a brand-new top-level
+/// section instead. The default section.html template already lists
+/// section.pages automatically, so nesting under an existing section needs
+/// nothing further to become visible there.
 ///
 /// Stamps `date` as a creation timestamp the same way create_post does, even
 /// though a page's section isn't a "blog heading" - safe to do because
@@ -345,6 +342,41 @@ pub fn create_page(title: String, section: String, datetime: String, author: Opt
         .map_err(|e| e.to_string())
 }
 
+/// Creates a brand-new TOP-LEVEL section (its own content/<slug>/_index.md),
+/// a sibling of About/Biodiversity/etc. rather than nested under one of them
+/// - unlike create_page's target, becoming reachable from the site's actual
+/// nav is no longer blocked on a hardcoded template (see menu.rs's
+/// [[extra.menu]] and the Site menu editor): a new section just needs adding
+/// to the menu like anything else.
+///
+/// No `date` field in the front matter at all - unlike create_page's target
+/// (a Page), a Section's front-matter schema has no `date` field, and
+/// writing one is a hard Zola build error (see zola::is_section_index's own
+/// doc comment for the real error text that surfaced this).
+#[tauri::command]
+pub fn create_section(title: String, author: Option<String>) -> Result<String, String> {
+    let slug = content_slug(&title);
+    if slug.is_empty() {
+        return Err("Title can't be empty".to_string());
+    }
+
+    let section_dir = site_dir().join(zola::CONTENT_DIR).join(&slug);
+    if section_dir.exists() {
+        return Err(format!("A section already exists at \"{slug}\" - choose a different title."));
+    }
+
+    std::fs::create_dir_all(&section_dir).map_err(|e| e.to_string())?;
+    let full = section_dir.join("_index.md");
+
+    let front_matter = format!("+++\ntitle = \"{}\"\n+++\n\n", title.replace('"', "\\\""));
+    let front_matter = append_author(&front_matter, author);
+    std::fs::write(&full, front_matter).map_err(|e| e.to_string())?;
+
+    full.strip_prefix(site_dir())
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .map_err(|e| e.to_string())
+}
+
 // Same two forms images.js's own MD_IMAGE_RE/HTML_IMAGE_RE match on the
 // frontend (alignment toolbar) - only the URL capture group is needed here,
 // not alt text/style. Compiled once (LazyLock, stable since Rust 1.80) since
@@ -364,11 +396,21 @@ fn extract_image_urls(content: &str) -> Vec<String> {
         .collect()
 }
 
+/// True if `dir` (a section's own directory) contains nothing besides
+/// `index_file` itself - no sibling pages, no nested subsections, no
+/// co-located assets.
+fn section_is_empty(dir: &Path, index_file: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    entries.flatten().all(|entry| entry.path() == index_file)
+}
+
 /// Deletes a content file (or, for a page bundle, its whole directory - a
-/// bundle's co-located assets have nowhere else to go). Refuses to delete a
-/// section index (_index.md): that would take every page nested under it
-/// with it, a much bigger blast radius than "delete this one page" implies -
-/// not supported here, a real "delete section" action would need its own,
+/// bundle's co-located assets have nowhere else to go). A section index
+/// (_index.md) can only be deleted if its section is otherwise completely
+/// empty (section_is_empty) - deleting a NON-empty section would take every
+/// page nested under it with it, a much bigger blast radius than "delete
+/// this one page" implies, and isn't supported here; a real "delete this
+/// whole section, including everything in it" action would need its own,
 /// more deliberate confirmation flow.
 #[tauri::command]
 pub fn delete_content(
@@ -384,10 +426,16 @@ pub fn delete_content(
     }
 
     let file_name = full.file_name().and_then(|f| f.to_str()).unwrap_or_default();
-    if file_name == "_index.md" {
-        return Err(
-            "Deleting a whole section isn't supported yet - delete its individual pages first.".to_string(),
-        );
+    let is_section_index = file_name == "_index.md";
+    if is_section_index {
+        let dir = full.parent().ok_or_else(|| "invalid content path".to_string())?;
+        if !section_is_empty(dir, &full) {
+            return Err(
+                "This section still has pages (or other files) in it - delete those first. An \
+                 empty section (just its own _index.md, nothing else) can be deleted directly."
+                    .to_string(),
+            );
+        }
     }
 
     // Best-effort R2 cleanup - a failure here should never block deleting
@@ -407,8 +455,9 @@ pub fn delete_content(
     tracker.0.lock().unwrap().insert(full.clone(), Instant::now());
     open_files.0.lock().unwrap().remove(&full);
 
-    if file_name == "index.md" {
-        // A page bundle - the directory IS the page, co-located assets and all.
+    if file_name == "index.md" || is_section_index {
+        // The directory IS the page/section - a page bundle's co-located
+        // assets, or an (empty, checked above) section's own directory.
         let dir = full.parent().ok_or_else(|| "invalid content path".to_string())?;
         std::fs::remove_dir_all(dir).map_err(|e| e.to_string())
     } else {
@@ -548,4 +597,45 @@ pub fn get_content_tags(content: String) -> Vec<String> {
 pub fn set_content_tags(content: String, tags: Vec<String>) -> Result<String, String> {
     stamp_table_field(&content, "taxonomies", "tags", &format_toml_string_array(&tags))
         .ok_or_else(|| "This file has no front matter block to set tags in.".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("beedance-content-test-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn section_is_empty_true_for_just_its_own_index() {
+        let dir = temp_dir("empty");
+        let index = dir.join("_index.md");
+        std::fs::write(&index, "+++\ntitle = \"News\"\n+++\n").unwrap();
+        assert!(section_is_empty(&dir, &index));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn section_is_empty_false_with_a_sibling_page() {
+        let dir = temp_dir("sibling");
+        let index = dir.join("_index.md");
+        std::fs::write(&index, "+++\ntitle = \"News\"\n+++\n").unwrap();
+        std::fs::write(dir.join("some-post.md"), "+++\ntitle = \"Post\"\n+++\n").unwrap();
+        assert!(!section_is_empty(&dir, &index));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn section_is_empty_false_with_a_subsection() {
+        let dir = temp_dir("subsection");
+        let index = dir.join("_index.md");
+        std::fs::write(&index, "+++\ntitle = \"News\"\n+++\n").unwrap();
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        assert!(!section_is_empty(&dir, &index));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

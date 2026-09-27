@@ -94,6 +94,7 @@ fn main() {
             site::list_editable_files_detailed,
             content::create_post,
             content::create_page,
+            content::create_section,
             content::delete_content,
             content::rename_content,
             content::list_page_sections,

@@ -48,12 +48,10 @@ const openNewContentPanel = async (kind) => {
   newContentPanel.style.display = "flex";
   newContentInput.focus();
 
-  // A page always nests under an existing menu section (e.g. a new page
+  // A page here always nests under an existing section (e.g. a new page
   // under "Biodiversity") rather than minting its own top-level section -
-  // this site's nav is hardcoded in the template, so a brand-new
-  // top-level section wouldn't be reachable from the menu at all until
-  // the nav is rebuilt on a data-driven convention that supports adding
-  // new top-level entries from here.
+  // see site-menu.js's "New section..." option (from the Site menu editor)
+  // for creating one of those instead.
   if (kind === "page") {
     newContentSectionRow.style.display = "block";
     newContentSection.innerHTML = "<option>(loading...)</option>";
