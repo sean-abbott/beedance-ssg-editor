@@ -34,7 +34,7 @@ jobs:
             target: "aarch64-apple-darwin"
           - platform: "macos-latest"
             target: "x86_64-apple-darwin"
-          - platform: "ubuntu-22.04"
+          - platform: "ubuntu-26.04"
             target: ""
           - platform: "windows-latest"
             target: ""
@@ -48,7 +48,7 @@ jobs:
       # it only ever ran `cargo check`, never a real bundle (AppImage
       # creation needs patchelf; the .desktop entry needs xdg-utils).
       - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.platform == 'ubuntu-26.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -83,8 +83,20 @@ jobs:
       # Windows runners default new steps to PowerShell - `shell: bash`
       # picks up the Git Bash already installed there, same as this script
       # already supports for a local Windows dev with Git Bash/MSYS/WSL.
+      #
+      # ZOLA_TARGET_TRIPLE is set to matrix.target for every row (empty for
+      # the ubuntu/windows rows, which build for their host's own native
+      # arch - the script's uname-based auto-detection already gets those
+      # right, and an empty value is treated the same as unset). It only
+      # actually changes anything for the macos-latest x86_64-apple-darwin
+      # row: that runner's host is Apple Silicon, so uname -m there would
+      # otherwise fetch the aarch64 sidecar and Tauri's build would fail
+      # looking for the x86_64 one it actually needs - found the hard way on
+      # the first real run.
       - name: Fetch the Zola sidecar
         shell: bash
+        env:
+          ZOLA_TARGET_TRIPLE: ${{ matrix.target }}
         run: ./scripts/fetch-zola-sidecar.sh
 
       - name: Build and release
