@@ -146,9 +146,15 @@
             <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">GitHub sync</legend>
             <p style="font-size: 12px; color: var(--muted); margin: 0 0 8px;">
               Personal to this installation - never shared or committed with
-              the site. Leave the token blank to sync using whatever's already
-              set up on this machine (an SSH key, for example); set one to
-              sync over HTTPS instead.
+              the site. Leave the token blank if you already sync over SSH
+              (e.g. an SSH key set up on this machine); set one to sync over
+              HTTPS instead.
+            </p>
+            <p style="font-size: 12px; color: var(--muted); margin: 0 0 8px;">
+              A token is also required to look at someone else's draft from
+              Local Drafts, even if you use SSH for your own syncing - that
+              list comes directly from GitHub's website, which has no SSH
+              equivalent.
             </p>
 
             <label style="display: block; font-size: 13px; margin-bottom: 8px;">
@@ -163,7 +169,7 @@
             <p style="font-size: 11px; color: var(--muted); margin: 4px 0 8px;">
               Create a fine-grained token scoped to just this repository, with
               "Contents" read and write access, from
-              <a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens" target="_blank" rel="noopener">GitHub's own token settings help</a>.
+              <a id="github-token-help-link" href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens" rel="noopener">GitHub's own token settings help</a>.
             </p>
 
             <label style="display: block; font-size: 13px; margin-bottom: 4px;">
@@ -383,7 +389,7 @@
 
   <div id="review-mode-banner">
     <span id="review-mode-message"></span>
-    <a id="review-mode-link" href="#" target="_blank" rel="noopener" class="secondary" style="padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit;">Open on GitHub</a>
+    <a id="review-mode-link" href="#" rel="noopener" class="secondary" style="padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit;">Open on GitHub</a>
     <button id="review-mode-exit" class="secondary">Exit review</button>
   </div>
 

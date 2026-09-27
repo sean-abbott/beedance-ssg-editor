@@ -201,3 +201,12 @@ document.getElementById("close-settings").addEventListener("click", () => {
 });
 
 wirePanelKeys(settingsPanel, null, "close-settings");
+
+// A plain <a target="_blank"> doesn't reliably open the system's default
+// browser from inside this app's webview - found the hard way testing this
+// link. shell:allow-open (capabilities/default.json) lets this app hand the
+// URL to the OS instead.
+document.getElementById("github-token-help-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  window.__TAURI__.shell.open(e.currentTarget.href);
+});

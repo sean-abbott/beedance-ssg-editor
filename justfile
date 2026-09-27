@@ -35,11 +35,20 @@ docker-image:
 # cargo check against src-tauri/ inside Docker (for a host without the Tauri
 # system deps installed) - always run with --user matching this host user, or
 # every file it writes ends up root-owned and blocks a plain host-side cargo
-# afterward.
+# afterward. --cap-add=DAC_OVERRIDE is a HACK working around a permission
+# error Tauri's own build script hits processing capabilities/*.json under
+# this bind mount when NOT running as root - root cause not understood (the
+# files/dirs involved have completely normal ownership and permissions).
+# Reviewed 2026-09-27: scoped tightly enough to be acceptable for now (see
+# pws-y8t's notes for the full writeup), but it's still a bypass of normal
+# permission checks, not a real fix - next time this is touched, try
+# dropping it first and see if it's still needed (a Tauri/Docker version
+# bump may have fixed the underlying bug by then).
 docker-check: docker-image
     mkdir -p .docker-cargo-cache/registry .docker-cargo-cache/git
     docker run --rm \
         --user "$(id -u):$(id -g)" \
+        --cap-add=DAC_OVERRIDE \
         -v "$(pwd):/work" \
         -v "$(pwd)/.docker-cargo-cache/registry:/usr/local/cargo/registry" \
         -v "$(pwd)/.docker-cargo-cache/git:/usr/local/cargo/git" \
@@ -52,6 +61,7 @@ docker-build: docker-image
     mkdir -p .docker-cargo-cache/registry .docker-cargo-cache/git
     docker run --rm \
         --user "$(id -u):$(id -g)" \
+        --cap-add=DAC_OVERRIDE \
         -v "$(pwd):/work" \
         -v "$(pwd)/.docker-cargo-cache/registry:/usr/local/cargo/registry" \
         -v "$(pwd)/.docker-cargo-cache/git:/usr/local/cargo/git" \

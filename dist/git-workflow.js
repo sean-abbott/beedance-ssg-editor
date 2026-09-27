@@ -38,6 +38,14 @@ const localDraftsPrList = document.getElementById("local-drafts-pr-list");
 const reviewModeBanner = document.getElementById("review-mode-banner");
 const reviewModeMessage = document.getElementById("review-mode-message");
 const reviewModeLink = document.getElementById("review-mode-link");
+// Same reasoning as settings.js's help link - target="_blank" doesn't
+// reliably open the system browser from inside this app's webview.
+reviewModeLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (reviewModeLink.href && reviewModeLink.href !== "#" && !reviewModeLink.href.endsWith("/#")) {
+    window.__TAURI__.shell.open(reviewModeLink.href);
+  }
+});
 
 // Non-null while looking at someone else's open pull request read-only -
 // {number, title, authorLogin, url}. Sean's call: reviewing someone
