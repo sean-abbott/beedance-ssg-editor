@@ -58,7 +58,14 @@ pub struct GitAuthConfig {
     // with Contents read/write. Empty means "no override" - push/pull run
     // with no auth flags at all, relying on whatever this machine already
     // has configured (SSH key + agent, a credential manager, etc).
-    token: String,
+    pub(crate) token: String,
+    // Entered manually rather than derived from the token (via GitHub's
+    // /user API) or from git commit authorship - a token isn't always
+    // configured (SSH-only setups), and commit authorship is explicitly not
+    // trusted as a real identity elsewhere in this app (extra.authors is).
+    // Used only to tell "my" open pull requests apart from everyone else's
+    // in the review flow (github.rs) - never sent anywhere itself.
+    pub(crate) github_username: String,
 }
 
 const GIT_AUTH_CONFIG_FILE: &str = "git-auth.json";
@@ -78,8 +85,12 @@ pub fn get_git_auth_config(state: State<GitAuthConfigState>) -> GitAuthConfig {
 }
 
 #[tauri::command]
-pub fn set_git_auth_config(token: String, state: State<GitAuthConfigState>) -> Result<(), String> {
-    let settings = GitAuthConfig { token };
+pub fn set_git_auth_config(
+    token: String,
+    github_username: String,
+    state: State<GitAuthConfigState>,
+) -> Result<(), String> {
+    let settings = GitAuthConfig { token, github_username };
     *state.0.lock().unwrap() = settings.clone();
 
     if let Some(dir) = config_dir() {
@@ -283,6 +294,30 @@ pub fn git_checkout_branch(branch: String, tracker: State<SelfWriteTracker>) -> 
     ensure_site_repo()?;
     mark_head_self_write(&tracker);
     run_git(&site_dir(), &["checkout", &branch])
+}
+
+/// Fetches a branch that only exists on the remote so far and checks it out
+/// locally, (re)creating a local branch of the same name pointed at the
+/// remote's current tip - used for the "review someone else's pull request"
+/// flow (github.rs lists the PRs; this is what actually gets onto one's
+/// disk), and reusable later for browsing/checking out remote branches in
+/// general. Resetting with -B rather than a plain -b means reviewing the
+/// same PR again after it's been pushed to always picks up its latest tip,
+/// rather than erroring that the branch already exists.
+#[tauri::command]
+pub fn git_checkout_remote_branch(
+    branch: String,
+    tracker: State<SelfWriteTracker>,
+    auth: State<GitAuthConfigState>,
+) -> Result<String, String> {
+    ensure_site_repo()?;
+    let dir = site_dir();
+    let cfg = auth.0.lock().unwrap().clone();
+    let refspec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
+    run_git_authed(&dir, &["fetch", "origin", &refspec], &cfg)?;
+    mark_head_self_write(&tracker);
+    let remote_ref = format!("origin/{branch}");
+    run_git(&dir, &["checkout", "-B", &branch, &remote_ref])
 }
 
 #[derive(serde::Serialize)]

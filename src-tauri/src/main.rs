@@ -3,6 +3,7 @@
 mod content;
 mod frontmatter;
 mod git;
+mod github;
 mod images;
 mod preview;
 mod r2;
@@ -80,7 +81,9 @@ fn main() {
             git::git_pull,
             git::git_list_local_branches,
             git::git_checkout_branch,
+            git::git_checkout_remote_branch,
             git::git_check_main_drift,
+            github::github_list_open_prs,
             preview::zola_serve,
             preview::zola_stop,
             preview::open_log_window,

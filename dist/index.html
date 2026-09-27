@@ -217,6 +217,19 @@
     }
     #external-change-banner button { margin-left: 8px; }
 
+    #review-mode-banner {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      background: color-mix(in srgb, #b8860b 15%, var(--panel));
+      border: 1px solid var(--banner-border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      margin: 0 20px 12px;
+      font-size: 13px;
+    }
+    #review-mode-banner span { flex: 1; }
+
     details {
       margin: 0 20px 12px;
       font-size: 13px;
@@ -410,10 +423,19 @@
               Personal access token (optional)
               <input type="password" id="git-token" style="width: 100%; margin-top: 4px;" placeholder="only needed for HTTPS sync" />
             </label>
-            <p style="font-size: 11px; color: var(--muted); margin: 4px 0 0;">
+            <p style="font-size: 11px; color: var(--muted); margin: 4px 0 8px;">
               Create a fine-grained token scoped to just this repository, with
               "Contents" read and write access, from
               <a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens" target="_blank" rel="noopener">GitHub's own token settings help</a>.
+            </p>
+
+            <label style="display: block; font-size: 13px; margin-bottom: 4px;">
+              Your GitHub username
+              <input type="text" id="git-username" style="width: 100%; margin-top: 4px;" placeholder="e.g. octocat" />
+            </label>
+            <p style="font-size: 11px; color: var(--muted); margin: 4px 0 0;">
+              Used only to tell your own pull requests apart from everyone
+              else's when reviewing someone else's work.
             </p>
 
             <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px;">
@@ -544,23 +566,43 @@
   </div>
 
   <div id="local-drafts-panel" style="position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); display: none; align-items: center; justify-content: center;">
-    <div class="panel" style="width: min(440px, 90%); padding: 16px; background: var(--panel);">
+    <div class="panel" style="width: min(440px, 90%); max-height: 85vh; overflow-y: auto; padding: 16px; background: var(--panel);">
       <h3 style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">Local drafts</h3>
-      <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
-        A draft is a local branch - its own independent copy of the site to
-        edit without touching the live site until you're ready.
-      </p>
 
-      <div id="local-drafts-drift-status" style="font-size: 12px; margin-bottom: 10px;"></div>
-
-      <div id="local-drafts-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin-bottom: 12px;"></div>
-
-      <div style="display: flex; gap: 6px; margin-bottom: 8px;">
-        <input type="text" id="local-drafts-new-name" placeholder="New draft name" style="flex: 1;" />
-        <button type="button" id="local-drafts-new-confirm" class="secondary">New draft</button>
+      <div id="local-drafts-review-active" style="display: none;">
+        <p id="local-drafts-review-active-message" style="font-size: 13px; margin: 0 0 14px;"></p>
+        <div style="display: flex; justify-content: flex-end;">
+          <button id="local-drafts-exit-review-inline" class="secondary">Exit review, back to editing</button>
+        </div>
       </div>
 
-      <div id="local-drafts-status" style="font-size: 12px; color: var(--muted); margin-bottom: 8px;"></div>
+      <div id="local-drafts-normal">
+        <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
+          A draft is a local branch - its own independent copy of the site to
+          edit without touching the live site until you're ready.
+        </p>
+
+        <div id="local-drafts-drift-status" style="font-size: 12px; margin-bottom: 10px;"></div>
+
+        <div id="local-drafts-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; margin-bottom: 12px;"></div>
+
+        <div style="display: flex; gap: 6px; margin-bottom: 12px;">
+          <input type="text" id="local-drafts-new-name" placeholder="New draft name" style="flex: 1;" />
+          <button type="button" id="local-drafts-new-confirm" class="secondary">New draft</button>
+        </div>
+
+        <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;">
+          <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Review someone else's work</legend>
+          <p style="font-size: 12px; color: var(--muted); margin: 0 0 8px;">
+            Read-only - you can't edit while reviewing. Needs a repository
+            connected in Settings &rarr; GitHub sync.
+          </p>
+          <button type="button" id="local-drafts-load-prs" class="secondary">Show open pull requests</button>
+          <div id="local-drafts-pr-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; margin-top: 8px;"></div>
+        </fieldset>
+      </div>
+
+      <div id="local-drafts-status" style="font-size: 12px; color: var(--muted); margin: 8px 0;"></div>
 
       <div style="display: flex; justify-content: flex-end; gap: 8px;">
         <button id="local-drafts-close" class="secondary">Close</button>
@@ -600,6 +642,12 @@
     <span id="external-change-message">File changed on disk externally.</span>
     <button id="banner-reload" class="secondary">Reload</button>
     <button id="banner-dismiss" class="secondary">Ignore</button>
+  </div>
+
+  <div id="review-mode-banner">
+    <span id="review-mode-message"></span>
+    <a id="review-mode-link" href="#" target="_blank" rel="noopener" class="secondary" style="padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit;">Open on GitHub</a>
+    <button id="review-mode-exit" class="secondary">Exit review</button>
   </div>
 
   <div id="external-content-banner" style="display: none; background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin: 0 20px 12px; font-size: 13px;">
@@ -862,6 +910,11 @@
     const authorDisplayNameInput = document.getElementById("author-display-name");
     const authorSettingsStatus = document.getElementById("author-settings-status");
 
+    // Same idea - the "review someone else's work" flow (Local Drafts
+    // dialog) needs this to filter pull requests without Settings being
+    // open.
+    let currentGithubUsername = "";
+
     const tierWebCap = document.getElementById("tier-web-cap");
     const tierWebQuality = document.getElementById("tier-web-quality");
     const tierHighCap = document.getElementById("tier-high-cap");
@@ -882,6 +935,7 @@
 
     const gitRemoteUrlInput = document.getElementById("git-remote-url");
     const gitTokenInput = document.getElementById("git-token");
+    const gitUsernameInput = document.getElementById("git-username");
     const gitAuthSettingsStatus = document.getElementById("git-auth-settings-status");
 
     document.getElementById("open-settings").addEventListener("click", async () => {
@@ -943,6 +997,8 @@
         ]);
         gitRemoteUrlInput.value = remoteUrl;
         gitTokenInput.value = gitAuth.token;
+        gitUsernameInput.value = gitAuth.githubUsername;
+        currentGithubUsername = gitAuth.githubUsername;
       } catch (err) {
         gitAuthSettingsStatus.textContent = "Couldn't load GitHub sync settings: " + err;
       }
@@ -1024,7 +1080,9 @@
         if (url) {
           await invoke("git_set_remote_url", { url });
         }
-        await invoke("set_git_auth_config", { token: gitTokenInput.value });
+        const githubUsername = gitUsernameInput.value.trim();
+        await invoke("set_git_auth_config", { token: gitTokenInput.value, githubUsername });
+        currentGithubUsername = githubUsername;
         gitAuthSettingsStatus.textContent = "Saved.";
       } catch (err) {
         gitAuthSettingsStatus.textContent = "ERROR: " + err;
@@ -1642,6 +1700,62 @@
     const localDraftsNewName = document.getElementById("local-drafts-new-name");
     const localDraftsStatus = document.getElementById("local-drafts-status");
     const localDraftsButton = document.getElementById("local-drafts-button");
+    const localDraftsNormal = document.getElementById("local-drafts-normal");
+    const localDraftsReviewActive = document.getElementById("local-drafts-review-active");
+    const localDraftsReviewActiveMessage = document.getElementById("local-drafts-review-active-message");
+    const localDraftsPrList = document.getElementById("local-drafts-pr-list");
+    const reviewModeBanner = document.getElementById("review-mode-banner");
+    const reviewModeMessage = document.getElementById("review-mode-message");
+    const reviewModeLink = document.getElementById("review-mode-link");
+
+    // Non-null while looking at someone else's open pull request read-only -
+    // {number, title, authorLogin, url}. Sean's call: reviewing someone
+    // else's work should never risk accidentally editing it, so this
+    // disables every content-mutating control in the app, not just the
+    // editor textarea itself.
+    let reviewModeActive = null;
+
+    const REVIEW_MODE_DISABLED_IDS = [
+      "save",
+      "rename-content",
+      "delete-content",
+      "new-post",
+      "new-page",
+      "review-changes-commit",
+      "review-changes-push",
+      "local-drafts-new-confirm",
+      "fmt-bold",
+      "fmt-italic",
+      "fmt-code",
+      "fmt-link",
+      "fmt-h2",
+      "fmt-h3",
+      "fmt-quote",
+      "fmt-ul",
+      "fmt-ol",
+      "fmt-image",
+      "fmt-image-url",
+      "fmt-date",
+      "fmt-tags",
+    ];
+
+    const applyReviewModeUI = () => {
+      const active = !!reviewModeActive;
+      editorEl.readOnly = active;
+      for (const id of REVIEW_MODE_DISABLED_IDS) {
+        const el = document.getElementById(id);
+        if (el) el.disabled = active;
+      }
+      localDraftsNormal.style.display = active ? "none" : "block";
+      localDraftsReviewActive.style.display = active ? "block" : "none";
+      reviewModeBanner.style.display = active ? "flex" : "none";
+      if (active) {
+        const message = `Reviewing PR #${reviewModeActive.number}: "${reviewModeActive.title}" by ${reviewModeActive.authorLogin}.`;
+        localDraftsReviewActiveMessage.textContent = message;
+        reviewModeMessage.textContent = message + " Read only - editing is disabled.";
+        reviewModeLink.href = reviewModeActive.url;
+      }
+    };
 
     const closeAllTabsQuietly = () => {
       for (const path of [...tabs.keys()]) {
@@ -1664,6 +1778,10 @@
     };
 
     const updateBranchIndicator = (branches) => {
+      if (reviewModeActive) {
+        localDraftsButton.textContent = `Reviewing PR #${reviewModeActive.number}`;
+        return;
+      }
       const current = branches.find((b) => b.isCurrent);
       localDraftsButton.textContent = "Branch: " + (current ? (current.isLive ? "Live site" : current.name) : "…");
     };
@@ -1743,6 +1861,109 @@
         localDraftsStatus.textContent = "ERROR: " + err;
       }
     };
+
+    const renderPrList = (prs) => {
+      localDraftsPrList.innerHTML = "";
+      const others = prs.filter(
+        (pr) => !currentGithubUsername || pr.authorLogin.toLowerCase() !== currentGithubUsername.toLowerCase()
+      );
+      if (others.length === 0) {
+        const empty = document.createElement("div");
+        empty.style.cssText = "font-size: 12px; color: var(--muted);";
+        empty.textContent = currentGithubUsername
+          ? "No open pull requests from anyone else right now."
+          : "No open pull requests right now. Set your GitHub username in Settings to filter out your own.";
+        localDraftsPrList.appendChild(empty);
+        return;
+      }
+      for (const pr of others) {
+        const row = document.createElement("div");
+        row.className = "review-row";
+        const label = document.createElement("span");
+        label.className = "review-row-path";
+        label.textContent = `#${pr.number} ${pr.title}`;
+        const status = document.createElement("span");
+        status.className = "review-row-status";
+        status.textContent = pr.sameRepo ? `by ${pr.authorLogin}` : `by ${pr.authorLogin} (fork, unsupported)`;
+        row.appendChild(label);
+        row.appendChild(status);
+        if (pr.sameRepo) {
+          row.addEventListener("click", () => startReviewingPr(pr));
+        } else {
+          row.style.opacity = "0.6";
+          row.style.cursor = "default";
+        }
+        localDraftsPrList.appendChild(row);
+      }
+    };
+
+    document.getElementById("local-drafts-load-prs").addEventListener("click", async () => {
+      localDraftsPrList.innerHTML = "";
+      localDraftsStatus.textContent = "Loading pull requests...";
+      try {
+        const prs = await invoke("github_list_open_prs");
+        renderPrList(prs);
+        localDraftsStatus.textContent = "";
+      } catch (err) {
+        localDraftsStatus.textContent = "ERROR: " + err;
+      }
+    });
+
+    // Same flush-then-close-tabs pattern as switchDraft, plus entering
+    // review mode once the checkout succeeds.
+    const startReviewingPr = async (pr) => {
+      const proceed = await askConfirm(
+        "Review this pull request?",
+        `Switch to "#${pr.number} ${pr.title}" by ${pr.authorLogin}? Open tabs close and reload read-only.`,
+        "Review"
+      );
+      if (!proceed) return;
+      localDraftsStatus.textContent = "Loading...";
+      try {
+        if (activeTab) {
+          cancelTabAutosave(activeTab);
+          await invoke("write_file", {
+            path: activeTab,
+            content: editorEl.value,
+            datetime: nowForZola(),
+            author: currentAuthorName,
+          });
+        }
+        await invoke("git_checkout_remote_branch", { branch: pr.branch });
+        closeAllTabsQuietly();
+        reviewModeActive = { number: pr.number, title: pr.title, authorLogin: pr.authorLogin, url: pr.url };
+        applyReviewModeUI();
+        await refreshFileList();
+        if (fileSelect.value) await openTab(fileSelect.value);
+        localDraftsPanel.style.display = "none";
+        localDraftsStatus.textContent = "";
+      } catch (err) {
+        localDraftsStatus.textContent = "ERROR: " + err;
+      }
+    };
+
+    const exitReviewMode = async () => {
+      localDraftsStatus.textContent = "Exiting review...";
+      try {
+        const branches = await invoke("git_list_local_branches");
+        const live = branches.find((b) => b.isLive);
+        if (live) {
+          await invoke("git_checkout_branch", { branch: live.name });
+        }
+        closeAllTabsQuietly();
+        reviewModeActive = null;
+        applyReviewModeUI();
+        await refreshFileList();
+        if (fileSelect.value) await openTab(fileSelect.value);
+        localDraftsStatus.textContent = "";
+        await refreshLocalDrafts();
+      } catch (err) {
+        localDraftsStatus.textContent = "ERROR: " + err;
+      }
+    };
+
+    document.getElementById("local-drafts-exit-review-inline").addEventListener("click", exitReviewMode);
+    document.getElementById("review-mode-exit").addEventListener("click", exitReviewMode);
 
     document.getElementById("local-drafts-button").addEventListener("click", async () => {
       localDraftsStatus.textContent = "";
