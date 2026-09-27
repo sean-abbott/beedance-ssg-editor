@@ -1,10 +1,15 @@
 name: Release
 
-# Push a tag like "app-v0.1.0" (matching the version in src-tauri/Cargo.toml
-# and tauri.conf.json) to build native installers for macOS (both Apple
-# Silicon and Intel), Windows, and Linux, and attach them to a draft GitHub
-# Release - review and publish that release by hand. workflow_dispatch is
-# there too for a manual one-off rebuild without needing a new tag.
+# Versioning is Cargo's job, not a separately-maintained number here:
+# tauri.conf.json has no "version" field of its own, so Tauri falls back to
+# src-tauri/Cargo.toml's package version automatically (verified directly
+# from tauri-utils' own Config struct doc comment, not assumed) - bump the
+# version there, push to the "release" branch (a fast-forward from main
+# when you're actually ready to cut one, not every routine commit), and
+# tauri-action below reads that version, creates/updates the matching
+# "app-v<version>" tag and a draft GitHub Release, and attaches the built
+# installers - no separate manual tagging step. workflow_dispatch is there
+# too for a manual one-off rebuild.
 #
 # Free on GitHub-hosted "standard" runners (this matrix only uses those, not
 # the separately-priced "larger runners") for a public repository, on every
@@ -12,8 +17,8 @@ name: Release
 # 2026-09-27, not assumed.
 on:
   push:
-    tags:
-      - "app-v*"
+    branches:
+      - release
   workflow_dispatch:
 
 permissions:

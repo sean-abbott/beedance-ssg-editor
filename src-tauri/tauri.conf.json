@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "beedance-ssg-editor",
-  "version": "0.1.0",
   "identifier": "com.criticalloop.beedance-ssg-editor",
   "build": {
     "frontendDist": "../dist"
