@@ -551,6 +551,15 @@ const renderTagsPageList = () => {
     input.type = "text";
     input.className = "tag-manage-name";
     input.value = tag.name;
+    // Escape reverts to the actual tag name and drops focus - otherwise a
+    // half-typed edit just sits there with no way to back out of it short
+    // of retyping the original by hand.
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      input.value = tag.name;
+      input.blur();
+    });
     row.appendChild(input);
 
     if (tag.protectedBy.length > 0) {
