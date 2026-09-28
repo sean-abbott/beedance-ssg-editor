@@ -39,21 +39,26 @@ document.querySelectorAll(".sidebar-nav a[data-page]").forEach((a) => {
   a.addEventListener("click", () => showAppMainPage(a.dataset.page));
 });
 
-document.querySelectorAll(".menu > button").forEach((btn) => {
-  btn.addEventListener("click", (e) => {
+// Delegated (not bound to each ".menu > button" individually) so this also
+// covers a .menu built later at runtime - the media page's per-card "..."
+// overflow menu (media-page.js) in particular, created fresh every time
+// that grid re-renders, long after this module's own top-level code has
+// already run once. A per-element binding here would only ever see
+// whatever .menu elements existed at that one moment.
+document.addEventListener("click", (e) => {
+  const toggle = e.target.closest(".menu > button");
+  if (toggle) {
     e.stopPropagation();
-    const menu = btn.parentElement;
+    const menu = toggle.parentElement;
     const wasOpen = menu.classList.contains("open");
     document.querySelectorAll(".menu.open").forEach((m) => m.classList.remove("open"));
     if (!wasOpen) menu.classList.add("open");
-  });
-});
-// Also closes an open dropdown when one of its own items is clicked (e.g.
-// "New page..."), same as a real app menu - that click's own handler
-// (elsewhere) runs first during the bubble phase, then this one closes the
-// dropdown behind it, since only the toggle button itself (above) stops
-// the click from reaching here.
-document.addEventListener("click", () => {
+    return;
+  }
+  // Also closes an open dropdown when one of its own items is clicked (e.g.
+  // "New page..."), same as a real app menu - that click's own handler
+  // (elsewhere) already ran during the bubble phase before this one, since
+  // only the toggle button branch above stops the click from reaching here.
   document.querySelectorAll(".menu.open").forEach((m) => m.classList.remove("open"));
 });
 

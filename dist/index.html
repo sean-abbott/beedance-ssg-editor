@@ -36,6 +36,7 @@
     <symbol id="icon-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l4 3-4 3"/><path d="M13 15h4"/></symbol>
     <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
     <symbol id="icon-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="icon-kebab" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></g></symbol>
   </svg>
   <header>
     <div class="header-titles">
@@ -961,6 +962,50 @@
       <div class="modal-footer">
         <button id="media-delete-review-cancel" class="secondary">Cancel</button>
         <button id="media-delete-review-confirm" style="background: var(--danger); border-color: var(--danger);">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="media-rename-panel" class="modal-overlay" style="z-index: 20;">
+    <div class="modal">
+      <div class="modal-header">
+        <svg class="icon" style="width:18px;height:18px;"><use href="#icon-pencil"/></svg>
+        <h3 id="media-rename-title">Rename image</h3>
+      </div>
+      <div class="modal-body">
+        <label class="field-label">
+          New filename
+          <input type="text" id="media-rename-input" />
+        </label>
+        <p class="card-description" id="media-rename-description"></p>
+        <div id="media-rename-status" class="status-line"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="media-rename-cancel" class="secondary">Cancel</button>
+        <button id="media-rename-confirm">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="media-alt-text-panel" class="modal-overlay" style="z-index: 20;">
+    <div class="modal modal-wide" style="max-height: 85vh;">
+      <div class="modal-header">
+        <svg class="icon" style="width:18px;height:18px;"><use href="#icon-tag"/></svg>
+        <h3 id="media-alt-text-title">Alt text</h3>
+      </div>
+      <div class="modal-body">
+        <p class="card-description" style="margin: 0 0 var(--space-3);">
+          Alt text lives per usage, in the markdown where the image is
+          inserted - not as one property of the file. A shared image used
+          on several pages can (and often should) describe itself
+          differently in each place.
+        </p>
+        <div id="media-alt-text-list"></div>
+        <div id="media-alt-text-status" class="status-line" style="margin-top: 8px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="media-alt-text-close" class="secondary">Close</button>
+        <button id="media-alt-text-save">Save all</button>
       </div>
     </div>
   </div>
