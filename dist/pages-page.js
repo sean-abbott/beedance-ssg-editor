@@ -4,7 +4,7 @@
 // concern this page just now also hosts). Reached from the sidebar's
 // "Pages" nav item (see menus.js's showAppMainPage).
 
-import { openTab, fileSelect, showError } from "./editor-core.js";
+import { openTab, fileSelect, showError, createSearchCombobox } from "./editor-core.js";
 import { makeIcon } from "./icons.js";
 import { showAppMainPage } from "./menus.js";
 
@@ -13,22 +13,64 @@ const { invoke } = window.__TAURI__.core;
 const pagesPageList = document.getElementById("pages-page-list");
 const filterTitle = document.getElementById("pages-page-filter-title");
 const filterKind = document.getElementById("pages-page-filter-kind");
-const tagFilterChip = document.getElementById("pages-page-tag-filter-chip");
-const tagFilterName = document.getElementById("pages-page-tag-filter-name");
 
 let allPages = [];
 let currentKindFilter = "all";
-// Set by the Tags page's "N posts" link (showAppMainPage("pages", { tag })
-// - see menus.js) - a plain sidebar-nav click always passes tag: null
-// (menus.js's own default), so navigating here normally never carries a
-// stale filter over from an earlier visit.
+// {label, value} per distinct tag in use, plus a leading "All tags" (value
+// null) entry - rebuilt by populateTagFilterOptions whenever allPages
+// changes. Case-insensitive dedup (first-seen casing wins), matching how
+// the rest of the tag system already treats tag names.
+let tagFilterEntries = [{ label: "All tags", value: null }];
+
+// Set either by picking directly from the tag filter combobox (the
+// obvious, discoverable way to filter by tag from this page itself) or by
+// the Tags page's "N posts" link (showAppMainPage("pages", { tag }) - see
+// menus.js). A plain sidebar-nav click always passes tag: null (menus.js's
+// own default), so navigating here normally never carries a stale filter
+// over from an earlier visit.
 let currentTagFilter = null;
 let pagesLoaded = false;
 
+// Same searchable combobox the main "Open file" control and the site-menu
+// page picker use (see createSearchCombobox in editor-core.js) - a plain
+// <select> here would be the odd one out, and Sean specifically asked for
+// this to match rather than reinvent a second filter pattern.
+const tagFilterCombobox = createSearchCombobox({
+  input: document.getElementById("pages-page-tag-filter"),
+  resultsEl: document.getElementById("pages-page-tag-filter-results"),
+  getEntries: () => tagFilterEntries,
+  getCurrentLabel: () => tagFilterEntries.find((e) => e.value === currentTagFilter)?.label || "All tags",
+  onSelect: (entry) => {
+    applyTagFilter(entry.value);
+    renderPagesList();
+  },
+});
+
+// Sets the active filter and keeps the combobox's displayed text in sync
+// with it - the single place both directions of "which tag is selected"
+// flow through, whether the tag came from picking it directly here, from
+// the Tags page's "N posts" link, or from re-syncing after the entry list
+// itself was just rebuilt (see populateTagFilterOptions). Falls back to
+// "All tags" if the requested tag isn't one of the current entries (e.g.
+// a stale filter naming a tag that's since been removed).
 const applyTagFilter = (tag) => {
-  currentTagFilter = tag;
-  tagFilterChip.style.display = tag ? "inline-flex" : "none";
-  tagFilterName.textContent = tag || "";
+  const exists = tag && tagFilterEntries.some((e) => e.value === tag);
+  currentTagFilter = exists ? tag : null;
+  tagFilterCombobox.syncDisplay();
+};
+
+// Rebuilds the combobox's own entry list from whatever tags are actually
+// in use among the currently loaded pages.
+const populateTagFilterOptions = () => {
+  const seen = new Map();
+  for (const page of allPages) {
+    for (const tag of page.tags) {
+      if (!seen.has(tag.toLowerCase())) seen.set(tag.toLowerCase(), tag);
+    }
+  }
+  const tags = [...seen.values()].sort((a, b) => a.localeCompare(b));
+  tagFilterEntries = [{ label: "All tags", value: null }, ...tags.map((t) => ({ label: t, value: t }))];
+  applyTagFilter(currentTagFilter);
 };
 
 const formatDate = (isoLike) => {
@@ -116,6 +158,7 @@ const loadPagesList = async () => {
   try {
     const files = await invoke("list_editable_files_detailed");
     allPages = files.filter((f) => !f.isSectionIndex && f.group !== "Templates");
+    populateTagFilterOptions();
     renderPagesList();
   } catch (err) {
     showError(err);
@@ -130,7 +173,6 @@ filterKind.querySelectorAll("button[data-kind]").forEach((btn) => {
     renderPagesList();
   });
 });
-
 document.getElementById("pages-page-new-post").addEventListener("click", () => {
   document.getElementById("new-post").click();
 });
@@ -138,18 +180,21 @@ document.getElementById("pages-page-new-page").addEventListener("click", () => {
   document.getElementById("new-page").click();
 });
 
-document.getElementById("pages-page-tag-filter-clear").addEventListener("click", () => {
-  applyTagFilter(null);
-  renderPagesList();
-});
-
 document.addEventListener("beedance:page-changed", (e) => {
   if (e.detail.page !== "pages") return;
-  applyTagFilter(e.detail.tag);
   if (!pagesLoaded) {
+    // applyTagFilter validates against tagFilterEntries, which don't exist
+    // yet before the first real load - a raw assignment here instead, so
+    // loadPagesList's own populateTagFilterOptions (which re-applies
+    // currentTagFilter once real entries exist) is what actually validates
+    // and syncs it. Calling applyTagFilter here too would silently reset
+    // an incoming tag to null before that ever happens, dropping the very
+    // first click-through from the Tags page.
+    currentTagFilter = e.detail.tag;
     pagesLoaded = true;
     loadPagesList();
   } else {
+    applyTagFilter(e.detail.tag);
     renderPagesList();
   }
 });

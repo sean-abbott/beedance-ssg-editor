@@ -676,9 +676,9 @@
           <svg class="icon"><use href="#icon-search"/></svg>
           <input type="text" id="pages-page-filter-title" placeholder="Filter by title..." />
         </label>
-        <span class="tag-chip" id="pages-page-tag-filter-chip" style="display: none;">
-          Tag: <span id="pages-page-tag-filter-name"></span>
-          <button type="button" class="chip-remove" id="pages-page-tag-filter-clear" title="Clear tag filter"><svg class="icon" style="width:12px;height:12px;"><use href="#icon-close"/></svg></button>
+        <span style="position: relative; display: inline-block;">
+          <input type="text" id="pages-page-tag-filter" placeholder="Filter by tag..." autocomplete="off" style="width: 160px;" />
+          <div id="pages-page-tag-filter-results" class="search-combobox-results"></div>
         </span>
         <span style="margin-left: auto; display: flex; gap: var(--space-2);">
           <button type="button" id="pages-page-new-post" class="secondary"><svg class="icon"><use href="#icon-doc-post"/></svg>New post&hellip;</button>
