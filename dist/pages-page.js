@@ -13,6 +13,8 @@ const { invoke } = window.__TAURI__.core;
 const pagesPageList = document.getElementById("pages-page-list");
 const filterTitle = document.getElementById("pages-page-filter-title");
 const filterKind = document.getElementById("pages-page-filter-kind");
+const filterContextBanner = document.getElementById("pages-filter-context");
+const filterContextLabel = document.getElementById("pages-filter-context-label");
 
 let allPages = [];
 let currentKindFilter = "all";
@@ -29,7 +31,33 @@ let tagFilterEntries = [{ label: "All tags", value: null }];
 // own default), so navigating here normally never carries a stale filter
 // over from an earlier visit.
 let currentTagFilter = null;
+
+// Set by Media's "Used on N pages" link (showAppMainPage("pages", { paths,
+// image }) - see menus.js and media-page.js) - an exact-pages filter,
+// deliberately a different dimension than the tag combobox above. Gets its
+// own dismissible banner rather than folding into the tag filter's UI, so
+// "how did I get this narrowed view" stays visible and undoable on its own,
+// independent of whatever tag filter (if any) is also active.
+let currentPathsFilter = null;
+let currentPathsFilterImage = null;
 let pagesLoaded = false;
+
+const renderFilterContextBanner = () => {
+  const active = currentPathsFilter && currentPathsFilter.length > 0;
+  filterContextBanner.classList.toggle("visible", !!active);
+  if (active) {
+    filterContextLabel.textContent =
+      `Showing ${currentPathsFilter.length} page${currentPathsFilter.length === 1 ? "" : "s"} that use ` +
+      `"${currentPathsFilterImage}"`;
+  }
+};
+
+document.getElementById("pages-filter-context-clear").addEventListener("click", () => {
+  currentPathsFilter = null;
+  currentPathsFilterImage = null;
+  renderFilterContextBanner();
+  renderPagesList();
+});
 
 // Same searchable combobox the main "Open file" control and the site-menu
 // page picker use (see createSearchCombobox in editor-core.js) - a plain
@@ -89,6 +117,7 @@ const renderPagesList = () => {
     // Case-insensitive, matching how the rest of the tag system (rewrite_
     // tag's own de-dupe, etc.) already treats tag names.
     if (currentTagFilter && !p.tags.some((t) => t.toLowerCase() === currentTagFilter.toLowerCase())) return false;
+    if (currentPathsFilter && !currentPathsFilter.includes(p.path)) return false;
     return true;
   });
 
@@ -99,9 +128,11 @@ const renderPagesList = () => {
     empty.textContent =
       allPages.length === 0
         ? "No pages or posts yet."
-        : currentTagFilter
-          ? `Nothing tagged "${currentTagFilter}" matches the rest of this filter.`
-          : "Nothing matches that filter.";
+        : currentPathsFilter
+          ? `None of the pages using "${currentPathsFilterImage}" match the rest of this filter.`
+          : currentTagFilter
+            ? `Nothing tagged "${currentTagFilter}" matches the rest of this filter.`
+            : "Nothing matches that filter.";
     pagesPageList.appendChild(empty);
     return;
   }
@@ -132,6 +163,25 @@ const renderPagesList = () => {
       tags.appendChild(chip);
     }
     row.appendChild(tags);
+
+    // Title and tags each get ~50% of the row's flexible space (see
+    // .content-row-tags's flex:1 1 0 + overflow:hidden) - a page with many
+    // tags used to push the title out of the way; beyond a fixed count of
+    // 2, the rest collapse into this toggle instead of crowding the row.
+    const maxVisibleTags = 2;
+    if (page.tags.length > maxVisibleTags) {
+      const extra = page.tags.length - maxVisibleTags;
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "tag-overflow-toggle";
+      toggle.textContent = `+${extra}`;
+      toggle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const expanded = tags.classList.toggle("expanded");
+        toggle.textContent = expanded ? "Show less" : `+${extra}`;
+      });
+      row.appendChild(toggle);
+    }
 
     const date = document.createElement("span");
     date.className = "content-row-date";
@@ -182,6 +232,13 @@ document.getElementById("pages-page-new-page").addEventListener("click", () => {
 
 document.addEventListener("beedance:page-changed", (e) => {
   if (e.detail.page !== "pages") return;
+  // Unlike the tag filter, the exact-paths filter has no entry list to
+  // validate against - a raw assignment is always safe, even on the very
+  // first load, so this doesn't need the tag filter's deferred-validation
+  // dance below.
+  currentPathsFilter = e.detail.paths;
+  currentPathsFilterImage = e.detail.image;
+  renderFilterContextBanner();
   if (!pagesLoaded) {
     // applyTagFilter validates against tagFilterEntries, which don't exist
     // yet before the first real load - a raw assignment here instead, so

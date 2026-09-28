@@ -16,14 +16,16 @@ const APP_MAIN_PAGES = ["editor", "pages", "media", "tags", "settings"];
 // the same way whether it was reached from the sidebar or from a shortcut
 // elsewhere (e.g. the File menu's "Site menu..." item, which also just
 // calls showAppMainPage("pages"); or the Tags page's "N posts" count, which
-// calls showAppMainPage("pages", { tag: "newsletter" })). `extra` is
-// spread into the event detail alongside `page` - a plain, ad hoc carrier
-// for the one destination that cares about it, not a general routing
-// state store. Always includes every key a listener might check (tag:
-// null when not given) so "no tag was passed" and "clear whatever tag
-// filter was set before" are the same, unambiguous state - a plain
-// sidebar-nav click (which never passes extra) always lands on a clean
-// page rather than silently keeping a stale filter from an earlier visit.
+// calls showAppMainPage("pages", { tag: "newsletter" }); or Media's "Used
+// on N pages" link, which calls showAppMainPage("pages", { paths: [...],
+// image: "garden-day.jpg" })). `extra` is spread into the event detail
+// alongside `page` - a plain, ad hoc carrier for the one destination that
+// cares about it, not a general routing state store. Always includes
+// every key a listener might check (null when not given) so "nothing was
+// passed" and "clear whatever filter was set before" are the same,
+// unambiguous state - a plain sidebar-nav click (which never passes extra)
+// always lands on a clean page rather than silently keeping a stale
+// filter from an earlier visit.
 export const showAppMainPage = (name, extra = {}) => {
   for (const page of APP_MAIN_PAGES) {
     const el = document.getElementById(`${page}-page`);
@@ -32,7 +34,9 @@ export const showAppMainPage = (name, extra = {}) => {
   document.querySelectorAll(".sidebar-nav a[data-page]").forEach((a) => {
     a.classList.toggle("active", a.dataset.page === name);
   });
-  document.dispatchEvent(new CustomEvent("beedance:page-changed", { detail: { page: name, tag: null, ...extra } }));
+  document.dispatchEvent(
+    new CustomEvent("beedance:page-changed", { detail: { page: name, tag: null, paths: null, image: null, ...extra } })
+  );
 };
 
 document.querySelectorAll(".sidebar-nav a[data-page]").forEach((a) => {

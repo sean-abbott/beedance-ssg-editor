@@ -11,6 +11,7 @@
 
 import { askConfirm, currentSiteDir, reviewModeActive, showError, wirePanelKeys } from "./editor-core.js";
 import { makeIcon } from "./icons.js";
+import { showAppMainPage } from "./menus.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -230,11 +231,14 @@ const buildOverflowMenu = (img, isReviewing) => {
   // rewritten automatically as part of the operation (see
   // rewrite_image_references on the Rust side).
   const blockedByTemplate = isProtected(img) || isReviewing;
+  const templateNames = img.templateRefs.join(", ");
   addItem(
     "pencil",
     "Rename…",
     blockedByTemplate,
-    blockedByTemplate ? "Can't rename - required by a template" : "Rename",
+    isProtected(img)
+      ? `Can't rename here - required by ${templateNames} (edit that template directly to change this)`
+      : "Rename",
     () => openRenamePanel(img)
   );
 
@@ -244,7 +248,7 @@ const buildOverflowMenu = (img, isReviewing) => {
     "Edit alt text…",
     altBlocked,
     isProtected(img)
-      ? "Set directly in the template, not here"
+      ? `Set in ${templateNames} directly, not here`
       : img.contentRefs.length === 0
         ? "Not used anywhere yet - insert it into a page first"
         : "Edit alt text",
@@ -255,7 +259,9 @@ const buildOverflowMenu = (img, isReviewing) => {
     "external-link",
     img.source === "r2" ? "Move to Local…" : "Move to R2…",
     blockedByTemplate,
-    blockedByTemplate ? "Can't move - required by a template" : "Move",
+    isProtected(img)
+      ? `Can't move here - required by ${templateNames} (edit that template directly to change this)`
+      : "Move",
     () => doMove(img)
   );
 
@@ -271,7 +277,7 @@ const buildOverflowMenu = (img, isReviewing) => {
     "Delete",
     deleteBlocked,
     isProtected(img)
-      ? "Can't delete - required by a template"
+      ? `Can't delete here - required by ${templateNames} (edit that template directly to change this)`
       : deleteBlocked
         ? `Used on ${img.contentRefs.length} page${img.contentRefs.length === 1 ? "" : "s"} - remove those references first`
         : "Delete this image",
@@ -403,7 +409,10 @@ const render = () => {
       const req = document.createElement("span");
       req.className = "tag-manage-protected-badge";
       req.style.marginTop = "2px";
-      req.title = `Referenced by name in ${img.templateRefs.join(", ")} - every page using that template needs this exact image, not just one post.`;
+      req.title =
+        `Referenced by name in ${img.templateRefs.join(", ")} - every page using that template needs this ` +
+        `exact image, not just one post. You can edit that template directly (it's just a file, in the ` +
+        `Templates group of Open File) - these actions just won't rewrite it for you.`;
       req.appendChild(makeIcon("lock"));
       req.appendChild(document.createTextNode("Required"));
       body.appendChild(req);
@@ -413,10 +422,16 @@ const render = () => {
       usage.textContent = "Unused";
       body.appendChild(usage);
     } else {
-      const usage = document.createElement("span");
+      // A link to the Pages page, pre-filtered to exactly these referencing
+      // pages - a different filter dimension than the tag combobox (Pages
+      // page shows this as its own "filter-context-banner", not a tag
+      // filter), same pattern as the Tags page's "N posts" click-through.
+      const usage = document.createElement("button");
+      usage.type = "button";
       usage.className = "media-usage";
-      usage.title = img.contentRefs.join(", ");
+      usage.title = `${img.contentRefs.join(", ")} - click to see these pages`;
       usage.textContent = `Used on ${img.contentRefs.length} page${img.contentRefs.length === 1 ? "" : "s"}`;
+      usage.addEventListener("click", () => showAppMainPage("pages", { paths: img.contentRefs, image: img.filename }));
       body.appendChild(usage);
     }
 

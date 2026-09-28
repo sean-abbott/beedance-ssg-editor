@@ -42,6 +42,14 @@
     <div class="header-titles">
       <h1>beedance-ssg-editor <span id="review-mode-header-badge" style="display: none; font-size: 12px; font-weight: 700; color: #b8860b; border: 1px solid #b8860b; border-radius: 999px; padding: 2px 8px; vertical-align: middle;">READ-ONLY &middot; REVIEWING</span></h1>
     </div>
+    <div class="header-actions">
+      <button id="preview-start" title="Start the local preview server"><svg class="icon"><use href="#icon-external-link"/></svg>Start preview</button>
+      <button id="preview-stop" class="secondary" title="Stop the preview server">Stop preview</button>
+      <label class="secondary" style="display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:var(--radius); padding:6px 10px; cursor:pointer;">
+        <input type="checkbox" id="phone-toggle" style="width:auto; border:none; padding:0;" /><svg class="icon"><use href="#icon-phone"/></svg>Phone preview
+      </label>
+      <button id="open-log-window" class="secondary" title="Live output from the preview server (helpful when a page fails to build)"><svg class="icon"><use href="#icon-terminal"/></svg>Preview log</button>
+    </div>
   </header>
 
   <div id="onboarding-welcome-panel" class="modal-overlay" style="z-index: 20;">
@@ -480,16 +488,7 @@
         <button id="file-list-mode-toggle" class="secondary" title="Switch between page titles and raw file paths">Show: Titles</button>
       </label>
 
-      <div class="toolbar-group" style="margin-left: auto; border-right: none;">
-        <button id="preview-start" title="Start the local preview server"><svg class="icon"><use href="#icon-external-link"/></svg>Start preview</button>
-        <button id="preview-stop" class="secondary" title="Stop the preview server">Stop preview</button>
-        <label class="secondary" style="display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:var(--radius); padding:6px 10px; cursor:pointer;">
-          <input type="checkbox" id="phone-toggle" style="width:auto; border:none; padding:0;" /><svg class="icon"><use href="#icon-phone"/></svg>Phone preview
-        </label>
-        <button id="open-log-window" class="secondary" title="Live output from the preview server (helpful when a page fails to build)"><svg class="icon"><use href="#icon-terminal"/></svg>Preview log</button>
-      </div>
-
-      <span id="editor-status" class="status"></span>
+      <span id="editor-status" class="status" style="margin-left: auto;"></span>
       <button id="save" title="Save (Ctrl+S)"><svg class="icon"><use href="#icon-save"/></svg>Save</button>
     </div>
 
@@ -685,6 +684,12 @@
           <button type="button" id="pages-page-new-post" class="secondary"><svg class="icon"><use href="#icon-doc-post"/></svg>New post&hellip;</button>
           <button type="button" id="pages-page-new-page" class="secondary"><svg class="icon"><use href="#icon-doc"/></svg>New page&hellip;</button>
         </span>
+      </div>
+
+      <div class="filter-context-banner" id="pages-filter-context">
+        <svg class="icon"><use href="#icon-image"/></svg>
+        <span id="pages-filter-context-label"></span>
+        <button type="button" class="secondary" id="pages-filter-context-clear">Show all pages</button>
       </div>
 
       <div class="panel" style="padding: var(--space-2); margin-bottom: var(--space-5);">
@@ -910,7 +915,9 @@
           or uploaded to your R2 bucket. Images that belong to just one post
           (inserted as "with this page only") aren't shown here; they're
           part of that post and travel with it, so manage them from the
-          post itself.
+          post itself. From here you can rename an image, edit its alt
+          text, or move it between local storage and R2 - each card's
+          "&hellip;" menu.
         </p>
       </div>
 

@@ -565,7 +565,10 @@ const renderTagsPageList = () => {
     if (tag.protectedBy.length > 0) {
       const badge = document.createElement("span");
       badge.className = "tag-manage-protected-badge";
-      badge.title = `Referenced by name in ${tag.protectedBy.join(", ")} - Rename and Delete are disabled until that template no longer needs this exact tag.`;
+      badge.title =
+        `Referenced by name in ${tag.protectedBy.join(", ")} - Rename and Delete are disabled until that ` +
+        `template no longer needs this exact tag. You can edit that template directly (it's just a file, ` +
+        `in the Templates group of Open File) - this just won't rewrite it for you.`;
       badge.appendChild(makeIcon("lock"));
       badge.appendChild(document.createTextNode("Required"));
       row.appendChild(badge);
@@ -588,7 +591,9 @@ const renderTagsPageList = () => {
     const rename = document.createElement("button");
     rename.type = "button";
     rename.className = "secondary btn-icon";
-    rename.title = isProtected ? "Can't rename - required by a template" : "Rename";
+    rename.title = isProtected
+      ? `Can't rename here - required by ${tag.protectedBy.join(", ")} (edit that template directly to change this)`
+      : "Rename";
     rename.appendChild(makeIcon("pencil"));
     rename.disabled = isProtected || isReviewing;
     rename.addEventListener("click", async () => {
@@ -629,7 +634,9 @@ const renderTagsPageList = () => {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "secondary btn-icon danger";
-    del.title = isProtected ? "Can't delete - required by a template" : "Delete";
+    del.title = isProtected
+      ? `Can't delete here - required by ${tag.protectedBy.join(", ")} (edit that template directly to change this)`
+      : "Delete";
     del.appendChild(makeIcon("trash"));
     del.disabled = isProtected || isReviewing;
     del.addEventListener("click", async () => {
