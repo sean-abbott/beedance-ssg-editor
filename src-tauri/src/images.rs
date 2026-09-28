@@ -60,6 +60,16 @@ impl Default for TierSettings {
     }
 }
 
+impl TierSettings {
+    // media.rs's bulk external-image localizer has no per-image size UI
+    // (unlike the normal per-page Insert Image flow) - it uses this
+    // installation's own "web standard" tier as a sane default rather
+    // than a second hardcoded set of numbers.
+    pub(crate) fn web_tier(&self) -> (u32, u8) {
+        (self.web_cap, self.web_quality)
+    }
+}
+
 const TIER_SETTINGS_FILE: &str = "image-tiers.json";
 
 pub struct TierSettingsState(pub Mutex<TierSettings>);
@@ -137,7 +147,10 @@ fn unique_dest(dir: &Path, filename: &str) -> PathBuf {
 pub struct InsertImageResult {
     // What to write into the markdown at the cursor: a bare filename for a
     // page-bundle image, or a site-root-relative path for static/images/.
-    markdown_reference: String,
+    // pub(crate) so media.rs's site-wide external-image localizer can read
+    // the real new location back out, not just this module's own two
+    // per-page-tab commands.
+    pub(crate) markdown_reference: String,
     // Some(new site-relative path) if inserting as a page-bundle image
     // required converting the current leaf page into a bundle
     // (content/foo.md -> content/foo/index.md) - the frontend must move its
@@ -158,7 +171,7 @@ pub struct InsertImageResult {
 /// destination filename/extension - kept separate from `source_path` since a
 /// downloaded temp file's own path is a meaningless generated name, not
 /// something worth carrying into the site's actual file/URL.
-async fn insert_image_impl(
+pub(crate) async fn insert_image_impl(
     source_path: PathBuf,
     source_name: String,
     width: u32,
@@ -365,7 +378,7 @@ pub async fn insert_image(
 /// the destination filename when localizing, since a downloaded temp file's
 /// own generated name is meaningless. Falls back to a generic name if the
 /// URL has no usable segment (e.g. ends in "/").
-fn filename_from_url(url: &str) -> String {
+pub(crate) fn filename_from_url(url: &str) -> String {
     let without_query = url.split(['?', '#']).next().unwrap_or(url);
     without_query
         .rsplit('/')
@@ -379,6 +392,33 @@ fn filename_from_url(url: &str) -> String {
 /// only difference is where the bytes come from. Lets existing content
 /// that points at an image hosted elsewhere be localized instead of
 /// depending on that host staying reachable.
+/// Downloads `url` to a fresh temp file and returns its path (and the
+/// filename insert_image_impl should use as `source_name`) - the shared
+/// core of localize_remote_image (below) and media.rs's site-wide
+/// localize_external_image, which both need "some URL's bytes on disk
+/// somewhere insert_image_impl can pick them up from" and nothing else.
+pub(crate) async fn download_to_temp_file(url: &str) -> Result<(PathBuf, String), String> {
+    let source_name = filename_from_url(url);
+    let temp_path = std::env::temp_dir().join(format!("beedance-localize-{}-{source_name}", std::process::id()));
+
+    let download = {
+        let url = url.to_string();
+        let temp_path = temp_path.clone();
+        move || -> Result<(), String> {
+            let bytes = ureq::get(&url)
+                .header("User-Agent", "Mozilla/5.0 (compatible; beedance-ssg-editor)")
+                .call()
+                .map_err(|e| e.to_string())?
+                .body_mut()
+                .read_to_vec()
+                .map_err(|e| e.to_string())?;
+            std::fs::write(&temp_path, bytes).map_err(|e| e.to_string())
+        }
+    };
+    tauri::async_runtime::spawn_blocking(download).await.map_err(|e| e.to_string())??;
+    Ok((temp_path, source_name))
+}
+
 #[tauri::command]
 pub async fn localize_remote_image(
     url: String,
@@ -392,26 +432,7 @@ pub async fn localize_remote_image(
     r2_site: tauri::State<'_, R2SiteConfigState>,
     r2_personal: tauri::State<'_, R2PersonalConfigState>,
 ) -> Result<InsertImageResult, String> {
-    let source_name = filename_from_url(&url);
-    let temp_path = std::env::temp_dir().join(format!("beedance-localize-{}-{source_name}", std::process::id()));
-
-    let download = {
-        let url = url.clone();
-        let temp_path = temp_path.clone();
-        move || -> Result<(), String> {
-            let bytes = ureq::get(&url)
-                .header("User-Agent", "Mozilla/5.0 (compatible; beedance-ssg-editor)")
-                .call()
-                .map_err(|e| e.to_string())?
-                .body_mut()
-                .read_to_vec()
-                .map_err(|e| e.to_string())?;
-            std::fs::write(&temp_path, bytes).map_err(|e| e.to_string())
-        }
-    };
-    tauri::async_runtime::spawn_blocking(download)
-        .await
-        .map_err(|e| e.to_string())??;
+    let (temp_path, source_name) = download_to_temp_file(&url).await?;
 
     let result = insert_image_impl(
         temp_path.clone(),

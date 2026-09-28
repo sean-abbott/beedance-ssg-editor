@@ -124,6 +124,8 @@ fn main() {
             media::move_shared_image,
             media::list_image_alt_text_usages,
             media::set_image_alt_text,
+            media::scan_external_image_references,
+            media::localize_external_image,
             content::get_author_settings,
             content::set_author_settings,
             ui_settings::get_ui_settings,

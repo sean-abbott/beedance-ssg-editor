@@ -39,6 +39,36 @@ document.querySelectorAll(".sidebar-nav a[data-page]").forEach((a) => {
   a.addEventListener("click", () => showAppMainPage(a.dataset.page));
 });
 
+// A plain CSS position:absolute dropdown (anchored to its trigger via the
+// nearest positioned ancestor) gets silently clipped invisible by any
+// ancestor using overflow:hidden to round its own corners - .media-card
+// does exactly that for its thumbnail, and .panel's own border-radius
+// relies on the same trick. Found the hard way: the Media page's per-card
+// "..." menu rendered, per Sean, "down and to the right and not z forward
+// enough to be visible" - actually invisible, clipped by .media-card's
+// overflow:hidden, not a stacking/z-index problem at all. Fixed by
+// positioning every .menu-dropdown with position:fixed and real viewport
+// coordinates (computed from the trigger's own getBoundingClientRect())
+// instead of relying on CSS's default position:absolute-relative-to-
+// ancestor behavior - position:fixed is computed against the viewport, so
+// it escapes any ancestor's overflow clipping entirely. Clamped to the
+// viewport's right/bottom edges so a menu near the grid's own edge doesn't
+// overflow off-screen instead of just clipping.
+const positionDropdown = (trigger, dropdown) => {
+  const rect = trigger.getBoundingClientRect();
+  dropdown.style.position = "fixed";
+  dropdown.style.top = `${rect.bottom + 4}px`;
+  dropdown.style.left = `${rect.left}px`;
+  // offsetWidth/Height are only meaningful once the dropdown is actually
+  // laid out (display: flex, via the .menu.open .menu-dropdown rule) -
+  // this runs AFTER the "open" class is added, below, so it reflects the
+  // real rendered size, not the display:none default of 0.
+  const maxLeft = window.innerWidth - dropdown.offsetWidth - 8;
+  if (rect.left > maxLeft) dropdown.style.left = `${Math.max(8, maxLeft)}px`;
+  const maxTop = window.innerHeight - dropdown.offsetHeight - 8;
+  if (rect.bottom + 4 > maxTop) dropdown.style.top = `${Math.max(8, rect.top - dropdown.offsetHeight - 4)}px`;
+};
+
 // Delegated (not bound to each ".menu > button" individually) so this also
 // covers a .menu built later at runtime - the media page's per-card "..."
 // overflow menu (media-page.js) in particular, created fresh every time
@@ -52,7 +82,11 @@ document.addEventListener("click", (e) => {
     const menu = toggle.parentElement;
     const wasOpen = menu.classList.contains("open");
     document.querySelectorAll(".menu.open").forEach((m) => m.classList.remove("open"));
-    if (!wasOpen) menu.classList.add("open");
+    if (!wasOpen) {
+      menu.classList.add("open");
+      const dropdown = menu.querySelector(".menu-dropdown");
+      if (dropdown) positionDropdown(toggle, dropdown);
+    }
     return;
   }
   // Also closes an open dropdown when one of its own items is clicked (e.g.
@@ -61,6 +95,18 @@ document.addEventListener("click", (e) => {
   // only the toggle button branch above stops the click from reaching here.
   document.querySelectorAll(".menu.open").forEach((m) => m.classList.remove("open"));
 });
+// position:fixed tracks the viewport, not the trigger - if the page
+// scrolls out from under an open menu (the Media grid, in particular, can
+// scroll with many images), just close it rather than letting it drift
+// away from whatever it was anchored to. Capture phase, since a scroll
+// inside a specific scrollable element doesn't bubble the way click does.
+document.addEventListener(
+  "scroll",
+  () => {
+    document.querySelectorAll(".menu.open").forEach((m) => m.classList.remove("open"));
+  },
+  true
+);
 
 // The File menu's "Manage tags..." item used to open its own modal - now it
 // just navigates to the Tags page (content-editing.js owns that page's

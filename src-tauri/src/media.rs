@@ -16,14 +16,15 @@ use regex::Regex;
 use tauri::State;
 
 use crate::content::extract_image_urls;
+use crate::images::{download_to_temp_file, insert_image_impl};
 use crate::r2::{
     delete_from_r2, r2_bucket, r2_fully_configured, r2_key_from_url, r2_public_url_base, upload_to_r2, R2PersonalConfigState,
     R2SiteConfig, R2SiteConfigState,
 };
-use crate::site::{collect_files_with_ext, collect_template_files, resolve_site_path, site_dir, SelfWriteTracker};
+use crate::site::{collect_files_with_ext, collect_template_files, resolve_site_path, site_dir, OpenFiles, SelfWriteTracker};
 use crate::zola;
 
-const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "svg"];
+const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "svg", "avif", "bmp", "tiff"];
 
 fn is_image_file(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| IMAGE_EXTENSIONS.contains(&e.to_lowercase().as_str()))
@@ -502,6 +503,100 @@ pub fn scan_image_usage(r2_site: State<R2SiteConfigState>) -> HashMap<String, Im
     usage
 }
 
+/// True if `url` is a genuinely external image reference (something this
+/// site doesn't already own a local/R2 copy of) - a real http(s) URL that
+/// canonical_key_for_url couldn't map to either. Excludes an R2 URL
+/// (already local in spirit, just a different location) and a page-
+/// bundle-relative reference (never starts with a scheme at all).
+fn is_external_image_url(url: &str, r2_site_cfg: &R2SiteConfig) -> bool {
+    (url.starts_with("http://") || url.starts_with("https://")) && canonical_key_for_url(url, r2_site_cfg).is_none()
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalImageRef {
+    url: String,
+    // Every content file referencing this exact URL - the same shape
+    // ImageUsage's own content_refs carries, so the frontend can reuse its
+    // existing "Used on N pages" rendering.
+    content_refs: Vec<String>,
+}
+
+/// Every image reference in content that points somewhere other than this
+/// site's own static/ or R2 bucket - commonly a WordPress-migration
+/// artifact (content authored with an absolute link straight back to the
+/// live site itself, easthamptonbees.org in Sean's case, rather than a
+/// relative path) but not limited to any one domain: ANY hardcoded
+/// external URL has the same underlying risk (depends on that host
+/// staying reachable forever) and the same fix (see
+/// localize_external_image), regardless of which host it happens to be.
+/// Deliberately content-only, not templates too - a template hardcoding an
+/// external image is a theme-authoring choice, not something this bead's
+/// per-page migration cleanup is about.
+#[tauri::command]
+pub fn scan_external_image_references(r2_site: State<R2SiteConfigState>) -> Vec<ExternalImageRef> {
+    let r2_site_cfg = r2_site.0.lock().unwrap().clone();
+    let dir = site_dir();
+    let mut by_url: HashMap<String, Vec<String>> = HashMap::new();
+
+    let mut content_paths = Vec::new();
+    collect_files_with_ext(&dir.join(zola::CONTENT_DIR), &dir, zola::CONTENT_EXT, &mut content_paths);
+    for rel in content_paths {
+        let Ok(text) = std::fs::read_to_string(dir.join(&rel)) else { continue };
+        for url in extract_image_urls(&text) {
+            if is_external_image_url(&url, &r2_site_cfg) {
+                by_url.entry(url).or_default().push(rel.clone());
+            }
+        }
+    }
+
+    let mut out: Vec<ExternalImageRef> = by_url.into_iter().map(|(url, content_refs)| ExternalImageRef { url, content_refs }).collect();
+    out.sort_by(|a, b| a.url.cmp(&b.url));
+    out
+}
+
+/// Downloads one external image, places it as a normal shared image (R2 if
+/// configured for this installation, else static/images/ - same silent
+/// default insert_image_impl's own "static" placement already uses
+/// elsewhere, no extra UI choice needed here either), and rewrites EVERY
+/// content-file reference to the old URL to point at the new location -
+/// the same rewrite_image_references mechanism rename/move already use,
+/// just with a download standing in for "read the existing local file"
+/// bytes. Uses this installation's own "web standard" image-size tier
+/// (get_tier_settings) as a default, since there's no per-image size
+/// picker in this bulk flow the way the normal Insert Image dialog has one.
+#[tauri::command]
+pub async fn localize_external_image(
+    url: String,
+    tier: crate::images::TierSettings,
+    tracker: State<'_, SelfWriteTracker>,
+    open_files: State<'_, OpenFiles>,
+    r2_site: State<'_, R2SiteConfigState>,
+    r2_personal: State<'_, R2PersonalConfigState>,
+) -> Result<RelocateResult, String> {
+    let (width, quality) = tier.web_tier();
+    let (temp_path, source_name) = download_to_temp_file(&url).await?;
+    let result = insert_image_impl(
+        temp_path.clone(),
+        source_name,
+        width,
+        width,
+        quality,
+        "static".to_string(),
+        String::new(),
+        tracker.clone(),
+        open_files,
+        r2_site.clone(),
+        r2_personal,
+    )
+    .await;
+    let _ = std::fs::remove_file(&temp_path);
+    let new_url = result?.markdown_reference;
+
+    let files_updated = rewrite_image_references(&url, &new_url, &tracker)?;
+    Ok(RelocateResult { new_key: new_url, files_updated })
+}
+
 /// Deletes a LOCAL shared image by its key (the path relative to static/ -
 /// list_local_shared_images's own MediaImage.key, e.g. "images/foo.jpg" or
 /// "img/logo.png") - deliberately scoped to inside static/ specifically,
@@ -531,4 +626,72 @@ pub fn delete_r2_shared_image(key: String, r2_site: State<R2SiteConfigState>, r2
     let site_cfg = r2_site.0.lock().unwrap().clone();
     let personal_cfg = r2_personal.0.lock().unwrap().clone();
     delete_from_r2(&site_cfg, &personal_cfg, &key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("beedance-media-test-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // Locks in the exact bug Sean reported: a real site's images living
+    // anywhere under static/ (not just this app's own static/images/
+    // upload convention) must still show up, while non-image assets
+    // (CSS/JS/favicons) living alongside them do not.
+    #[test]
+    fn collect_images_finds_files_anywhere_under_static_not_just_images_subfolder() {
+        let static_dir = temp_dir("scan").join("static");
+        std::fs::create_dir_all(static_dir.join("images")).unwrap();
+        std::fs::create_dir_all(static_dir.join("img/nested")).unwrap();
+        std::fs::create_dir_all(static_dir.join("css")).unwrap();
+        std::fs::write(static_dir.join("images/photo1.jpg"), b"").unwrap();
+        std::fs::write(static_dir.join("img/logo.PNG"), b"").unwrap(); // uppercase extension
+        std::fs::write(static_dir.join("img/nested/deep.webp"), b"").unwrap();
+        std::fs::write(static_dir.join("css/style.css"), b"").unwrap();
+        std::fs::write(static_dir.join("favicon.ico"), b"").unwrap();
+
+        let mut paths = Vec::new();
+        collect_images(&static_dir, &mut paths);
+        let mut keys: Vec<String> = paths
+            .iter()
+            .map(|p| p.strip_prefix(&static_dir).unwrap().to_string_lossy().replace('\\', "/"))
+            .collect();
+        keys.sort();
+
+        assert_eq!(keys, vec!["images/photo1.jpg", "img/logo.PNG", "img/nested/deep.webp"]);
+
+        std::fs::remove_dir_all(static_dir.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn canonical_key_for_url_matches_any_static_relative_path() {
+        let r2_site_cfg = R2SiteConfig::default();
+        assert_eq!(canonical_key_for_url("/img/logo.png", &r2_site_cfg), Some("img/logo.png".to_string()));
+        assert_eq!(canonical_key_for_url("/images/foo.jpg", &r2_site_cfg), Some("images/foo.jpg".to_string()));
+        // A page-bundle-relative reference (no leading slash) isn't a
+        // shared image at all - out of scope for this module entirely.
+        assert_eq!(canonical_key_for_url("foo.jpg", &r2_site_cfg), None);
+        // A protocol-relative URL isn't a local static path either.
+        assert_eq!(canonical_key_for_url("//example.com/foo.jpg", &r2_site_cfg), None);
+    }
+
+    #[test]
+    fn is_external_image_url_excludes_everything_this_site_already_owns() {
+        let r2_site_cfg = R2SiteConfig::default();
+        // A live-site link left over from a migration - exactly Sean's
+        // "easthamptonbees.org" case, but this check isn't tied to any one
+        // domain - any real http(s) URL this app doesn't already recognize
+        // as its own counts.
+        assert!(is_external_image_url("https://easthamptonbees.org/wp-content/uploads/photo.jpg", &r2_site_cfg));
+        assert!(is_external_image_url("http://example.com/photo.jpg", &r2_site_cfg));
+        // Already local (site-root-relative) or a page-bundle reference -
+        // neither is "external" in the sense this scan cares about.
+        assert!(!is_external_image_url("/images/foo.jpg", &r2_site_cfg));
+        assert!(!is_external_image_url("foo.jpg", &r2_site_cfg));
+    }
 }

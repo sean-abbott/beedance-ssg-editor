@@ -55,18 +55,48 @@ const isUnused = (img) => img.contentRefs.length === 0 && img.templateRefs.lengt
 // as part of the operation, so they're not a blocker for those two).
 const isProtected = (img) => img.templateRefs.length > 0;
 
+const sourceLabel = (source) => (source === "r2" ? "R2" : source === "external" ? "External" : "Local");
+
 const formatBytes = (n) => {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+// Mirrors media.rs's own filename_from_url exactly (last path segment,
+// query/fragment stripped) - purely for display here, the real filename
+// this ends up saved as is still decided server-side by that same logic
+// when localize_external_image actually runs.
+const filenameFromUrl = (url) => {
+  const withoutQuery = url.split(/[?#]/)[0];
+  const segments = withoutQuery.split("/").filter(Boolean);
+  return segments[segments.length - 1] || url;
+};
+
 const viewImage = (img) => {
   const url =
-    img.source === "r2" && r2PublicUrlBase
-      ? `${r2PublicUrlBase.replace(/\/+$/, "")}/${img.key}`
-      : `file://${currentSiteDir}/static/${img.key}`;
+    img.source === "external"
+      ? img.key
+      : img.source === "r2" && r2PublicUrlBase
+        ? `${r2PublicUrlBase.replace(/\/+$/, "")}/${img.key}`
+        : `file://${currentSiteDir}/static/${img.key}`;
   window.__TAURI__.shell.open(url).catch((err) => showError(err));
+};
+
+const doLocalize = async (img) => {
+  const proceed = await askConfirm(
+    "Localize this image?",
+    `Download "${img.filename}" and store it here instead of relying on the outside link? Every content reference updates automatically.`,
+    "Localize"
+  );
+  if (!proceed) return;
+  try {
+    const tier = await invoke("get_tier_settings");
+    await invoke("localize_external_image", { url: img.key, tier });
+    await loadMedia();
+  } catch (err) {
+    showError(err);
+  }
 };
 
 const deleteImage = async (img) => {
@@ -268,11 +298,34 @@ const render = () => {
   selectAllCheckbox.disabled = unusedCount === 0 || isReviewing;
   document.getElementById("media-review-delete").disabled = isReviewing;
 
+  const externalCount = allImages.filter((img) => img.source === "external").length;
+  const localizeAllButton = document.getElementById("media-localize-all");
+  localizeAllButton.style.display = sourceFilter === "external" && externalCount > 0 ? "" : "none";
+  localizeAllButton.textContent = `Localize all (${externalCount})…`;
+  localizeAllButton.disabled = isReviewing;
+
   grid.innerHTML = "";
   if (visible.length === 0) {
     const empty = document.createElement("div");
     empty.style.cssText = "padding: 8px; color: var(--muted); font-size: 13px;";
-    empty.textContent = allImages.length === 0 ? "No shared images yet." : "Nothing matches that filter.";
+    // Names exactly which active filters produced the empty result,
+    // rather than a single generic message for every cause - "0 local
+    // images found on disk" and "3 local images exist but none match
+    // 'Unused only'" look identical otherwise, and telling those apart is
+    // the whole question when a filter appears to be hiding something
+    // that's known to exist.
+    if (allImages.length === 0) {
+      empty.textContent = "No shared images found under static/ at all.";
+    } else if (sourceFilter !== "all" && allImages.every((img) => img.source !== sourceFilter)) {
+      empty.textContent = `No ${sourceLabel(sourceFilter)} images found (${allImages.length} total from other sources).`;
+    } else {
+      const activeFilters = [];
+      if (sourceFilter !== "all") activeFilters.push(sourceLabel(sourceFilter));
+      if (unusedOnly) activeFilters.push("Unused only");
+      if (query) activeFilters.push(`filename contains "${query}"`);
+      empty.textContent =
+        activeFilters.length > 0 ? `No images match: ${activeFilters.join(", ")}.` : "Nothing matches that filter.";
+    }
     grid.appendChild(empty);
     return;
   }
@@ -283,7 +336,15 @@ const render = () => {
 
     const thumb = document.createElement("div");
     thumb.className = "media-thumb";
-    if (img.source === "r2") {
+    if (img.source === "external") {
+      // Already a real, directly-fetchable URL - no round trip needed at
+      // all, unlike Local (see read_image_preview's own reasoning below).
+      const el = document.createElement("img");
+      el.src = img.key;
+      el.alt = "";
+      el.loading = "lazy";
+      thumb.appendChild(el);
+    } else if (img.source === "r2") {
       // The bucket's own public URL directly - simplest thing that works
       // today (no extra IPC round trip). Revisit with a resized thumbnail
       // only if loading a whole grid of full-size R2 objects turns out to
@@ -327,13 +388,15 @@ const render = () => {
     const meta = document.createElement("span");
     meta.className = "media-meta-row";
     const badge = document.createElement("span");
-    badge.className = "media-source-badge" + (img.source === "r2" ? " r2" : "");
-    badge.textContent = img.source === "r2" ? "R2" : "Local";
+    badge.className = "media-source-badge" + (img.source === "r2" || img.source === "external" ? " r2" : "");
+    badge.textContent = sourceLabel(img.source);
     meta.appendChild(badge);
-    const dims = document.createElement("span");
-    const dimsText = img.width && img.height ? `${img.width}×${img.height} · ` : "";
-    dims.textContent = `${dimsText}${formatBytes(img.sizeBytes)}`;
-    meta.appendChild(dims);
+    if (img.source !== "external") {
+      const dims = document.createElement("span");
+      const dimsText = img.width && img.height ? `${img.width}×${img.height} · ` : "";
+      dims.textContent = `${dimsText}${formatBytes(img.sizeBytes)}`;
+      meta.appendChild(dims);
+    }
     body.appendChild(meta);
 
     if (isProtected(img)) {
@@ -370,7 +433,20 @@ const render = () => {
     view.addEventListener("click", () => viewImage(img));
     actions.appendChild(view);
 
-    actions.appendChild(buildOverflowMenu(img, isReviewing));
+    if (img.source === "external") {
+      // No Rename/Move/Alt-text/Delete for these - there's no local file
+      // yet to act on, only one meaningful action until there is one.
+      const localize = document.createElement("button");
+      localize.type = "button";
+      localize.className = "secondary";
+      localize.style.marginLeft = "auto";
+      localize.disabled = isReviewing;
+      localize.textContent = "Localize…";
+      localize.addEventListener("click", () => doLocalize(img));
+      actions.appendChild(localize);
+    } else {
+      actions.appendChild(buildOverflowMenu(img, isReviewing));
+    }
 
     card.appendChild(actions);
     grid.appendChild(card);
@@ -380,17 +456,33 @@ const render = () => {
 const loadMedia = async () => {
   statusEl.textContent = "Loading...";
   try {
-    const [local, r2, usage, r2Site] = await Promise.all([
+    const [local, r2, usage, r2Site, external] = await Promise.all([
       invoke("list_local_shared_images"),
       invoke("list_r2_images"),
       invoke("scan_image_usage"),
       invoke("get_r2_site_config"),
+      invoke("scan_external_image_references"),
     ]);
     r2PublicUrlBase = r2Site.publicUrlBase || "";
-    allImages = [...local, ...r2].map((img) => {
+    const owned = [...local, ...r2].map((img) => {
       const u = usage[img.key] || { contentRefs: [], templateRefs: [] };
       return { ...img, contentRefs: u.contentRefs, templateRefs: u.templateRefs };
     });
+    // External refs never come from usage (that map only covers images
+    // this site already owns a copy of) - contentRefs comes straight from
+    // scan_external_image_references itself, which found them by their
+    // content-file reference in the first place, so it's never empty.
+    const externalImages = external.map((ref) => ({
+      key: ref.url,
+      filename: filenameFromUrl(ref.url),
+      source: "external",
+      width: null,
+      height: null,
+      sizeBytes: null,
+      contentRefs: ref.contentRefs,
+      templateRefs: [],
+    }));
+    allImages = [...owned, ...externalImages];
     // Drop anything no longer present from the current selection (e.g. it
     // was deleted individually while a bulk selection was still pending).
     for (const key of [...selectedKeys]) {
@@ -433,6 +525,36 @@ document.getElementById("media-clear-selection").addEventListener("click", () =>
   selectedKeys.clear();
   selectAllCheckbox.checked = false;
   updateSelectionBar();
+});
+
+document.getElementById("media-localize-all").addEventListener("click", async () => {
+  const externalImages = allImages.filter((img) => img.source === "external");
+  if (externalImages.length === 0) return;
+  // No review checklist here the way bulk Delete has one - localizing
+  // isn't destructive the same way (nothing is lost, only where it's
+  // stored changes), so the lighter-weight confirm this app already uses
+  // for a single Localize is enough for all of them together too.
+  const proceed = await askConfirm(
+    "Localize all external images?",
+    `Download and store all ${externalImages.length} externally-hosted images found in your content? Every reference updates automatically.`,
+    "Localize all"
+  );
+  if (!proceed) return;
+  statusEl.textContent = `Localizing 0 of ${externalImages.length}...`;
+  let done = 0;
+  let failed = 0;
+  const tier = await invoke("get_tier_settings");
+  for (const img of externalImages) {
+    try {
+      await invoke("localize_external_image", { url: img.key, tier });
+    } catch {
+      failed += 1;
+    }
+    done += 1;
+    statusEl.textContent = `Localizing ${done} of ${externalImages.length}...`;
+  }
+  await loadMedia();
+  statusEl.textContent = failed > 0 ? `${failed} of ${externalImages.length} couldn't be localized.` : "";
 });
 
 document.getElementById("media-review-delete").addEventListener("click", () => {
