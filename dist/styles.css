@@ -545,6 +545,18 @@
       outline: none;
     }
     .tag-manage-row .tag-manage-count { color: var(--muted); font-size: var(--text-sm); flex-shrink: 0; white-space: nowrap; }
+    /* A <button> under the hood (see content-editing.js) so it's a real,
+       keyboard-reachable click target - but reads as plain muted text with
+       an underline on hover, not another pill button, since it's really a
+       "go look at these posts" link, not an action on the tag itself. */
+    .tag-manage-count-link {
+      background: none;
+      border: none;
+      padding: 0;
+      font: inherit;
+      cursor: pointer;
+    }
+    .tag-manage-count-link:hover:not(:disabled) { color: var(--text); text-decoration: underline; }
     .tag-manage-row .tag-manage-actions { display: flex; gap: 2px; flex-shrink: 0; }
 
     /* Protected tag/image: referenced by name in a template - deleting or

@@ -571,9 +571,12 @@ const renderTagsPageList = () => {
       row.appendChild(badge);
     }
 
-    const count = document.createElement("span");
-    count.className = "tag-manage-count";
+    const count = document.createElement("button");
+    count.type = "button";
+    count.className = "tag-manage-count tag-manage-count-link";
     count.textContent = `${tag.count} post${tag.count === 1 ? "" : "s"}`;
+    count.title = `See every post tagged "${tag.name}" on the Pages page`;
+    count.addEventListener("click", () => showAppMainPage("pages", { tag: tag.name }));
     row.appendChild(count);
 
     const actions = document.createElement("span");

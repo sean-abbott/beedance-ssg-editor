@@ -13,10 +13,23 @@ const { invoke } = window.__TAURI__.core;
 const pagesPageList = document.getElementById("pages-page-list");
 const filterTitle = document.getElementById("pages-page-filter-title");
 const filterKind = document.getElementById("pages-page-filter-kind");
+const tagFilterChip = document.getElementById("pages-page-tag-filter-chip");
+const tagFilterName = document.getElementById("pages-page-tag-filter-name");
 
 let allPages = [];
 let currentKindFilter = "all";
+// Set by the Tags page's "N posts" link (showAppMainPage("pages", { tag })
+// - see menus.js) - a plain sidebar-nav click always passes tag: null
+// (menus.js's own default), so navigating here normally never carries a
+// stale filter over from an earlier visit.
+let currentTagFilter = null;
 let pagesLoaded = false;
+
+const applyTagFilter = (tag) => {
+  currentTagFilter = tag;
+  tagFilterChip.style.display = tag ? "inline-flex" : "none";
+  tagFilterName.textContent = tag || "";
+};
 
 const formatDate = (isoLike) => {
   if (!isoLike) return "—";
@@ -31,6 +44,9 @@ const renderPagesList = () => {
     if (currentKindFilter === "pages" && p.isBlogHeading) return false;
     if (currentKindFilter === "posts" && !p.isBlogHeading) return false;
     if (query && !p.label.toLowerCase().includes(query)) return false;
+    // Case-insensitive, matching how the rest of the tag system (rewrite_
+    // tag's own de-dupe, etc.) already treats tag names.
+    if (currentTagFilter && !p.tags.some((t) => t.toLowerCase() === currentTagFilter.toLowerCase())) return false;
     return true;
   });
 
@@ -38,7 +54,12 @@ const renderPagesList = () => {
   if (visible.length === 0) {
     const empty = document.createElement("div");
     empty.style.cssText = "padding: 8px; color: var(--muted); font-size: 13px;";
-    empty.textContent = allPages.length === 0 ? "No pages or posts yet." : "Nothing matches that filter.";
+    empty.textContent =
+      allPages.length === 0
+        ? "No pages or posts yet."
+        : currentTagFilter
+          ? `Nothing tagged "${currentTagFilter}" matches the rest of this filter.`
+          : "Nothing matches that filter.";
     pagesPageList.appendChild(empty);
     return;
   }
@@ -117,10 +138,19 @@ document.getElementById("pages-page-new-page").addEventListener("click", () => {
   document.getElementById("new-page").click();
 });
 
+document.getElementById("pages-page-tag-filter-clear").addEventListener("click", () => {
+  applyTagFilter(null);
+  renderPagesList();
+});
+
 document.addEventListener("beedance:page-changed", (e) => {
-  if (e.detail.page === "pages" && !pagesLoaded) {
+  if (e.detail.page !== "pages") return;
+  applyTagFilter(e.detail.tag);
+  if (!pagesLoaded) {
     pagesLoaded = true;
     loadPagesList();
+  } else {
+    renderPagesList();
   }
 });
 // A create through the File menu (or this page's own New post/New page
