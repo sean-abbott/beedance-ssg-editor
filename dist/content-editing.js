@@ -585,7 +585,15 @@ const renderTagsPageList = () => {
         tagsPageStatus.textContent = "Enter a name first.";
         return;
       }
-      if (newName.toLowerCase() === tag.name.toLowerCase()) return;
+      if (newName.toLowerCase() === tag.name.toLowerCase()) {
+        // Nothing to rename yet - focus+select rather than silently doing
+        // nothing, since the name field looks like plain text at rest
+        // (Sean: "the edit button does nothing" - it was this, clicking
+        // Rename before realizing the name itself is what you type into).
+        input.focus();
+        input.select();
+        return;
+      }
       const merging = tagsPageTags.some((t) => t.name !== tag.name && t.name.toLowerCase() === newName.toLowerCase());
       const proceed = await askConfirm(
         merging ? "Merge tags?" : "Rename this tag?",
