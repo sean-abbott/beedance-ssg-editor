@@ -75,13 +75,19 @@ docker-build: docker-image
         beedance-tauri-check \
         cargo build
 
-# Cut a release: fast-forwards the "release" branch to main and pushes it.
-# That push is the ENTIRE release trigger - .github/workflows/release.yml
-# fires on it, reads src-tauri/Cargo.toml's version, creates the matching
-# "app-v<version>" tag itself, and builds+drafts the GitHub Release for
-# macOS/Windows/Linux (see that workflow's own header comment). There's no
-# separate manual `git tag` step despite this recipe's name being about
-# tagging - the tag is a side effect of the push, not something done here.
+# Cut a release: fast-forwards the "release" branch to main and pushes it
+# to whichever remote is actually GitHub. That push is the ENTIRE release
+# trigger - .github/workflows/release.yml fires on it, reads src-tauri/
+# Cargo.toml's version, creates the matching "app-v<version>" tag itself,
+# and builds+drafts the GitHub Release for macOS/Windows/Linux (see that
+# workflow's own header comment). There's no separate manual `git tag`
+# step despite this recipe's name being about tagging - the tag is a side
+# effect of the push, not something done here.
+#
+# This repo has two remotes (a private git server as "origin", GitHub as
+# "github" - see `git remote -v`) and only the one actually pointing at
+# github.com can trigger Actions - looked up by URL, not assumed to be
+# named "github", in case that ever changes.
 #
 # Bump the version in src-tauri/Cargo.toml (and let Cargo.lock pick it up
 # via a normal `cargo check`/`just docker-check`) and commit that on main
@@ -99,15 +105,26 @@ release:
         echo "Not on main (on '$current_branch') - switch to main first." >&2
         exit 1
     fi
-    git fetch origin main release
-    if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
-        echo "Local main isn't in sync with origin/main - pull/push first." >&2
+    gh_remote="$(git remote -v | awk '$3 == "(push)" && $2 ~ /github\.com/ {print $1}' | sort -u)"
+    if [ -z "$gh_remote" ]; then
+        echo "No remote points at github.com (checked 'git remote -v') - can't find the one Actions runs from." >&2
+        exit 1
+    fi
+    if [ "$(echo "$gh_remote" | wc -l)" -gt 1 ]; then
+        echo "More than one remote points at github.com - not sure which to use:" >&2
+        echo "$gh_remote" >&2
+        exit 1
+    fi
+    repo_path="$(git remote get-url "$gh_remote" | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')"
+    git fetch "$gh_remote" main release
+    if [ "$(git rev-parse HEAD)" != "$(git rev-parse "$gh_remote/main")" ]; then
+        echo "Local main isn't in sync with $gh_remote/main - pull/push there first." >&2
         exit 1
     fi
     version="$(grep -m1 '^version' src-tauri/Cargo.toml | sed -E 's/version *= *"([^"]+)"/\1/')"
     echo "About to release version $version:"
     echo "  - fast-forward 'release' to main (@ $(git rev-parse --short HEAD))"
-    echo "  - push 'release' to origin, triggering the Release workflow"
+    echo "  - push 'release' to '$gh_remote' ($repo_path), triggering the Release workflow"
     echo "  - CI creates tag app-v$version and a draft GitHub Release"
     read -r -p "Proceed? [y/N] " reply
     if [ "$reply" != "y" ] && [ "$reply" != "Y" ]; then
@@ -115,9 +132,9 @@ release:
         exit 1
     fi
     git checkout release
-    git merge --ff-only origin/release
+    git merge --ff-only "$gh_remote/release"
     git merge --ff-only main
-    git push origin release
+    git push "$gh_remote" release
     git checkout main
     echo "Pushed app-v$version to release. Watch it build:"
-    echo "  https://github.com/sean-abbott/beedance-ssg-editor/actions/workflows/release.yml"
+    echo "  https://github.com/$repo_path/actions/workflows/release.yml"
