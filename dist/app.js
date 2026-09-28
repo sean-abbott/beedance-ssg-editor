@@ -12,5 +12,7 @@ import "./images.js";
 import "./git-workflow.js";
 import "./onboarding.js";
 import "./site-menu.js";
+import "./pages-page.js";
+import "./media-page.js";
 import "./menus.js";
 import "./theme.js";

@@ -168,6 +168,17 @@
     .sidebar-divider { height: 1px; background: var(--border); margin: var(--space-2) 6px; }
     .sidebar-nav a.debug-link { color: var(--muted); font-size: var(--text-sm); }
     .app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: var(--space-4) var(--space-5); }
+    /* Each sidebar destination (menus.js's showAppMainPage toggles which one
+       has display:none) needs to be a flex column filling app-main's
+       remaining height itself, not just a plain block - defined here rather
+       than as an inline style so it survives JS clearing the inline
+       `display` override back to "" when a page is shown. */
+    #editor-page, #tags-page, #pages-page, #settings-page, #media-page {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
 
     /* Dropdown "app menus" (File / Insert / <branch>), replacing a flat
        row of buttons - app.js opens/closes these on click, closing any
@@ -460,6 +471,209 @@
     }
     button.btn-icon:hover { background: var(--panel-alt); color: var(--text); border-color: var(--border); }
     button.btn-icon.active { background: color-mix(in srgb, var(--accent) 15%, var(--panel)); color: var(--accent); border-color: var(--accent); }
+    button.btn-icon.danger:hover {
+      background: color-mix(in srgb, var(--danger) 12%, transparent);
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+    }
+
+    /* Full-page sidebar destination (Pages, Media, Tags, Settings) -
+       replaces the tab-bar + editor in app-main entirely while active,
+       rather than opening as a modal on top of it (pws-898q's later
+       full-page-not-modal direction). Only things scoped to "the post I
+       have open right now" (the quick Tags popover from the Insert menu)
+       stay a small in-context modal. */
+    .page-header { margin-bottom: var(--space-4); }
+    .page-header h2 { margin: 0 0 4px; font-size: var(--text-xl); font-weight: 700; }
+    .page-header p { margin: 0; color: var(--muted); font-size: var(--text-sm); max-width: 640px; }
+    .page-toolbar { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); flex-wrap: wrap; }
+    .page-toolbar .segmented { margin-right: auto; }
+
+    /* Search field embedded in a page/modal body, e.g. Manage tags/Media */
+    .modal-search {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 7px var(--space-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--muted);
+      margin-bottom: var(--space-3);
+    }
+    .modal-search input {
+      border: none;
+      padding: 0;
+      flex: 1;
+      background: transparent;
+      color: var(--text);
+    }
+    .modal-search input:focus { outline: none; }
+
+    /* Tags page list row: plain row, usage count for context, quiet icon
+       actions instead of two persistent bordered buttons. */
+    .tag-manage-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 7px var(--space-2);
+      border-radius: var(--radius);
+      font-size: var(--text-base);
+    }
+    .tag-manage-row:hover { background: var(--panel-alt); }
+    .tag-manage-row .tag-manage-icon { color: var(--muted); flex-shrink: 0; }
+    .tag-manage-row .tag-manage-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: none; background: transparent; padding: 2px 0; }
+    .tag-manage-row .tag-manage-count { color: var(--muted); font-size: var(--text-sm); flex-shrink: 0; white-space: nowrap; }
+    .tag-manage-row .tag-manage-actions { display: flex; gap: 2px; flex-shrink: 0; }
+
+    /* Protected tag/image: referenced by name in a template - deleting or
+       renaming it away breaks the site's next build. Shown up front in the
+       list, a persistent badge rather than only a confirm() at the moment
+       of the action (found the hard way - a skippable confirm still let a
+       required tag get merged away). Rename/Delete are hard-disabled for
+       these, for every user, no override. */
+    .tag-manage-protected-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--warning);
+      font-size: var(--text-xs);
+      font-weight: 700;
+      flex-shrink: 0;
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      border-radius: 999px;
+      padding: 2px 8px 2px 6px;
+    }
+
+    /* Pages page: a content browser row, plainer/denser than a media card
+       since it's mostly text - title + path, a couple of tag chips,
+       last-modified, open action. */
+    .content-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-2) var(--space-3);
+      border-radius: var(--radius);
+    }
+    .content-row:hover { background: var(--panel-alt); }
+    .content-row .content-row-icon { color: var(--muted); flex-shrink: 0; }
+    .content-row .content-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .content-row .content-row-title { font-size: var(--text-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .content-row .content-row-path { font-size: var(--text-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .content-row .content-row-tags { display: flex; gap: 4px; flex-shrink: 0; }
+    .content-row .content-row-tags .tag-chip { padding: 1px 8px; font-size: var(--text-xs); }
+    .content-row .content-row-date { font-size: var(--text-sm); color: var(--muted); flex-shrink: 0; width: 84px; text-align: right; }
+
+    /* Settings page: two visually distinct zones, not just a muted label
+       above a list of cards - "This installation" (personal, safe to poke
+       around in) vs "This site" (shared/committed, touch rarely). Cards
+       inside a zone use the plain panel color so they read as islands
+       against the tinted zone. */
+    .settings-zone { border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-5); }
+    .settings-zone .card { background: var(--panel); }
+    .settings-zone-header { display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-4); }
+    .settings-zone-header svg { flex-shrink: 0; margin-top: 2px; width: 22px; height: 22px; }
+    .settings-zone-header h3 { margin: 0 0 2px; font-size: var(--text-lg); font-weight: 700; }
+    .settings-zone-header p { margin: 0; font-size: var(--text-sm); color: var(--muted); max-width: 560px; }
+    .settings-zone.zone-installation {
+      background: color-mix(in srgb, var(--accent) 6%, var(--panel-alt));
+      border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    }
+    .settings-zone.zone-installation .settings-zone-header svg { color: var(--accent); }
+    .settings-zone.zone-site {
+      background: color-mix(in srgb, var(--warning) 8%, var(--panel-alt));
+      border: 1px solid var(--warning-border);
+    }
+    .settings-zone.zone-site .settings-zone-header svg { color: var(--warning); }
+
+    /* Media library page */
+    .media-toolbar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-3); }
+    .media-toolbar .modal-search { margin-bottom: 0; max-width: 220px; }
+    .chip-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 5px 12px;
+      font-size: var(--text-sm);
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .chip-toggle.active {
+      background: color-mix(in srgb, var(--warning) 18%, var(--panel));
+      border-color: var(--warning-border);
+      color: var(--warning);
+      font-weight: 600;
+    }
+    .media-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: var(--space-3);
+    }
+    .media-card {
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .media-action-bar {
+      display: none;
+      align-items: center;
+      gap: var(--space-3);
+      background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--space-2) var(--space-3);
+      margin-bottom: var(--space-3);
+    }
+    .media-action-bar.visible { display: flex; }
+    .media-action-bar .selection-count { font-size: var(--text-sm); font-weight: 600; }
+    .media-action-bar button.link-button {
+      background: none;
+      border: none;
+      color: var(--muted);
+      padding: 4px 6px;
+      font-size: var(--text-sm);
+    }
+    .media-action-bar button.link-button:hover { color: var(--text); text-decoration: underline; }
+    .media-thumb {
+      aspect-ratio: 4 / 3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--panel-alt);
+    }
+    .media-body { padding: var(--space-2) var(--space-3); display: flex; flex-direction: column; gap: 4px; }
+    .media-name { font-size: var(--text-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .media-meta-row { display: flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--muted); }
+    .media-source-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: var(--text-xs);
+      background: var(--panel-alt);
+    }
+    .media-source-badge.r2 { background: color-mix(in srgb, var(--accent) 16%, var(--panel)); color: var(--accent); }
+    .media-usage { font-size: var(--text-xs); color: var(--muted); }
+    .media-usage.unused { color: var(--warning); font-weight: 600; }
+    .media-actions { display: flex; gap: 4px; padding: 0 var(--space-2) var(--space-2); margin-top: auto; }
+    .media-checklist { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+    .media-checklist label {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 6px var(--space-2);
+      border-radius: var(--radius);
+      font-size: var(--text-sm);
+    }
+    .media-checklist label:hover { background: var(--panel-alt); }
+    .media-checklist input { margin: 0; }
 
     .row { display: flex; gap: 12px; align-items: stretch; }
     .col { flex: 1 1 0; min-width: 0; }
@@ -564,14 +778,6 @@
       white-space: nowrap;
     }
     .review-row .review-row-status { color: var(--muted); flex-shrink: 0; }
-    .manage-tag-row {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 12px;
-    }
-    .manage-tag-row .manage-tag-name { flex: 1; min-width: 0; }
-    .manage-tag-row button { flex-shrink: 0; padding: 2px 8px; }
     .menu-entry-row {
       display: flex;
       align-items: center;

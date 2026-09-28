@@ -2,7 +2,7 @@
 //! guess - the layer that combines frontmatter.rs's text parsing with
 //! site.rs's knowledge of where the site actually lives.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use std::time::Instant;
@@ -388,7 +388,9 @@ static HTML_IMAGE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<img src=
 
 /// Finds every image URL referenced in `content`, both markdown (`![alt](url)`)
 /// and this app's own raw `<img src="url" ...>` form (used for alignment).
-fn extract_image_urls(content: &str) -> Vec<String> {
+/// pub(crate) so media.rs's site-wide usage scan can reuse the exact same
+/// extraction logic against template files too, not just content.
+pub(crate) fn extract_image_urls(content: &str) -> Vec<String> {
     MD_IMAGE_RE
         .captures_iter(content)
         .chain(HTML_IMAGE_RE.captures_iter(content))
@@ -575,6 +577,41 @@ pub fn list_all_tags() -> Vec<String> {
         }
     }
     tags.sort_by_key(|t| t.to_lowercase());
+    tags
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagInfo {
+    name: String,
+    count: usize,
+}
+
+/// Same tags as list_all_tags, but with how many posts use each one - for
+/// the Tags page's list (pws-898q), which shows that count per row. A
+/// separate command rather than changing list_all_tags' own return shape,
+/// since that one's only other caller (the per-post tag picker's
+/// autocomplete) has no use for counts and would need updating for no
+/// reason.
+#[tauri::command]
+pub fn list_all_tags_with_counts() -> Vec<TagInfo> {
+    let dir = site_dir();
+    let mut content_paths = Vec::new();
+    collect_files_with_ext(&dir.join(zola::CONTENT_DIR), &dir, zola::CONTENT_EXT, &mut content_paths);
+
+    let mut counts: HashMap<String, (String, usize)> = HashMap::new();
+    for rel in content_paths {
+        let Ok(raw) = std::fs::read_to_string(dir.join(&rel)) else { continue };
+        let Some(block) = front_matter_block(&raw) else { continue };
+        let Some(raw_tags) = front_matter_field(block, "tags") else { continue };
+        for tag in parse_toml_string_array(&raw_tags) {
+            let entry = counts.entry(tag.to_lowercase()).or_insert_with(|| (tag.clone(), 0));
+            entry.1 += 1;
+        }
+    }
+
+    let mut tags: Vec<TagInfo> = counts.into_values().map(|(name, count)| TagInfo { name, count }).collect();
+    tags.sort_by_key(|t| t.name.to_lowercase());
     tags
 }
 

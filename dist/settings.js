@@ -1,29 +1,17 @@
-// Settings dialog: author display name, image size presets, R2 (site config
+// Settings page: author display name, image size presets, R2 (site config
 // + personal credentials), and GitHub sync (remote URL, personal access
 // token, GitHub username). See editor-core.js for currentAuthorName/
 // currentGithubUsername themselves - this module only loads/saves them.
+//
+// A full app-main page (see menus.js's showAppMainPage), not a modal -
+// "This installation" and "This site" are two stacked, visually distinct
+// zones (see their .settings-zone/.zone-installation/.zone-site CSS)
+// rather than tabs, since both matter enough to want visible at once
+// rather than picking one to hide.
 
-import { wirePanelKeys, setCurrentAuthorName, setCurrentGithubUsername, showError } from "./editor-core.js";
+import { setCurrentAuthorName, setCurrentGithubUsername, showError } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
-
-const settingsPanel = document.getElementById("settings-panel");
-
-// Two tabs, "This site" (committed, shared - nothing secret allowed) and
-// "This installation" (personal, never committed) - matches the actual
-// config split on the backend (site_config_dir() vs config_dir()), not
-// just a visual grouping. Also the fix for the panel outgrowing the
-// default window: only one tab's content is visible/laid out at a time.
-document.querySelectorAll(".settings-tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".settings-tab-btn").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    const which = btn.dataset.settingsTab;
-    document.getElementById("settings-tab-site").style.display = which === "site" ? "block" : "none";
-    document.getElementById("settings-tab-personal").style.display = which === "personal" ? "block" : "none";
-  });
-});
-document.querySelector('.settings-tab-btn[data-settings-tab="site"]').classList.add("active");
 
 const authorDisplayNameInput = document.getElementById("author-display-name");
 const authorSettingsStatus = document.getElementById("author-settings-status");
@@ -52,8 +40,6 @@ const gitUsernameInput = document.getElementById("git-username");
 const gitAuthSettingsStatus = document.getElementById("git-auth-settings-status");
 
 document.getElementById("open-settings").addEventListener("click", async () => {
-  settingsPanel.style.display = "flex";
-
   authorSettingsStatus.textContent = "";
   try {
     const author = await invoke("get_author_settings");
@@ -200,12 +186,6 @@ document.getElementById("save-git-auth-settings").addEventListener("click", asyn
     showError(err);
   }
 });
-
-document.getElementById("close-settings").addEventListener("click", () => {
-  settingsPanel.style.display = "none";
-});
-
-wirePanelKeys(settingsPanel, null, "close-settings");
 
 // A plain <a target="_blank"> doesn't reliably open the system's default
 // browser from inside this app's webview - found the hard way testing this

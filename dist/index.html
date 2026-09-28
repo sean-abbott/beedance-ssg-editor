@@ -34,6 +34,8 @@
     <symbol id="icon-doc" viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/></symbol>
     <symbol id="icon-doc-post" viewBox="0 0 24 24"><path d="M6 3h7l4 4v14H6z"/><path d="M13 3v4h4"/><path d="M9 12h6M9 15h6M9 9h3"/></symbol>
     <symbol id="icon-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l4 3-4 3"/><path d="M13 15h4"/></symbol>
+    <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="icon-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
   </svg>
   <header>
     <div class="header-titles">
@@ -96,199 +98,6 @@
       </div>
 
       <div id="onboarding-site-status" style="font-size: 12px; color: var(--muted); margin: 10px 0 0;"></div>
-      </div>
-    </div>
-  </div>
-
-  <div id="settings-panel" class="modal-overlay">
-    <div class="modal modal-wide" style="max-height: 85vh;">
-      <div class="modal-header">
-        <svg class="icon" style="width:18px;height:18px;"><use href="#icon-gear"/></svg>
-        <h3>Settings</h3>
-      </div>
-
-      <div style="padding: var(--space-4) var(--space-5) 0;">
-        <div class="segmented">
-          <button type="button" class="settings-tab-btn" data-settings-tab="site">This site</button>
-          <button type="button" class="settings-tab-btn" data-settings-tab="personal">This installation</button>
-        </div>
-      </div>
-
-      <div class="modal-body">
-        <div id="settings-tab-site" class="settings-tab">
-          <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px;">
-            Shared with everyone who edits this site (committed to its own
-            repo) - nothing here should be secret, since that repo has to be
-            treated as though it's public even when it isn't.
-          </p>
-
-          <div class="card">
-            <div class="card-header"><h4>Inserted image sizes</h4></div>
-
-            <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 6px 10px; align-items: center; font-size: 13px;">
-              <span>Web standard</span>
-              <label>max <input type="number" id="tier-web-cap" min="1" max="10000" style="width: 70px;" /> px</label>
-              <label>quality <input type="number" id="tier-web-quality" min="1" max="100" style="width: 55px;" /></label>
-
-              <span>High detail</span>
-              <label>max <input type="number" id="tier-high-cap" min="1" max="10000" style="width: 70px;" /> px</label>
-              <label>quality <input type="number" id="tier-high-quality" min="1" max="100" style="width: 55px;" /></label>
-
-              <span>Post internal</span>
-              <label>max <input type="number" id="tier-post-internal-cap" min="1" max="10000" style="width: 70px;" /> px</label>
-              <label>quality <input type="number" id="tier-post-internal-quality" min="1" max="100" style="width: 55px;" /></label>
-            </div>
-            <p class="card-description" style="margin-top: 6px;">
-              "Post internal" is for an image meant to float left/right with
-              text wrapping around it - small enough that the float actually
-              reads as a photo next to a paragraph, not a full-width image.
-            </p>
-            <div class="card-footer">
-              <span id="tier-settings-status" class="status-line"></span>
-              <button id="save-tier-settings" class="secondary">Save sizes</button>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header"><h4>Image uploads (Cloudflare R2 bucket)</h4></div>
-            <p class="card-description">
-              Which bucket this site uploads shared images to. Each person
-              still needs their own credentials (see "This installation") to
-              actually use it.
-            </p>
-
-            <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; font-size: 13px;">
-              <label for="r2-bucket">Bucket</label>
-              <input type="text" id="r2-bucket" placeholder="bucket name" />
-
-              <label for="r2-public-url-base">Public URL base</label>
-              <input type="text" id="r2-public-url-base" placeholder="https://images.example.com" />
-            </div>
-            <p class="card-description" style="margin-top: 6px;">
-              Public URL base needs the scheme (starts with "https://" or
-              "http://") - this is fetched directly by a browser, not passed
-              through the site. If you save without one, "https://" is added
-              for you.
-            </p>
-            <div class="card-footer">
-              <span id="r2-site-settings-status" class="status-line"></span>
-              <button id="save-r2-site-settings" class="secondary">Save bucket settings</button>
-            </div>
-          </div>
-        </div>
-
-        <div id="settings-tab-personal" class="settings-tab" style="display: none;">
-          <label style="display: block; font-size: 13px; margin-bottom: 8px;">
-            <input type="checkbox" id="network-serve-toggle" /> Run the preview server on the network
-          </label>
-          <p style="font-size: 12px; color: var(--muted); margin: 0 0 12px;">
-            Makes the preview reachable from other devices on your network (e.g. a
-            phone) instead of only this machine. Restarts the preview if it's
-            already running.
-          </p>
-          <div id="lan-address" style="font-size: 12px; margin-bottom: 16px;"></div>
-
-          <div class="card">
-            <div class="card-header"><h4>Appearance</h4></div>
-            <p class="card-description">Applies immediately, this device only.</p>
-            <div class="theme-switcher">
-              <button type="button" data-theme-option="blue"><span class="theme-swatch" style="background:#3a6ff7;"></span>Blue</button>
-              <button type="button" data-theme-option="bee"><span class="theme-swatch" style="background:#f4b400;"></span>Bee</button>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header"><h4>Author</h4></div>
-            <label class="field-label">
-              Your name
-              <input type="text" id="author-display-name" placeholder="e.g. Sean" />
-            </label>
-            <p class="card-description">
-              Added to a page's contributor list on every save. Leave blank
-              to skip attribution entirely.
-            </p>
-            <div class="card-footer">
-              <span id="author-settings-status" class="status-line"></span>
-              <button id="save-author-settings" class="secondary">Save name</button>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header"><h4>Image uploads - your credentials</h4></div>
-            <p class="card-description">
-              Personal to this installation - never shared or committed with
-              the site.
-            </p>
-
-            <label style="display: block; font-size: 13px; margin-bottom: 8px;">
-              <input type="checkbox" id="r2-enabled" /> Upload shared images to R2
-            </label>
-
-            <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; font-size: 13px;">
-              <label for="r2-account-id">Account ID</label>
-              <input type="text" id="r2-account-id" placeholder="Cloudflare account ID" />
-
-              <label for="r2-access-key-id">Access key ID</label>
-              <input type="text" id="r2-access-key-id" placeholder="from beedance-cli create-user-key" />
-
-              <label for="r2-secret-access-key">Secret access key</label>
-              <input type="password" id="r2-secret-access-key" placeholder="from beedance-cli create-user-key" />
-            </div>
-            <div class="card-footer">
-              <span id="r2-personal-settings-status" class="status-line"></span>
-              <button id="save-r2-personal-settings" class="secondary">Save credentials</button>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header"><h4>GitHub sync</h4></div>
-            <p class="card-description">
-              Personal to this installation - never shared or committed with
-              the site. Leave the token blank if you already sync over SSH
-              (e.g. an SSH key set up on this machine); set one to sync over
-              HTTPS instead.
-            </p>
-            <p class="card-description">
-              A token is also required to look at someone else's draft from
-              Local Drafts, even if you use SSH for your own syncing - that
-              list comes directly from GitHub's website, which has no SSH
-              equivalent.
-            </p>
-
-            <label class="field-label">
-              Repository URL
-              <input type="text" id="git-remote-url" placeholder="git@github.com:you/your-site.git" />
-            </label>
-
-            <label class="field-label">
-              Personal access token (optional)
-              <input type="password" id="git-token" placeholder="only needed for HTTPS sync" />
-            </label>
-            <p class="card-description">
-              Create a fine-grained token scoped to just this repository, with
-              "Contents" read and write access, from
-              <a id="github-token-help-link" href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens" rel="noopener">GitHub's own token settings help</a>.
-            </p>
-
-            <label class="field-label">
-              Your GitHub username
-              <input type="text" id="git-username" placeholder="e.g. octocat" />
-            </label>
-            <p class="card-description">
-              Used only to tell your own pull requests apart from everyone
-              else's when reviewing someone else's work.
-            </p>
-
-            <div class="card-footer">
-              <span id="git-auth-settings-status" class="status-line"></span>
-              <button id="save-git-auth-settings" class="secondary">Save</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <button id="close-settings" class="secondary">Close</button>
       </div>
     </div>
   </div>
@@ -424,48 +233,6 @@
     </div>
   </div>
 
-  <div id="manage-tags-panel" class="modal-overlay" style="z-index: 20;">
-    <div class="modal">
-      <div class="modal-header"><h3>Manage tags</h3></div>
-      <div class="modal-body">
-      <p style="margin-top: 0;">
-        Renaming or deleting a tag here changes it on every post across the
-        whole site, not just the one you were editing. Renaming a tag to a
-        name that already exists merges the two.
-      </p>
-
-      <div id="manage-tags-list" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;"></div>
-
-      <div id="manage-tags-status" class="status-line" style="margin-bottom: 8px;"></div>
-      </div>
-      <div class="modal-footer">
-        <button id="manage-tags-close" class="secondary">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="site-menu-panel" class="modal-overlay">
-    <div class="modal modal-xwide" style="max-height: 85vh;">
-      <div class="modal-header"><h3>Site menu</h3></div>
-      <div class="modal-body">
-      <p style="margin-top: 0;">
-        The site's main navigation, top to bottom is left to right. Link to
-        an existing page, or paste a web address for anything else.
-      </p>
-
-      <div id="site-menu-list" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; overflow-x: auto;"></div>
-
-      <button type="button" id="site-menu-add" class="secondary" style="margin-bottom: 10px;">Add link&hellip;</button>
-
-      <div id="site-menu-status" class="status-line" style="margin-bottom: 8px;"></div>
-      </div>
-      <div class="modal-footer">
-        <button id="site-menu-close" class="secondary">Close</button>
-        <button id="site-menu-save" class="secondary">Save</button>
-        <button id="site-menu-save-close">Save and close</button>
-      </div>
-    </div>
-  </div>
 
   <div id="site-menu-create-panel" class="modal-overlay" style="z-index: 20;">
     <div class="modal">
@@ -645,11 +412,11 @@
       </div>
 
       <nav class="sidebar-nav">
-        <a class="active"><svg class="icon"><use href="#icon-doc-post"/></svg>Editor</a>
-        <a id="sidebar-nav-pages"><svg class="icon"><use href="#icon-doc"/></svg>Pages</a>
-        <a id="sidebar-nav-media" title="Not built yet" style="opacity: 0.5; cursor: default;"><svg class="icon"><use href="#icon-image"/></svg>Media</a>
-        <a id="sidebar-nav-tags"><svg class="icon"><use href="#icon-tag"/></svg>Tags</a>
-        <a id="open-settings"><svg class="icon"><use href="#icon-gear"/></svg>Settings</a>
+        <a id="sidebar-nav-editor" class="active" data-page="editor"><svg class="icon"><use href="#icon-doc-post"/></svg>Editor</a>
+        <a id="sidebar-nav-pages" data-page="pages"><svg class="icon"><use href="#icon-doc"/></svg>Pages</a>
+        <a id="sidebar-nav-media" data-page="media"><svg class="icon"><use href="#icon-image"/></svg>Media</a>
+        <a id="sidebar-nav-tags" data-page="tags"><svg class="icon"><use href="#icon-tag"/></svg>Tags</a>
+        <a id="open-settings" data-page="settings"><svg class="icon"><use href="#icon-gear"/></svg>Settings</a>
       </nav>
 
       <div class="sidebar-spacer"></div>
@@ -661,6 +428,7 @@
     </aside>
 
     <div class="app-main">
+    <div id="editor-page">
     <div class="toolbar">
       <div class="menu" id="file-menu">
         <button class="secondary" title="File actions"><svg class="icon"><use href="#icon-doc"/></svg>File<svg class="icon" style="width:12px;height:12px;"><use href="#icon-chevron-down"/></svg></button>
@@ -866,6 +634,330 @@
         </div>
       </div>
     </div>
+    </div>
+
+    <div id="tags-page" style="display: none;">
+      <div class="page-header">
+        <h2>Tags</h2>
+        <p>
+          Every tag in use anywhere on the site. Renaming or deleting a tag
+          here changes it on every post that uses it - this is site-wide,
+          not the one page you were last editing.
+        </p>
+      </div>
+
+      <label class="modal-search" style="max-width: 320px;">
+        <svg class="icon"><use href="#icon-search"/></svg>
+        <input type="text" id="tags-page-filter" placeholder="Filter tags..." />
+      </label>
+
+      <div class="panel" style="padding: var(--space-2); flex: 1;">
+        <div id="tags-page-list" style="display: flex; flex-direction: column; gap: 1px;"></div>
+      </div>
+
+      <div id="tags-page-status" class="status-line" style="margin-top: 8px;"></div>
+    </div>
+    <div id="pages-page" style="display: none;">
+      <div class="page-header">
+        <h2>Pages</h2>
+        <p>
+          Every page and post on the site, and the order they appear in the
+          site's main navigation.
+        </p>
+      </div>
+
+      <div class="page-toolbar">
+        <span class="segmented" id="pages-page-filter-kind">
+          <button type="button" class="active" data-kind="all">All</button>
+          <button type="button" data-kind="pages">Pages</button>
+          <button type="button" data-kind="posts">Posts</button>
+        </span>
+        <label class="modal-search" style="margin-bottom: 0; max-width: 220px;">
+          <svg class="icon"><use href="#icon-search"/></svg>
+          <input type="text" id="pages-page-filter-title" placeholder="Filter by title..." />
+        </label>
+        <span style="margin-left: auto; display: flex; gap: var(--space-2);">
+          <button type="button" id="pages-page-new-post" class="secondary"><svg class="icon"><use href="#icon-doc-post"/></svg>New post&hellip;</button>
+          <button type="button" id="pages-page-new-page" class="secondary"><svg class="icon"><use href="#icon-doc"/></svg>New page&hellip;</button>
+        </span>
+      </div>
+
+      <div class="panel" style="padding: var(--space-2); margin-bottom: var(--space-5);">
+        <div id="pages-page-list"></div>
+      </div>
+
+      <h3 style="font-size: var(--text-sm); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 var(--space-2);">Site navigation</h3>
+      <p style="font-size: var(--text-sm); color: var(--muted); margin: 0 0 var(--space-3); max-width: 640px;">
+        The site's main navigation, top to bottom is left to right. Link to
+        an existing page, or paste a web address for anything else.
+      </p>
+      <div class="panel" id="pages-site-nav-section" style="padding: var(--space-3);">
+        <div id="site-menu-list" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; overflow-x: auto;"></div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <button type="button" id="site-menu-add" class="secondary">Add link&hellip;</button>
+          <span style="display: flex; gap: var(--space-2); align-items: center;">
+            <span id="site-menu-status" class="status-line"></span>
+            <button id="site-menu-save" class="secondary">Save</button>
+          </span>
+        </div>
+      </div>
+    </div>
+    <div id="settings-page" style="display: none;">
+      <div class="page-header">
+        <h2>Settings</h2>
+        <p>
+          "This installation" is what's on your computer only, and where
+          you'll spend nearly all your time here. "This site" is shared with
+          everyone who edits it (committed to its own repo) - you should
+          rarely need to touch it, so it sits below, visually set apart.
+        </p>
+      </div>
+
+      <div class="settings-zone zone-installation">
+        <div class="settings-zone-header">
+          <svg class="icon"><use href="#icon-monitor"/></svg>
+          <div>
+            <h3>This installation</h3>
+            <p>Just this computer. Nothing in this section is shared, committed, or visible to anyone else who edits the site.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Appearance</h4></div>
+          <p class="card-description">Applies immediately, this device only.</p>
+          <div class="theme-switcher">
+            <button type="button" data-theme-option="blue"><span class="theme-swatch" style="background:#3a6ff7;"></span>Blue</button>
+            <button type="button" data-theme-option="bee"><span class="theme-swatch" style="background:#f4b400;"></span>Bee</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Preview server</h4></div>
+          <label style="display: block; font-size: var(--text-base); margin-bottom: var(--space-2);">
+            <input type="checkbox" id="network-serve-toggle" /> Run the preview server on the network
+          </label>
+          <p class="card-description">
+            Makes the preview reachable from other devices on your network (e.g. a
+            phone) instead of only this machine. Restarts the preview if it's
+            already running.
+          </p>
+          <div id="lan-address" style="font-size: var(--text-sm); color: var(--muted);"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Author</h4></div>
+          <label class="field-label">
+            Your name
+            <input type="text" id="author-display-name" placeholder="e.g. Sean" />
+          </label>
+          <p class="card-description">
+            Added to a page's contributor list on every save. Leave blank
+            to skip attribution entirely.
+          </p>
+          <div class="card-footer">
+            <span id="author-settings-status" class="status-line"></span>
+            <button id="save-author-settings" class="secondary">Save name</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Image uploads - your credentials</h4></div>
+          <p class="card-description">
+            Personal to this installation - never shared or committed with
+            the site.
+          </p>
+
+          <label style="display: block; font-size: 13px; margin-bottom: 8px;">
+            <input type="checkbox" id="r2-enabled" /> Upload shared images to R2
+          </label>
+
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; font-size: 13px;">
+            <label for="r2-account-id">Account ID</label>
+            <input type="text" id="r2-account-id" placeholder="Cloudflare account ID" />
+
+            <label for="r2-access-key-id">Access key ID</label>
+            <input type="text" id="r2-access-key-id" placeholder="from beedance-cli create-user-key" />
+
+            <label for="r2-secret-access-key">Secret access key</label>
+            <input type="password" id="r2-secret-access-key" placeholder="from beedance-cli create-user-key" />
+          </div>
+          <div class="card-footer">
+            <span id="r2-personal-settings-status" class="status-line"></span>
+            <button id="save-r2-personal-settings" class="secondary">Save credentials</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>GitHub sync</h4></div>
+          <p class="card-description">
+            Personal to this installation - never shared or committed with
+            the site. Leave the token blank if you already sync over SSH
+            (e.g. an SSH key set up on this machine); set one to sync over
+            HTTPS instead.
+          </p>
+          <p class="card-description">
+            A token is also required to look at someone else's draft from
+            Local Drafts, even if you use SSH for your own syncing - that
+            list comes directly from GitHub's website, which has no SSH
+            equivalent.
+          </p>
+
+          <label class="field-label">
+            Repository URL
+            <input type="text" id="git-remote-url" placeholder="git@github.com:you/your-site.git" />
+          </label>
+
+          <label class="field-label">
+            Personal access token (optional)
+            <input type="password" id="git-token" placeholder="only needed for HTTPS sync" />
+          </label>
+          <p class="card-description">
+            Create a fine-grained token scoped to just this repository, with
+            "Contents" read and write access, from
+            <a id="github-token-help-link" href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens" rel="noopener">GitHub's own token settings help</a>.
+          </p>
+
+          <label class="field-label">
+            Your GitHub username
+            <input type="text" id="git-username" placeholder="e.g. octocat" />
+          </label>
+          <p class="card-description">
+            Used only to tell your own pull requests apart from everyone
+            else's when reviewing someone else's work.
+          </p>
+
+          <div class="card-footer">
+            <span id="git-auth-settings-status" class="status-line"></span>
+            <button id="save-git-auth-settings" class="secondary">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-zone zone-site">
+        <div class="settings-zone-header">
+          <svg class="icon"><use href="#icon-folder"/></svg>
+          <div>
+            <h3>This site</h3>
+            <p>Shared with everyone who edits this site (committed to its own repo) - nothing here should be secret, and changes affect every installation, not just yours. You shouldn't need this often.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Inserted image sizes</h4></div>
+
+          <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 6px 10px; align-items: center; font-size: 13px;">
+            <span>Web standard</span>
+            <label>max <input type="number" id="tier-web-cap" min="1" max="10000" style="width: 70px;" /> px</label>
+            <label>quality <input type="number" id="tier-web-quality" min="1" max="100" style="width: 55px;" /></label>
+
+            <span>High detail</span>
+            <label>max <input type="number" id="tier-high-cap" min="1" max="10000" style="width: 70px;" /> px</label>
+            <label>quality <input type="number" id="tier-high-quality" min="1" max="100" style="width: 55px;" /></label>
+
+            <span>Post internal</span>
+            <label>max <input type="number" id="tier-post-internal-cap" min="1" max="10000" style="width: 70px;" /> px</label>
+            <label>quality <input type="number" id="tier-post-internal-quality" min="1" max="100" style="width: 55px;" /></label>
+          </div>
+          <p class="card-description" style="margin-top: 6px;">
+            "Post internal" is for an image meant to float left/right with
+            text wrapping around it - small enough that the float actually
+            reads as a photo next to a paragraph, not a full-width image.
+          </p>
+          <div class="card-footer">
+            <span id="tier-settings-status" class="status-line"></span>
+            <button id="save-tier-settings" class="secondary">Save sizes</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Image uploads (Cloudflare R2 bucket)</h4></div>
+          <p class="card-description">
+            Which bucket this site uploads shared images to. Each person
+            still needs their own credentials (see "This installation") to
+            actually use it.
+          </p>
+
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; font-size: 13px;">
+            <label for="r2-bucket">Bucket</label>
+            <input type="text" id="r2-bucket" placeholder="bucket name" />
+
+            <label for="r2-public-url-base">Public URL base</label>
+            <input type="text" id="r2-public-url-base" placeholder="https://images.example.com" />
+          </div>
+          <p class="card-description" style="margin-top: 6px;">
+            Public URL base needs the scheme (starts with "https://" or
+            "http://") - this is fetched directly by a browser, not passed
+            through the site. If you save without one, "https://" is added
+            for you.
+          </p>
+          <div class="card-footer">
+            <span id="r2-site-settings-status" class="status-line"></span>
+            <button id="save-r2-site-settings" class="secondary">Save bucket settings</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="media-page" style="display: none;">
+      <div class="page-header">
+        <h2>Media</h2>
+        <p>
+          Every shared image - stored locally in <code>static/images/</code>
+          or uploaded to your R2 bucket. Images that belong to just one post
+          (inserted as "with this page only") aren't shown here; they're
+          part of that post and travel with it, so manage them from the
+          post itself.
+        </p>
+      </div>
+
+      <div class="media-toolbar">
+        <span class="segmented" id="media-page-source-filter">
+          <button type="button" class="active" data-source="all">All</button>
+          <button type="button" data-source="local">Local</button>
+          <button type="button" data-source="r2">R2</button>
+        </span>
+        <span class="chip-toggle" id="media-page-unused-toggle">Unused only</span>
+        <label class="modal-search">
+          <svg class="icon"><use href="#icon-search"/></svg>
+          <input type="text" id="media-page-filter-name" placeholder="Filter by filename..." />
+        </label>
+        <label style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-sm); cursor: pointer;">
+          <input type="checkbox" id="media-select-all" style="width: 16px; height: 16px; cursor: pointer;" />
+          <span id="media-select-all-label">Select all unused (0)</span>
+        </label>
+      </div>
+
+      <div class="media-action-bar" id="media-action-bar">
+        <span class="selection-count" id="media-selection-count"></span>
+        <button type="button" class="link-button" id="media-clear-selection">None</button>
+        <button type="button" id="media-review-delete" style="margin-left: auto; background: var(--danger); border-color: var(--danger);" title="Review exactly which ones, then delete">
+          <svg class="icon"><use href="#icon-trash"/></svg>Review &amp; delete&hellip;
+        </button>
+      </div>
+
+      <div id="media-page-status" class="status-line" style="margin-bottom: 8px;"></div>
+      <div class="media-grid" id="media-page-grid"></div>
+    </div>
+    </div>
+  </div>
+
+  <div id="media-delete-review-panel" class="modal-overlay" style="z-index: 20;">
+    <div class="modal">
+      <div class="modal-header">
+        <svg class="icon" style="width:18px;height:18px; color: var(--danger);"><use href="#icon-trash"/></svg>
+        <h3 id="media-delete-review-title">Delete unused images?</h3>
+      </div>
+      <div class="modal-body">
+        <p class="card-description" style="margin: 0 0 var(--space-3);">
+          These aren't referenced by any page or template. This can't be
+          undone. Uncheck anything you want to keep.
+        </p>
+        <div class="media-checklist" id="media-delete-review-list"></div>
+        <div id="media-delete-review-status" class="status-line" style="margin-top: 8px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="media-delete-review-cancel" class="secondary">Cancel</button>
+        <button id="media-delete-review-confirm" style="background: var(--danger); border-color: var(--danger);">Delete</button>
+      </div>
     </div>
   </div>
 

@@ -51,19 +51,23 @@ const openSiteStep = () => {
 };
 
 document.getElementById("onboarding-welcome-continue").addEventListener("click", () => {
-  // Has to actually hide first - it sits at a higher z-index than
-  // settings-panel, so without this, "open-settings" below opens Settings
-  // invisibly underneath the still-shown welcome overlay, and Continue
-  // looks like it does nothing at all.
   welcomePanel.style.display = "none";
-  // Reuses the real Settings dialog (settings.js already owns its load/
-  // save logic) instead of a separate onboarding-specific form - clicking
-  // its own buttons fires the exact same wiring a real click would.
-  // Defaults to the personal tab since that's what onboarding cares about
-  // (name, GitHub PAT), not the site-level fieldsets.
+  // Reuses the real Settings page (settings.js already owns its load/save
+  // logic) instead of a separate onboarding-specific form - clicking its
+  // own link fires the exact same wiring a real click would. "This
+  // installation" (name, GitHub PAT - what onboarding actually cares
+  // about) is the first, top-most zone on that page now, so there's
+  // nothing left to switch to like the old tabbed dialog needed.
   document.getElementById("open-settings").click();
-  document.querySelector('.settings-tab-btn[data-settings-tab="personal"]').click();
-  document.getElementById("close-settings").addEventListener("click", openSiteStep, { once: true });
+  // Settings is a persistent page now, not a modal with its own "close" -
+  // move on to the next onboarding step once the user navigates away from
+  // it to anywhere else, rather than waiting for an explicit close.
+  const onPageChange = (e) => {
+    if (e.detail.page === "settings") return;
+    document.removeEventListener("beedance:page-changed", onPageChange);
+    openSiteStep();
+  };
+  document.addEventListener("beedance:page-changed", onPageChange);
 });
 
 document.getElementById("onboarding-welcome-skip").addEventListener("click", finishOnboarding);

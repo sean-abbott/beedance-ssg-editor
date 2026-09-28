@@ -128,7 +128,12 @@ pub fn r2_key_from_url(site: &R2SiteConfig, url: &str) -> Option<String> {
         .filter(|key| !key.is_empty())
 }
 
-pub fn upload_to_r2(site: &R2SiteConfig, personal: &R2PersonalConfig, key: &str, content: &[u8]) -> Result<(), String> {
+/// Builds the S3-compatible Bucket handle every real R2 network operation
+/// needs - factored out so media.rs's list_r2_images (a third caller, after
+/// upload_to_r2/delete_from_r2) doesn't need direct field access to either
+/// config struct, which stay private on purpose (see this module's own doc
+/// comment on why account_id/credentials are personal, not site, config).
+pub fn r2_bucket(site: &R2SiteConfig, personal: &R2PersonalConfig) -> Result<Box<s3::bucket::Bucket>, String> {
     use s3::bucket::Bucket;
     use s3::creds::Credentials;
     use s3::region::Region;
@@ -145,8 +150,11 @@ pub fn upload_to_r2(site: &R2SiteConfig, personal: &R2PersonalConfig, key: &str,
         None,
     )
     .map_err(|e| e.to_string())?;
-    let bucket = Bucket::new(&site.bucket, region, credentials).map_err(|e| e.to_string())?;
+    Bucket::new(&site.bucket, region, credentials).map_err(|e| e.to_string())
+}
 
+pub fn upload_to_r2(site: &R2SiteConfig, personal: &R2PersonalConfig, key: &str, content: &[u8]) -> Result<(), String> {
+    let bucket = r2_bucket(site, personal)?;
     bucket.put_object(key, content).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -154,27 +162,9 @@ pub fn upload_to_r2(site: &R2SiteConfig, personal: &R2PersonalConfig, key: &str,
 /// Removes an R2 object outright - upload_to_r2 was, until now, the ONLY R2
 /// network operation anywhere in this codebase, so an object never got
 /// cleaned up no matter how a page stopped referencing it (deleted,
-/// replaced, edited by hand) - see pws-6ryi. Mirrors upload_to_r2's own
-/// bucket-construction exactly.
+/// replaced, edited by hand) - see pws-6ryi.
 pub fn delete_from_r2(site: &R2SiteConfig, personal: &R2PersonalConfig, key: &str) -> Result<(), String> {
-    use s3::bucket::Bucket;
-    use s3::creds::Credentials;
-    use s3::region::Region;
-
-    let region = Region::Custom {
-        region: "auto".to_string(),
-        endpoint: format!("https://{}.r2.cloudflarestorage.com", personal.account_id),
-    };
-    let credentials = Credentials::new(
-        Some(&personal.access_key_id),
-        Some(&personal.secret_access_key),
-        None,
-        None,
-        None,
-    )
-    .map_err(|e| e.to_string())?;
-    let bucket = Bucket::new(&site.bucket, region, credentials).map_err(|e| e.to_string())?;
-
+    let bucket = r2_bucket(site, personal)?;
     bucket.delete_object(key).map_err(|e| e.to_string())?;
     Ok(())
 }

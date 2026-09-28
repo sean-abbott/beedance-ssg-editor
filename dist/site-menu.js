@@ -15,12 +15,12 @@ import {
   currentAuthorName,
   refreshFileList,
   createSearchCombobox,
+  reviewModeActive,
 } from "./editor-core.js";
 import { makeIcon } from "./icons.js";
 
 const { invoke } = window.__TAURI__.core;
 
-const siteMenuPanel = document.getElementById("site-menu-panel");
 const siteMenuList = document.getElementById("site-menu-list");
 const siteMenuStatus = document.getElementById("site-menu-status");
 
@@ -98,6 +98,9 @@ const openCreatePanel = (row, kind) => {
 
 const renderSiteMenuList = () => {
   siteMenuList.innerHTML = "";
+  const isReviewing = reviewModeActive != null;
+  document.getElementById("site-menu-add").disabled = isReviewing;
+  document.getElementById("site-menu-save").disabled = isReviewing;
   rows.forEach((row, i) => {
     const el = document.createElement("div");
     el.className = "menu-entry-row";
@@ -118,7 +121,9 @@ const renderSiteMenuList = () => {
     // across this app's 3 target webviews anyway) - vector paths render
     // identically everywhere, unlike font glyph coverage/hinting.
     dragHandle.appendChild(makeIcon("grip"));
+    if (isReviewing) dragHandle.style.cursor = "default";
     dragHandle.addEventListener("pointerdown", (e) => {
+      if (isReviewing) return;
       e.preventDefault();
       const startIndex = i;
       const startY = e.clientY;
@@ -178,7 +183,7 @@ const renderSiteMenuList = () => {
     up.className = "secondary";
     up.textContent = "▲";
     up.title = "Move up";
-    up.disabled = i === 0;
+    up.disabled = i === 0 || isReviewing;
     up.addEventListener("click", () => {
       [rows[i - 1], rows[i]] = [rows[i], rows[i - 1]];
       renderSiteMenuList();
@@ -189,7 +194,7 @@ const renderSiteMenuList = () => {
     down.className = "secondary";
     down.textContent = "▼";
     down.title = "Move down";
-    down.disabled = i === rows.length - 1;
+    down.disabled = i === rows.length - 1 || isReviewing;
     down.addEventListener("click", () => {
       [rows[i + 1], rows[i]] = [rows[i], rows[i + 1]];
       renderSiteMenuList();
@@ -200,6 +205,7 @@ const renderSiteMenuList = () => {
     nameInput.className = "menu-entry-name";
     nameInput.placeholder = "Label";
     nameInput.value = row.name;
+    nameInput.disabled = isReviewing;
     nameInput.addEventListener("input", () => {
       row.name = nameInput.value;
     });
@@ -218,6 +224,7 @@ const renderSiteMenuList = () => {
       kindSelect.appendChild(opt);
     }
     kindSelect.value = row.kind;
+    kindSelect.disabled = isReviewing;
 
     // Same searchable combobox the main "Open file" control uses (see
     // createSearchCombobox in editor-core.js) - a plain <select> here had
@@ -232,6 +239,7 @@ const renderSiteMenuList = () => {
     pageInput.type = "text";
     pageInput.className = "menu-entry-page";
     pageInput.placeholder = "Search pages…";
+    pageInput.disabled = isReviewing;
     const pageResults = document.createElement("div");
     pageResults.className = "search-combobox-results";
     pageWrap.append(pageInput, pageResults);
@@ -263,6 +271,7 @@ const renderSiteMenuList = () => {
     urlInput.className = "menu-entry-url";
     urlInput.placeholder = "https://...";
     urlInput.value = row.externalUrl;
+    urlInput.disabled = isReviewing;
     urlInput.addEventListener("input", () => {
       row.externalUrl = urlInput.value;
     });
@@ -292,9 +301,10 @@ const renderSiteMenuList = () => {
 
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.className = "secondary";
-    remove.textContent = "×";
+    remove.className = "secondary btn-icon";
+    remove.appendChild(makeIcon("trash"));
     remove.title = "Remove this link";
+    remove.disabled = isReviewing;
     remove.addEventListener("click", () => {
       rows.splice(i, 1);
       renderSiteMenuList();
@@ -305,7 +315,13 @@ const renderSiteMenuList = () => {
   });
 };
 
-document.getElementById("site-menu-button").addEventListener("click", async () => {
+// Reloaded every time the Pages page is navigated to (not just from the
+// File menu's "Site menu..." shortcut, which now just navigates here - see
+// menus.js) - a full page, not a modal you explicitly "open", so there's no
+// single entry point left to hang the data load on.
+let siteMenuLoaded = false;
+
+const loadSiteMenu = async () => {
   setSiteMenuStatus("", null);
   try {
     const entries = await invoke("get_site_menu");
@@ -321,10 +337,19 @@ document.getElementById("site-menu-button").addEventListener("click", async () =
       };
     });
     renderSiteMenuList();
-    siteMenuPanel.style.display = "flex";
+    siteMenuLoaded = true;
   } catch (err) {
     showError(err);
   }
+};
+
+document.addEventListener("beedance:page-changed", (e) => {
+  if (e.detail.page === "pages" && !siteMenuLoaded) loadSiteMenu();
+});
+// Review mode can toggle while the Pages page happens to already be open -
+// re-render so every row's controls pick up the disabled state right away.
+document.addEventListener("beedance:tab-changed", () => {
+  if (siteMenuLoaded && document.getElementById("pages-page").style.display !== "none") renderSiteMenuList();
 });
 
 document.getElementById("site-menu-add").addEventListener("click", () => {
@@ -435,13 +460,4 @@ const saveSiteMenu = async () => {
 
 document.getElementById("site-menu-save").addEventListener("click", saveSiteMenu);
 
-document.getElementById("site-menu-save-close").addEventListener("click", async () => {
-  if (await saveSiteMenu()) siteMenuPanel.style.display = "none";
-});
-
-document.getElementById("site-menu-close").addEventListener("click", () => {
-  siteMenuPanel.style.display = "none";
-});
-
-wirePanelKeys(siteMenuPanel, "site-menu-save-close", "site-menu-close");
 wirePanelKeys(createPanel, "site-menu-create-confirm", "site-menu-create-cancel");

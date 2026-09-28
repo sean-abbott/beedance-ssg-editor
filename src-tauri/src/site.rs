@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{Emitter, Manager};
 
-use crate::frontmatter::{front_matter_block, front_matter_field};
+use crate::frontmatter::{front_matter_block, front_matter_field, parse_toml_string_array};
 use crate::images::{self, TierSettingsState};
 use crate::r2::{self, R2SiteConfigState};
 use crate::zola;
@@ -280,6 +280,16 @@ pub struct EditableFile {
     /// this to sort a blog-heading group by date (matching the real site's
     /// own order) instead of alphabetically by title like every other group.
     is_blog_heading: bool,
+    /// For the Pages browser page (pws-898q) - empty for a section index or
+    /// a template, same as read_date's own scope.
+    tags: Vec<String>,
+}
+
+fn read_tags(full: &Path) -> Vec<String> {
+    let Ok(raw) = std::fs::read_to_string(full) else { return Vec::new() };
+    let Some(block) = front_matter_block(&raw) else { return Vec::new() };
+    let Some(raw_tags) = front_matter_field(block, "tags") else { return Vec::new() };
+    parse_toml_string_array(&raw_tags)
 }
 
 /// Same files as list_editable_files, but with a friendly label (the page's
@@ -326,6 +336,7 @@ pub fn list_editable_files_detailed() -> Vec<EditableFile> {
             is_section_index,
             date: read_date(&full),
             is_blog_heading: section_is_blog_heading(&section_index),
+            tags: if is_section_index { Vec::new() } else { read_tags(&full) },
         });
     }
 
@@ -345,6 +356,7 @@ pub fn list_editable_files_detailed() -> Vec<EditableFile> {
             is_section_index: false,
             date: None,
             is_blog_heading: false,
+            tags: Vec::new(),
         });
     }
 

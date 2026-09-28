@@ -21,6 +21,7 @@ import {
   showError,
 } from "./editor-core.js";
 import { makeIcon } from "./icons.js";
+import { showAppMainPage } from "./menus.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -492,142 +493,168 @@ wirePanelKeys(datePanel, "date-panel-confirm", "date-panel-cancel");
 wirePanelKeys(renamePanel, "rename-panel-confirm", "rename-panel-cancel");
 wirePanelKeys(tagsPanel, null, "tags-panel-cancel");
 
-// Manage tags: delete/rename/merge a tag across EVERY post that uses it,
-// not just the one open in the editor right now - reached from the same
-// Tags panel (per the original request) rather than its own toolbar
-// button, since it's about the site's tag taxonomy as a whole, not this
-// one page. Rename and merge are the exact same backend call
-// (rewrite_tag) - typing a name that already exists elsewhere just IS a
-// merge, so there's no separate "Merge" control to build or explain.
-const manageTagsPanel = document.getElementById("manage-tags-panel");
-const manageTagsList = document.getElementById("manage-tags-list");
-const manageTagsStatus = document.getElementById("manage-tags-status");
+// Tags page: delete/rename/merge a tag across EVERY post that uses it, not
+// just the one open in the editor right now - a full app-main page (see
+// menus.js's showAppMainPage), not a modal, per pws-898q's later direction.
+// Rename and merge are the exact same backend call (rewrite_tag) - typing a
+// name that already exists elsewhere just IS a merge, so there's no
+// separate "Merge" control to build or explain.
+const tagsPageList = document.getElementById("tags-page-list");
+const tagsPageStatus = document.getElementById("tags-page-status");
+const tagsPageFilter = document.getElementById("tags-page-filter");
 
-const openManageTags = async () => {
-  manageTagsStatus.textContent = "";
+// {name, count, protectedBy: string[]} per tag, cached so the filter box
+// re-renders instantly against what's already loaded instead of re-fetching
+// on every keystroke.
+let tagsPageTags = [];
+
+const loadTagsPage = async () => {
+  tagsPageStatus.textContent = "Loading...";
   try {
-    const tags = await invoke("list_all_tags");
-    renderManageTagsList(tags);
-    if (tags.length === 0) manageTagsStatus.textContent = "No tags used anywhere on the site yet.";
+    const tags = await invoke("list_all_tags_with_counts");
+    // A protected-tag check per tag, all in parallel - the same
+    // find_taxonomy_term_template_refs check the old skippable confirm()
+    // dialog used, now surfaced as a persistent "Required" badge up front
+    // instead of only at the moment of the action (Sean lost a required
+    // tag merging past that confirm once already).
+    const protectedByLists = await Promise.all(
+      tags.map((t) => invoke("find_taxonomy_term_template_refs", { term: t.name }).catch(() => []))
+    );
+    tagsPageTags = tags.map((t, i) => ({ ...t, protectedBy: protectedByLists[i] }));
+    tagsPageStatus.textContent = tags.length === 0 ? "No tags used anywhere on the site yet." : "";
+    renderTagsPageList();
   } catch (err) {
+    tagsPageStatus.textContent = "";
     showError(err);
   }
 };
 
-// Deleting or renaming/merging a tag makes its OLD name disappear entirely -
-// if a theme template hardcodes that exact name (e.g.
-// get_taxonomy_term(kind="tags", term="event")), the next Zola build breaks
-// with an "unknown term" error that has nothing to do with content and is
-// hard to trace back to "I renamed a tag" after the fact (found this the
-// hard way merging "event" into "events"). Zola can't warn about this ahead
-// of time itself, so this is the one place that can.
-const confirmTagRemovalSafe = async (tag) => {
-  let refs = [];
-  try {
-    refs = await invoke("find_taxonomy_term_template_refs", { term: tag });
-  } catch {
-    return true; // Check failing shouldn't block the rename/delete itself.
+const renderTagsPageList = () => {
+  const query = tagsPageFilter.value.trim().toLowerCase();
+  tagsPageList.innerHTML = "";
+  const visible = query ? tagsPageTags.filter((t) => t.name.toLowerCase().includes(query)) : tagsPageTags;
+  if (visible.length === 0 && tagsPageTags.length > 0) {
+    const empty = document.createElement("div");
+    empty.style.cssText = "padding: 8px; color: var(--muted); font-size: 13px;";
+    empty.textContent = "No tags match that filter.";
+    tagsPageList.appendChild(empty);
+    return;
   }
-  if (refs.length === 0) return true;
-  return askConfirm(
-    "This tag is hardcoded in a template",
-    `"${tag}" is referenced by name in ${refs.join(", ")} - removing it will likely break the site's next build ` +
-      `unless that template is updated too. Proceed anyway?`,
-    "Proceed anyway"
-  );
-};
 
-const renderManageTagsList = (tags) => {
-  manageTagsList.innerHTML = "";
-  for (const tag of tags) {
+  for (const tag of visible) {
     const row = document.createElement("div");
-    row.className = "manage-tag-row";
+    row.className = "tag-manage-row" + (tag.protectedBy.length > 0 ? " tag-manage-protected" : "");
+
+    row.appendChild(makeIcon("tag", "tag-manage-icon"));
 
     const input = document.createElement("input");
     input.type = "text";
-    input.className = "manage-tag-name";
-    input.value = tag;
+    input.className = "tag-manage-name";
+    input.value = tag.name;
+    row.appendChild(input);
+
+    if (tag.protectedBy.length > 0) {
+      const badge = document.createElement("span");
+      badge.className = "tag-manage-protected-badge";
+      badge.title = `Referenced by name in ${tag.protectedBy.join(", ")} - Rename and Delete are disabled until that template no longer needs this exact tag.`;
+      badge.appendChild(makeIcon("lock"));
+      badge.appendChild(document.createTextNode("Required"));
+      row.appendChild(badge);
+    }
+
+    const count = document.createElement("span");
+    count.className = "tag-manage-count";
+    count.textContent = `${tag.count} post${tag.count === 1 ? "" : "s"}`;
+    row.appendChild(count);
+
+    const actions = document.createElement("span");
+    actions.className = "tag-manage-actions";
+
+    const isProtected = tag.protectedBy.length > 0;
+    const isReviewing = reviewModeActive != null;
 
     const rename = document.createElement("button");
     rename.type = "button";
-    rename.className = "secondary";
-    rename.textContent = "Rename";
+    rename.className = "secondary btn-icon";
+    rename.title = isProtected ? "Can't rename - required by a template" : "Rename";
+    rename.appendChild(makeIcon("pencil"));
+    rename.disabled = isProtected || isReviewing;
     rename.addEventListener("click", async () => {
       const newName = input.value.trim();
       if (!newName) {
-        manageTagsStatus.textContent = "Enter a name first.";
+        tagsPageStatus.textContent = "Enter a name first.";
         return;
       }
-      if (newName.toLowerCase() === tag.toLowerCase()) return;
-      const merging = tags.some((t) => t !== tag && t.toLowerCase() === newName.toLowerCase());
-      if (!(await confirmTagRemovalSafe(tag))) return;
+      if (newName.toLowerCase() === tag.name.toLowerCase()) return;
+      const merging = tagsPageTags.some((t) => t.name !== tag.name && t.name.toLowerCase() === newName.toLowerCase());
       const proceed = await askConfirm(
         merging ? "Merge tags?" : "Rename this tag?",
         merging
-          ? `"${tag}" and "${newName}" are both already in use - merge every post using either one into "${newName}"?`
-          : `Rename "${tag}" to "${newName}" on every post that uses it?`,
+          ? `"${tag.name}" and "${newName}" are both already in use - merge every post using either one into "${newName}"?`
+          : `Rename "${tag.name}" to "${newName}" on every post that uses it?`,
         merging ? "Merge" : "Rename"
       );
       if (!proceed) return;
-      manageTagsStatus.textContent = "Updating...";
+      tagsPageStatus.textContent = "Updating...";
       try {
-        const count = await invoke("rewrite_tag", { from: tag, to: newName });
-        manageTagsStatus.textContent = `Updated ${count} post${count === 1 ? "" : "s"}.`;
-        await openManageTags();
+        const changed = await invoke("rewrite_tag", { from: tag.name, to: newName });
+        tagsPageStatus.textContent = `Updated ${changed} post${changed === 1 ? "" : "s"}.`;
+        await loadTagsPage();
       } catch (err) {
-        manageTagsStatus.textContent = "";
+        tagsPageStatus.textContent = "";
         showError(err);
       }
     });
 
     const del = document.createElement("button");
     del.type = "button";
-    del.className = "secondary";
-    del.textContent = "Delete";
+    del.className = "secondary btn-icon danger";
+    del.title = isProtected ? "Can't delete - required by a template" : "Delete";
+    del.appendChild(makeIcon("trash"));
+    del.disabled = isProtected || isReviewing;
     del.addEventListener("click", async () => {
-      if (!(await confirmTagRemovalSafe(tag))) return;
       const proceed = await askConfirm(
         "Delete this tag?",
-        `Remove "${tag}" from every post that uses it? This can't be undone.`,
+        `Remove "${tag.name}" from every post that uses it? This can't be undone.`,
         "Delete"
       );
       if (!proceed) return;
-      manageTagsStatus.textContent = "Deleting...";
+      tagsPageStatus.textContent = "Deleting...";
       try {
-        const count = await invoke("rewrite_tag", { from: tag, to: null });
-        manageTagsStatus.textContent = `Updated ${count} post${count === 1 ? "" : "s"}.`;
-        await openManageTags();
+        const changed = await invoke("rewrite_tag", { from: tag.name, to: null });
+        tagsPageStatus.textContent = `Updated ${changed} post${changed === 1 ? "" : "s"}.`;
+        await loadTagsPage();
       } catch (err) {
-        manageTagsStatus.textContent = "";
+        tagsPageStatus.textContent = "";
         showError(err);
       }
     });
 
-    row.append(input, rename, del);
-    manageTagsList.appendChild(row);
+    actions.append(rename, del);
+    row.appendChild(actions);
+    tagsPageList.appendChild(row);
   }
 };
 
-document.getElementById("manage-tags-open").addEventListener("click", async () => {
+tagsPageFilter.addEventListener("input", renderTagsPageList);
+
+document.addEventListener("beedance:page-changed", (e) => {
+  if (e.detail.page === "tags") loadTagsPage();
+});
+// Review mode can toggle while the Tags page happens to already be open -
+// re-render so Rename/Delete pick up the disabled state immediately rather
+// than only on the next navigation to this page.
+document.addEventListener("beedance:tab-changed", () => {
+  if (document.getElementById("tags-page").style.display !== "none") renderTagsPageList();
+});
+
+// The per-post Tags popover's own "Manage tags..." link - closes that
+// popup and navigates to the real Tags page instead of opening a second,
+// now-removed modal on top of it.
+document.getElementById("manage-tags-open").addEventListener("click", () => {
   tagsPanel.style.display = "none";
-  await openManageTags();
-  manageTagsPanel.style.display = "flex";
+  showAppMainPage("tags");
 });
-
-// Same panel, reached directly from the top-level toolbar - this is a
-// site-wide operation, not tied to whatever page (if any) is currently
-// open, so it shouldn't require going through a specific post's own Tags
-// panel first.
-document.getElementById("manage-tags-button").addEventListener("click", async () => {
-  await openManageTags();
-  manageTagsPanel.style.display = "flex";
-});
-
-document.getElementById("manage-tags-close").addEventListener("click", () => {
-  manageTagsPanel.style.display = "none";
-});
-
-wirePanelKeys(manageTagsPanel, null, "manage-tags-close");
 
 // Zola's Section front matter is a genuinely smaller, different set of
 // recognized fields than Page's - no `date`, no `taxonomies` (tags), only

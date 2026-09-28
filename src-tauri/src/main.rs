@@ -5,6 +5,7 @@ mod frontmatter;
 mod git;
 mod github;
 mod images;
+mod media;
 mod menu;
 mod preview;
 mod r2;
@@ -109,10 +110,16 @@ fn main() {
             content::get_front_matter_title,
             content::detect_external_content,
             content::list_all_tags,
+            content::list_all_tags_with_counts,
             content::get_content_tags,
             content::set_content_tags,
             content::rewrite_tag,
             content::find_taxonomy_term_template_refs,
+            media::list_local_shared_images,
+            media::list_r2_images,
+            media::scan_image_usage,
+            media::delete_local_shared_image,
+            media::delete_r2_shared_image,
             content::get_author_settings,
             content::set_author_settings,
             ui_settings::get_ui_settings,
