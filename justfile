@@ -74,3 +74,50 @@ docker-build: docker-image
         -w /work/src-tauri \
         beedance-tauri-check \
         cargo build
+
+# Cut a release: fast-forwards the "release" branch to main and pushes it.
+# That push is the ENTIRE release trigger - .github/workflows/release.yml
+# fires on it, reads src-tauri/Cargo.toml's version, creates the matching
+# "app-v<version>" tag itself, and builds+drafts the GitHub Release for
+# macOS/Windows/Linux (see that workflow's own header comment). There's no
+# separate manual `git tag` step despite this recipe's name being about
+# tagging - the tag is a side effect of the push, not something done here.
+#
+# Bump the version in src-tauri/Cargo.toml (and let Cargo.lock pick it up
+# via a normal `cargo check`/`just docker-check`) and commit that on main
+# FIRST - this recipe only moves branches and pushes, it never edits or
+# commits anything itself.
+release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "Working tree isn't clean - commit or stash first." >&2
+        exit 1
+    fi
+    current_branch="$(git rev-parse --abbrev-ref HEAD)"
+    if [ "$current_branch" != "main" ]; then
+        echo "Not on main (on '$current_branch') - switch to main first." >&2
+        exit 1
+    fi
+    git fetch origin main release
+    if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+        echo "Local main isn't in sync with origin/main - pull/push first." >&2
+        exit 1
+    fi
+    version="$(grep -m1 '^version' src-tauri/Cargo.toml | sed -E 's/version *= *"([^"]+)"/\1/')"
+    echo "About to release version $version:"
+    echo "  - fast-forward 'release' to main (@ $(git rev-parse --short HEAD))"
+    echo "  - push 'release' to origin, triggering the Release workflow"
+    echo "  - CI creates tag app-v$version and a draft GitHub Release"
+    read -r -p "Proceed? [y/N] " reply
+    if [ "$reply" != "y" ] && [ "$reply" != "Y" ]; then
+        echo "Aborted."
+        exit 1
+    fi
+    git checkout release
+    git merge --ff-only origin/release
+    git merge --ff-only main
+    git push origin release
+    git checkout main
+    echo "Pushed app-v$version to release. Watch it build:"
+    echo "  https://github.com/sean-abbott/beedance-ssg-editor/actions/workflows/release.yml"
