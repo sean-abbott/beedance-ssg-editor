@@ -315,10 +315,11 @@ const renderSiteMenuList = () => {
   });
 };
 
-// Reloaded every time the Pages page is navigated to (not just from the
-// File menu's "Site menu..." shortcut, which now just navigates here - see
-// menus.js) - a full page, not a modal you explicitly "open", so there's no
-// single entry point left to hang the data load on.
+// Reloaded every time the Menu page is navigated to - its own sidebar
+// destination (moved out of Pages per pws-auax, per real-user feedback that
+// it was "buried in the pages pane") - a full page, not a modal you
+// explicitly "open", so there's no single entry point left to hang the data
+// load on.
 let siteMenuLoaded = false;
 
 const loadSiteMenu = async () => {
@@ -344,12 +345,12 @@ const loadSiteMenu = async () => {
 };
 
 document.addEventListener("beedance:page-changed", (e) => {
-  if (e.detail.page === "pages" && !siteMenuLoaded) loadSiteMenu();
+  if (e.detail.page === "menu" && !siteMenuLoaded) loadSiteMenu();
 });
-// Review mode can toggle while the Pages page happens to already be open -
+// Review mode can toggle while the Menu page happens to already be open -
 // re-render so every row's controls pick up the disabled state right away.
 document.addEventListener("beedance:tab-changed", () => {
-  if (siteMenuLoaded && document.getElementById("pages-page").style.display !== "none") renderSiteMenuList();
+  if (siteMenuLoaded && document.getElementById("menu-page").style.display !== "none") renderSiteMenuList();
 });
 
 document.getElementById("site-menu-add").addEventListener("click", () => {

@@ -75,11 +75,21 @@
       frame.contentWindow.history.forward();
     });
 
-    // Re-navigating with a fresh cache-busting timestamp, not just
-    // reassigning the same src (frame.src = frame.src is a no-op in some
-    // engines, and even when it isn't, it can still be served from cache).
+    // Re-navigating to a remembered currentPath/currentPort (the old
+    // approach here) reloads wherever the preview was LAST explicitly
+    // pointed - the page open when "Start preview" fired, or wherever
+    // "preview-navigate" last sent it - not wherever the user has since
+    // clicked to inside the iframe, since currentPath/currentPort are only
+    // ever updated by navigateFrame itself, never by the iframe's own
+    // internal navigation (which this page can't observe: the iframe
+    // (127.0.0.1:<port>) and this page are different origins, and
+    // location/href reads are blocked cross-origin even though a few
+    // specific navigation methods are allowlisted through). history.go(0)
+    // is a reload of whatever page is ACTUALLY showing right now, using
+    // that same cross-origin-legal history API as back()/forward() below,
+    // rather than re-deriving "current" from state this page can't track.
     document.getElementById("reload").addEventListener("click", () => {
-      navigateFrame(currentPath, currentPort);
+      frame.contentWindow.history.go(0);
     });
   </script>
   <script type="module" src="theme.js"></script>

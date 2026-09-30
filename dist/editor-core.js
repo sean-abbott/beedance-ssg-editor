@@ -525,6 +525,38 @@ export const openTab = async (path) => {
   }
 };
 
+// write_file's frontmatter stamping (an `updated` date, an appended author)
+// inserts whole new lines into the frontmatter block the first time that
+// field doesn't exist yet - `written` isn't just `content` with a field's
+// VALUE changed, it can be a different LENGTH, with everything after the
+// stamped region shifted by the difference. A raw numeric selectionStart/
+// End captured against the OLD string is meaningless against a shifted
+// NEW one - reapplying it blindly (as this used to) silently moved the
+// cursor away from where the user was actively typing on literally the
+// first autosave of a fresh post (Dave: "cursor moving elsewhere in the
+// document" while writing). Remapped via plain common-prefix/common-suffix
+// matching rather than a real diff library - the change is always one
+// small, localized edit (a stamped field), never an arbitrary rewrite, so
+// this is exact for every real case and only degrades to "clamp to the
+// edited region" if the cursor happened to sit inside the stamped text
+// itself (frontmatter, never the body the user is actually typing in).
+const remapOffset = (oldStr, newStr, oldOffset) => {
+  if (oldStr === newStr) return oldOffset;
+  const maxPrefix = Math.min(oldStr.length, newStr.length);
+  let prefixLen = 0;
+  while (prefixLen < maxPrefix && oldStr[prefixLen] === newStr[prefixLen]) prefixLen++;
+  const maxSuffix = Math.min(oldStr.length, newStr.length) - prefixLen;
+  let suffixLen = 0;
+  while (
+    suffixLen < maxSuffix &&
+    oldStr[oldStr.length - 1 - suffixLen] === newStr[newStr.length - 1 - suffixLen]
+  )
+    suffixLen++;
+  if (oldOffset <= prefixLen) return oldOffset;
+  if (oldOffset >= oldStr.length - suffixLen) return newStr.length - (oldStr.length - oldOffset);
+  return prefixLen;
+};
+
 // onError is deliberately opt-in, not automatic - doSave also runs from the
 // autosave debounce timer and flushTab (closing a tab, quitting the app),
 // where a popup on every failed background save would be far more
@@ -546,8 +578,8 @@ const doSave = async (path, content, { onError } = {}) => {
       if (tab.content === content) {
         tab.content = written;
         if (path === activeTab) {
-          const selStart = editorEl.selectionStart;
-          const selEnd = editorEl.selectionEnd;
+          const selStart = remapOffset(content, written, editorEl.selectionStart);
+          const selEnd = remapOffset(content, written, editorEl.selectionEnd);
           editorEl.value = written;
           editorEl.setSelectionRange(selStart, selEnd);
         }

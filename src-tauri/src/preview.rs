@@ -221,7 +221,7 @@ pub async fn zola_serve(
         .map_err(|e| e.to_string())?;
     if !port_ready {
         return Err(format!(
-            "zola serve did not start listening on 127.0.0.1:{port} within 5s - check the log panel below for the actual error"
+            "zola serve did not start listening on 127.0.0.1:{port} within 5s - open Preview log for the actual error"
         ));
     }
     let target_path = current_content_path.and_then(resolve_preview_path);

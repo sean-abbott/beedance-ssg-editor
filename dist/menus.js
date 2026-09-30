@@ -1,13 +1,13 @@
 // Sidebar layout chrome: the File/Insert/<branch> dropdown "app menus"
 // (open/close on click, one at a time, closed by an outside click) and the
-// sidebar nav's real page-switching (Editor/Pages/Media/Tags/Settings each
-// swap which #x-page container is visible in app-main, per pws-898q's
+// sidebar nav's real page-switching (Editor/Pages/Media/Tags/Menu/Settings
+// each swap which #x-page container is visible in app-main, per pws-898q's
 // later full-page-not-modal direction) plus the de-emphasized Debug tools
 // link. Kept as its own module (rather than in app.js, which is
 // deliberately just import-for-side-effects) since this is generic
 // app-chrome behavior, not owned by any one feature module.
 
-const APP_MAIN_PAGES = ["editor", "pages", "media", "tags", "settings"];
+const APP_MAIN_PAGES = ["editor", "pages", "media", "tags", "menu", "settings"];
 
 // Each destination module (site-menu.js for Pages, content-editing.js for
 // Tags, media-page.js for Media) listens for this rather than each owning
@@ -112,20 +112,12 @@ document.addEventListener(
   true
 );
 
-// The File menu's "Manage tags..." item used to open its own modal - now it
-// just navigates to the Tags page (content-editing.js owns that page's
-// content, listening for the page-changed event below).
-document.getElementById("manage-tags-button").addEventListener("click", () => {
-  showAppMainPage("tags");
-});
-
-// The File menu's "Site menu..." item used to open its own modal - now it
-// just navigates to the Pages page (which owns that same editor as its
-// "Site navigation" section, see site-menu.js) and scrolls to it.
-document.getElementById("site-menu-button").addEventListener("click", () => {
-  showAppMainPage("pages");
-  document.getElementById("pages-site-nav-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-});
+// The File menu used to also carry "Manage tags..."/"Site menu..." shortcuts
+// to the Tags/Pages pages - dropped per Dave's real-user feedback (pws-auax):
+// once Tags and Pages became real sidebar destinations, keeping a second,
+// duplicate navigation path to the same place inside a menu about file
+// actions was redundant, not a convenience. The sidebar nav links (above)
+// are the only way there now.
 
 // Debug tools moved out of an always-visible <details> block on the main
 // screen (found the hard way that non-technical users would see it and
