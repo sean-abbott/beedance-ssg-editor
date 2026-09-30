@@ -226,6 +226,33 @@ const refreshLocalDrafts = async () => {
 // switching branches would either silently carry uncommitted edits onto
 // the new draft or lose them, depending on whether the target file
 // happens to differ.
+
+// Checking out a different branch fails hard (a raw git error) if ANY
+// tracked file has changes that would be overwritten - not just the active
+// tab's own edits. Autosave writes to disk immediately, which is a
+// separate step from checkpointing (committing) - so a file edited earlier
+// in this session, then left alone, can silently block a switch with no
+// warning otherwise. Checked proactively, in the same plain checkpoint
+// language this app already uses (see the Review changes card's own
+// copy), rather than only reacting to git's own error after the fact -
+// describeGitError (editor-core.js) still translates that raw error too,
+// as a backstop for whatever slips past this check (e.g. a file changed
+// outside the app in the moment between this check and the checkout
+// itself). Call this AFTER flushing the active tab, not before - the
+// flush's own write needs to already be on disk for this check to see it.
+const ensureNoUncheckpointedChanges = async () => {
+  const changed = await invoke("git_changed_files");
+  if (changed.length === 0) return true;
+  const files = changed.map((f) => f.path);
+  const plural = files.length === 1 ? "has" : "have";
+  const pronoun = files.length === 1 ? "it" : "them";
+  showError(
+    `Can't do this yet - ${files.join(", ")} ${plural} changes that haven't been checkpointed. ` +
+      `Go to Drafts → Review changes to checkpoint ${pronoun}, then try again.`
+  );
+  return false;
+};
+
 const switchDraft = async (name) => {
   const proceed = await askConfirm(
     "Switch drafts?",
@@ -249,6 +276,10 @@ const switchDraft = async (name) => {
         author: currentAuthorName,
       });
     }
+    if (!(await ensureNoUncheckpointedChanges())) {
+      localDraftsStatus.textContent = "";
+      return;
+    }
     await invoke("git_checkout_branch", { branch: name });
     closeAllTabsQuietly();
     await refreshFileList();
@@ -257,7 +288,7 @@ const switchDraft = async (name) => {
     await refreshLocalDrafts();
   } catch (err) {
     localDraftsStatus.textContent = "";
-    showError(err);
+    showError(describeGitError(err));
   }
 };
 
@@ -339,6 +370,10 @@ const startReviewingPr = async (pr) => {
         author: currentAuthorName,
       });
     }
+    if (!(await ensureNoUncheckpointedChanges())) {
+      reviewPrStatus.textContent = "";
+      return;
+    }
     await invoke("git_checkout_remote_branch", { branch: pr.branch });
     closeAllTabsQuietly();
     setReviewModeActive({ number: pr.number, title: pr.title, authorLogin: pr.authorLogin, url: pr.url });
@@ -356,6 +391,14 @@ const startReviewingPr = async (pr) => {
 const exitReviewMode = async () => {
   localDraftsStatus.textContent = "Exiting review...";
   try {
+    // Editing is disabled during review (readOnly), so this shouldn't
+    // normally find anything - checked anyway for the same reason as
+    // switchDraft/startReviewingPr: defense against whatever edge case
+    // left something uncheckpointed, rather than surfacing a raw git error.
+    if (!(await ensureNoUncheckpointedChanges())) {
+      localDraftsStatus.textContent = "";
+      return;
+    }
     const branches = await invoke("git_list_local_branches");
     const live = branches.find((b) => b.isLive);
     if (live) {
@@ -370,7 +413,7 @@ const exitReviewMode = async () => {
     await refreshLocalDrafts();
   } catch (err) {
     localDraftsStatus.textContent = "";
-    showError(err);
+    showError(describeGitError(err));
   }
 };
 
@@ -378,11 +421,15 @@ document.getElementById("local-drafts-exit-review-inline").addEventListener("cli
 document.getElementById("review-pr-exit-review-inline").addEventListener("click", exitReviewMode);
 document.getElementById("review-mode-exit").addEventListener("click", exitReviewMode);
 
-// The Switch-draft list is now a permanent Drafts-page section (not a modal
-// opened on demand) - loaded on page-changed below, same pattern as every
-// other sidebar page's own list.
+// The Switch-draft/Review-changes/Sync sections are now permanent
+// Drafts-page content (not modals opened on demand) - loaded on
+// page-changed below, same pattern as every other sidebar page's own list.
 document.addEventListener("beedance:page-changed", (e) => {
-  if (e.detail.page === "drafts") refreshLocalDrafts();
+  if (e.detail.page !== "drafts") return;
+  refreshLocalDrafts();
+  reviewChangesCommitMsg.value = "";
+  reviewChangesStatus.textContent = "";
+  refreshReviewChanges().catch((err) => showError(err));
 });
 
 const createNewDraft = async () => {
@@ -426,11 +473,16 @@ localDraftsNewName.addEventListener("keydown", (e) => {
 // Review changes: a real changed-file list (from git_changed_files)
 // instead of the raw "git status" text the debug tools section already
 // shows - a non-technical author has no reason to read porcelain codes.
-const reviewChangesPanel = document.getElementById("review-changes-panel");
+// A permanent Drafts-page section now, not a modal - see pws-662d.2.
 const reviewChangesList = document.getElementById("review-changes-list");
 const reviewChangesDiff = document.getElementById("review-changes-diff");
 const reviewChangesStatus = document.getElementById("review-changes-status");
 const reviewChangesCommitMsg = document.getElementById("review-changes-commit-msg");
+// Separate from reviewChangesStatus - Commit's own status sits with the
+// Review changes card it belongs to; Sync (pull/push) gets its own line in
+// the Sync card instead of a message appearing in a different card than
+// the buttons that produced it.
+const reviewSyncStatus = document.getElementById("review-sync-status");
 let reviewChangesFiles = [];
 let reviewChangesSelected = null;
 
@@ -496,21 +548,6 @@ const refreshReviewChanges = async () => {
   renderReviewChangesList();
 };
 
-document.getElementById("review-changes").addEventListener("click", async () => {
-  reviewChangesStatus.textContent = "";
-  reviewChangesCommitMsg.value = "";
-  reviewChangesPanel.style.display = "flex";
-  try {
-    await refreshReviewChanges();
-  } catch (err) {
-    showError(err);
-  }
-});
-
-document.getElementById("review-changes-close").addEventListener("click", () => {
-  reviewChangesPanel.style.display = "none";
-});
-
 document.getElementById("review-changes-commit").addEventListener("click", async () => {
   const message = reviewChangesCommitMsg.value.trim();
   if (!message) {
@@ -530,7 +567,7 @@ document.getElementById("review-changes-commit").addEventListener("click", async
 });
 
 document.getElementById("review-changes-pull").addEventListener("click", async () => {
-  reviewChangesStatus.textContent = "Getting the latest changes...";
+  reviewSyncStatus.textContent = "Getting the latest changes...";
   try {
     await invoke("git_pull");
     await refreshReviewChanges();
@@ -538,31 +575,31 @@ document.getElementById("review-changes-pull").addEventListener("click", async (
     // Picks up anything the pull changed in the file currently open -
     // reload's own click handler is a no-op with nothing open.
     document.getElementById("reload").click();
-    reviewChangesStatus.textContent = "Up to date.";
+    reviewSyncStatus.textContent = "Up to date.";
   } catch (err) {
-    reviewChangesStatus.textContent = "";
+    reviewSyncStatus.textContent = "";
     showError(describeGitError(err));
   }
 });
 
 document.getElementById("review-changes-push").addEventListener("click", async () => {
-  reviewChangesStatus.textContent = "Sending changes...";
+  reviewSyncStatus.textContent = "Sending changes...";
   try {
     await invoke("git_push");
-    reviewChangesStatus.textContent = "Sent. Opening a pull request for review...";
+    reviewSyncStatus.textContent = "Sent. Opening a pull request for review...";
     try {
       const branch = await invoke("current_branch");
       const pr = await invoke("github_create_pull_request", { title: branch, body: "" });
-      reviewChangesStatus.textContent = `Sent. Pull request #${pr.number} is up for review.`;
+      reviewSyncStatus.textContent = `Sent. Pull request #${pr.number} is up for review.`;
     } catch (prErr) {
       // The branch itself sent fine - a PR is a separate, best-effort step
       // on top of that, most commonly missing because no personal access
       // token is configured yet (see github_create_pull_request's own
       // errors) - so this doesn't get treated as the push itself failing.
-      reviewChangesStatus.textContent = "Sent, but couldn't open a pull request: " + prErr;
+      reviewSyncStatus.textContent = "Sent, but couldn't open a pull request: " + prErr;
     }
   } catch (err) {
-    reviewChangesStatus.textContent = "";
+    reviewSyncStatus.textContent = "";
     showError(describeGitError(err));
   }
 });
@@ -588,7 +625,6 @@ listen("branch-changed", async () => {
   }
 });
 
-wirePanelKeys(reviewChangesPanel, "review-changes-commit", "review-changes-close");
 wirePanelKeys(reviewPrPanel, null, "review-pr-close");
 
 // Startup drift check, per pws-y8t's design - a network call (fetch

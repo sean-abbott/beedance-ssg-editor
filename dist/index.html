@@ -301,38 +301,6 @@
     </div>
   </div>
 
-  <div id="review-changes-panel" class="modal-overlay">
-    <div class="modal modal-xwide" style="height: min(640px, 85vh);">
-      <div class="modal-header"><h3>Review changes</h3></div>
-      <div class="modal-body" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
-      <p style="margin: 0 0 10px; flex-shrink: 0;">
-        Everything changed since the last save point. Committing saves this
-        as a checkpoint you can always come back to.
-      </p>
-
-      <div style="display: flex; gap: 12px; flex: 1; min-height: 0;">
-        <div id="review-changes-list" style="width: 260px; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px;"></div>
-        <pre id="review-changes-diff" style="flex: 1; margin: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word;">Select a file to see its changes.</pre>
-      </div>
-
-      <div id="review-changes-status" class="status-line" style="margin: 10px 0 6px; flex-shrink: 0;"></div>
-
-      <div style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
-        <input type="text" id="review-changes-commit-msg" placeholder="Describe what changed" style="flex: 1;" />
-        <button id="review-changes-commit">Commit</button>
-      </div>
-      <div style="display: flex; justify-content: flex-end; gap: 8px; align-items: center; margin-top: 8px; flex-shrink: 0;">
-        <span style="font-size: 12px; color: var(--muted);">Sync with the shared copy (set up in Settings &rarr; GitHub sync):</span>
-        <button id="review-changes-pull" class="secondary">Get latest</button>
-        <button id="review-changes-push" class="secondary">Send changes</button>
-      </div>
-      </div>
-      <div class="modal-footer">
-        <button id="review-changes-close" class="secondary">Close</button>
-      </div>
-    </div>
-  </div>
-
   <div id="external-change-banner">
     <span id="external-change-message">File changed on disk externally.</span>
     <button id="banner-reload" class="secondary">Reload</button>
@@ -718,10 +686,29 @@
         </div>
 
         <div class="card">
-          <div class="card-header"><h4>Review changes &amp; sync</h4></div>
-          <p class="card-description">Everything changed since the last save point, and syncing with the shared copy.</p>
+          <div class="card-header"><h4>Review changes</h4></div>
+          <p class="card-description">
+            Everything changed since the last save point. Committing saves
+            this as a checkpoint you can always come back to.
+          </p>
+          <div style="display: flex; gap: 12px; height: 280px;">
+            <div id="review-changes-list" style="width: 240px; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px;"></div>
+            <pre id="review-changes-diff" style="flex: 1; margin: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word; background: var(--panel);">Select a file to see its changes.</pre>
+          </div>
+          <div id="review-changes-status" class="status-line" style="margin-top: 8px;"></div>
+          <div class="card-footer">
+            <input type="text" id="review-changes-commit-msg" placeholder="Describe what changed" style="flex: 1;" />
+            <button id="review-changes-commit">Commit</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Sync with the shared copy</h4></div>
+          <p class="card-description">Set up in Settings &rarr; This installation &rarr; GitHub sync.</p>
           <div class="card-footer" style="justify-content: flex-start;">
-            <button type="button" id="review-changes" class="secondary"><svg class="icon"><use href="#icon-doc"/></svg>Review changes&hellip;</button>
+            <button id="review-changes-pull" class="secondary"><svg class="icon"><use href="#icon-reload"/></svg>Get latest</button>
+            <button id="review-changes-push" class="secondary"><svg class="icon"><use href="#icon-external-link"/></svg>Send changes</button>
+            <span id="review-sync-status" class="status-line"></span>
           </div>
         </div>
       </div>

@@ -38,6 +38,31 @@ export function describeGitError(rawError) {
   if (/could not resolve host/i.test(text)) {
     return "Couldn't reach GitHub - check the internet connection on this machine.\n\nRaw error: " + text;
   }
+  // Switching drafts/reviewing/pulling all move the checked-out tree to a
+  // different commit - git refuses outright if that would silently discard
+  // a file's on-disk changes that were never committed. "Committed" isn't
+  // this app's vocabulary anywhere else, and "saved" already means
+  // "written to disk" (autosave does that constantly) - "checkpoint" is
+  // the word this app already uses for a commit (see the Review changes
+  // card's own copy), so the translation borrows it rather than
+  // introducing git jargon or colliding with "save". A backstop for
+  // whatever the proactive uncommitted-changes check (git-workflow.js's
+  // ensureNoUncheckpointedChanges) doesn't catch - e.g. a file changed
+  // outside the app between that check and the actual checkout.
+  const overwriteMatch = text.match(/would be overwritten by (?:checkout|merge):\s*\n([\s\S]*?)\n(?:Please commit|Aborting|error:|$)/i);
+  if (overwriteMatch) {
+    const files = overwriteMatch[1]
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const fileList = files.length > 0 ? files.join(", ") : "one or more files";
+    const plural = files.length === 1 ? "has" : "have";
+    const pronoun = files.length === 1 ? "it" : "them";
+    return (
+      `${fileList} ${plural} changes that haven't been checkpointed yet. Go to Drafts → Review changes ` +
+      `to checkpoint ${pronoun}, then try again.\n\nRaw error: ` + text
+    );
+  }
   return text;
 }
 
