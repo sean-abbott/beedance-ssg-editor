@@ -44,6 +44,10 @@
       <h1>beedance-ssg-editor <span id="review-mode-header-badge" style="display: none; font-size: 12px; font-weight: 700; color: #b8860b; border: 1px solid #b8860b; border-radius: 999px; padding: 2px 8px; vertical-align: middle;">READ-ONLY &middot; REVIEWING</span></h1>
     </div>
     <div class="header-actions">
+      <a href="#" id="header-draft-indicator" class="header-draft-indicator" title="Currently on a draft, not the live site - click to switch, review, or sync">
+        <svg class="icon"><use href="#icon-branch"/></svg>
+        <span id="header-draft-indicator-label">&hellip;</span>
+      </a>
       <button id="preview-start" title="Start the local preview server"><svg class="icon"><use href="#icon-external-link"/></svg>Start preview</button>
       <button id="preview-stop" class="secondary" title="Stop the preview server">Stop preview</button>
       <label class="secondary" style="display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:var(--radius); padding:6px 10px; cursor:pointer;">
@@ -267,41 +271,6 @@
     </div>
   </div>
 
-  <div id="local-drafts-panel" class="modal-overlay">
-    <div class="modal" style="max-height: 85vh;">
-      <div class="modal-header"><h3>Local drafts</h3></div>
-      <div class="modal-body">
-      <div id="local-drafts-review-active" style="display: none;">
-        <p id="local-drafts-review-active-message" style="margin-top: 0;"></p>
-        <div style="display: flex; justify-content: flex-end;">
-          <button id="local-drafts-exit-review-inline" class="secondary">Exit review, back to editing</button>
-        </div>
-      </div>
-
-      <div id="local-drafts-normal">
-        <p style="margin-top: 0;">
-          A draft is a local branch - its own independent copy of the site to
-          edit without touching the live site until you're ready.
-        </p>
-
-        <div id="local-drafts-drift-status" style="font-size: 12px; margin-bottom: 10px;"></div>
-
-        <div id="local-drafts-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; margin-bottom: 12px;"></div>
-
-        <div style="display: flex; gap: 6px; margin-bottom: 12px;">
-          <input type="text" id="local-drafts-new-name" placeholder="New draft name" style="flex: 1;" />
-          <button type="button" id="local-drafts-new-confirm" class="secondary">New draft</button>
-        </div>
-      </div>
-
-      <div id="local-drafts-status" class="status-line" style="margin: 8px 0;"></div>
-      </div>
-      <div class="modal-footer">
-        <button id="local-drafts-close" class="secondary">Close</button>
-      </div>
-    </div>
-  </div>
-
   <div id="review-pr-panel" class="modal-overlay">
     <div class="modal" style="max-height: 85vh;">
       <div class="modal-header"><h3>Review someone's draft</h3></div>
@@ -427,6 +396,7 @@
         <a id="sidebar-nav-media" data-page="media"><svg class="icon"><use href="#icon-image"/></svg>Media</a>
         <a id="sidebar-nav-tags" data-page="tags"><svg class="icon"><use href="#icon-tag"/></svg>Tags</a>
         <a id="sidebar-nav-menu" data-page="menu"><svg class="icon"><use href="#icon-menu"/></svg>Menu</a>
+        <a id="sidebar-nav-drafts" data-page="drafts"><svg class="icon"><use href="#icon-branch"/></svg>Drafts</a>
         <a id="open-settings" data-page="settings"><svg class="icon"><use href="#icon-gear"/></svg>Settings</a>
       </nav>
 
@@ -462,19 +432,6 @@
           <button id="fmt-image-url" title="Insert image from a web link"><svg class="icon"><use href="#icon-image-link"/></svg>Image from a web link&hellip;</button>
           <button id="fmt-date" title="Set this page's date/time"><svg class="icon"><use href="#icon-calendar"/></svg>Date/time&hellip;</button>
           <button id="fmt-tags" title="Add/remove tags"><svg class="icon"><use href="#icon-tag"/></svg>Tags&hellip;</button>
-        </div>
-      </div>
-
-      <div class="menu" id="branch-menu">
-        <button class="secondary" title="Drafts and syncing" id="local-drafts-button">
-          <svg class="icon"><use href="#icon-branch"/></svg>
-          <span id="local-drafts-button-label">&hellip;</span>
-          <svg class="icon" style="width:12px;height:12px;"><use href="#icon-chevron-down"/></svg>
-        </button>
-        <div class="menu-dropdown">
-          <button id="branch-menu-switch-draft" title="Switch drafts, or start a new one"><svg class="icon"><use href="#icon-branch"/></svg>Switch or start a draft&hellip;</button>
-          <button id="review-changes"><svg class="icon"><use href="#icon-doc"/></svg>Review changes&hellip;</button>
-          <button id="review-pr-button" title="Look at someone else's draft, read-only"><svg class="icon"><use href="#icon-pull-request"/></svg>Review someone's draft&hellip;</button>
         </div>
       </div>
 
@@ -715,6 +672,75 @@
             <span id="site-menu-status" class="status-line"></span>
             <button id="site-menu-save" class="secondary">Save</button>
           </span>
+        </div>
+      </div>
+    </div>
+    <div id="drafts-page" style="display: none;">
+      <div class="page-header">
+        <h2>Drafts</h2>
+        <p>
+          Everything about switching drafts, reviewing changes, syncing, and
+          looking at someone else's work - used to be buried in the Editor's
+          own toolbar menu, easy to miss and disconnected from everywhere
+          else navigation lives.
+        </p>
+      </div>
+
+      <div class="settings-zone zone-installation">
+        <div class="settings-zone-header">
+          <svg class="icon"><use href="#icon-branch"/></svg>
+          <div>
+            <h3>Your drafts</h3>
+            <p>A draft is a local, independent copy of the site - edit without touching the live site until you're ready.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Switch draft</h4></div>
+
+          <div id="local-drafts-review-active" style="display: none;">
+            <p id="local-drafts-review-active-message" style="margin-top: 0;"></p>
+            <div style="display: flex; justify-content: flex-end;">
+              <button id="local-drafts-exit-review-inline" class="secondary">Exit review, back to editing</button>
+            </div>
+          </div>
+
+          <div id="local-drafts-normal">
+            <div id="local-drafts-drift-status" style="font-size: 12px; margin-bottom: 10px;"></div>
+            <div id="local-drafts-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; margin-bottom: 12px;"></div>
+            <div style="display: flex; gap: 6px;">
+              <input type="text" id="local-drafts-new-name" placeholder="New draft name" style="flex: 1;" />
+              <button type="button" id="local-drafts-new-confirm" class="secondary">New draft</button>
+            </div>
+          </div>
+
+          <div id="local-drafts-status" class="status-line" style="margin-top: 8px;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Review changes &amp; sync</h4></div>
+          <p class="card-description">Everything changed since the last save point, and syncing with the shared copy.</p>
+          <div class="card-footer" style="justify-content: flex-start;">
+            <button type="button" id="review-changes" class="secondary"><svg class="icon"><use href="#icon-doc"/></svg>Review changes&hellip;</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-zone zone-site">
+        <div class="settings-zone-header">
+          <svg class="icon"><use href="#icon-pull-request"/></svg>
+          <div>
+            <h3>Review someone's draft</h3>
+            <p>Read-only - you can't edit while reviewing. Needs a repository connected in Settings &rarr; GitHub sync.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Open drafts waiting for review</h4></div>
+          <p class="card-description">Pulled from GitHub's own list of open pull requests.</p>
+          <div class="card-footer" style="justify-content: flex-start;">
+            <button type="button" id="review-pr-button" class="secondary" title="Look at someone else's draft, read-only"><svg class="icon"><use href="#icon-pull-request"/></svg>Review someone's draft&hellip;</button>
+          </div>
         </div>
       </div>
     </div>

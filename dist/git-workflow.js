@@ -27,18 +27,26 @@ import {
   showError,
 } from "./editor-core.js";
 import { makeIcon } from "./icons.js";
+import { showAppMainPage } from "./menus.js";
 
 const { invoke } = window.__TAURI__.core;
 
-const localDraftsPanel = document.getElementById("local-drafts-panel");
 const localDraftsList = document.getElementById("local-drafts-list");
 const localDraftsDriftStatus = document.getElementById("local-drafts-drift-status");
 const localDraftsNewName = document.getElementById("local-drafts-new-name");
 const localDraftsStatus = document.getElementById("local-drafts-status");
-// The button itself is the branch dropdown's own toggle (menus.js wires
-// its open/close) - only this inner label span's text updates, so an
-// update never clobbers the branch icon/chevron sitting either side of it.
-const localDraftsButtonLabel = document.getElementById("local-drafts-button-label");
+// The persistent header pill (every page, not just Editor/Drafts) - only
+// this inner label span's text updates, so an update never clobbers the
+// branch icon sitting beside it. Lives in the header rather than being
+// gated behind the Drafts page itself for the same reason Start/Stop
+// preview live there (pws-898q): which draft you're on is a global,
+// not-page-scoped concern.
+const headerDraftIndicator = document.getElementById("header-draft-indicator");
+const headerDraftIndicatorLabel = document.getElementById("header-draft-indicator-label");
+headerDraftIndicator.addEventListener("click", (e) => {
+  e.preventDefault();
+  showAppMainPage("drafts");
+});
 const localDraftsNormal = document.getElementById("local-drafts-normal");
 const localDraftsReviewActive = document.getElementById("local-drafts-review-active");
 const localDraftsReviewActiveMessage = document.getElementById("local-drafts-review-active-message");
@@ -162,11 +170,17 @@ const describeDrift = (drift) => {
 
 const updateBranchIndicator = (branches) => {
   if (reviewModeActive) {
-    localDraftsButtonLabel.textContent = `Reviewing PR #${reviewModeActive.number}`;
+    headerDraftIndicatorLabel.textContent = `Reviewing PR #${reviewModeActive.number}`;
+    headerDraftIndicator.classList.add("on-draft");
     return;
   }
   const current = branches.find((b) => b.isCurrent);
-  localDraftsButtonLabel.textContent = current ? (current.isLive ? "Live site" : current.name) : "…";
+  // "main" (the live site) is the calm/neutral state - the pill only pops
+  // for anything else, per Sean's repeated ask for the current draft to be
+  // "more visually obvious" when it's NOT main.
+  const onLive = !current || current.isLive;
+  headerDraftIndicatorLabel.textContent = current ? (current.isLive ? "main" : current.name) : "…";
+  headerDraftIndicator.classList.toggle("on-draft", !onLive);
 };
 
 const renderLocalDraftsList = (branches) => {
@@ -364,14 +378,11 @@ document.getElementById("local-drafts-exit-review-inline").addEventListener("cli
 document.getElementById("review-pr-exit-review-inline").addEventListener("click", exitReviewMode);
 document.getElementById("review-mode-exit").addEventListener("click", exitReviewMode);
 
-document.getElementById("branch-menu-switch-draft").addEventListener("click", async () => {
-  localDraftsStatus.textContent = "";
-  localDraftsPanel.style.display = "flex";
-  await refreshLocalDrafts();
-});
-
-document.getElementById("local-drafts-close").addEventListener("click", () => {
-  localDraftsPanel.style.display = "none";
+// The Switch-draft list is now a permanent Drafts-page section (not a modal
+// opened on demand) - loaded on page-changed below, same pattern as every
+// other sidebar page's own list.
+document.addEventListener("beedance:page-changed", (e) => {
+  if (e.detail.page === "drafts") refreshLocalDrafts();
 });
 
 const createNewDraft = async () => {
@@ -578,7 +589,6 @@ listen("branch-changed", async () => {
 });
 
 wirePanelKeys(reviewChangesPanel, "review-changes-commit", "review-changes-close");
-wirePanelKeys(localDraftsPanel, null, "local-drafts-close");
 wirePanelKeys(reviewPrPanel, null, "review-pr-close");
 
 // Startup drift check, per pws-y8t's design - a network call (fetch

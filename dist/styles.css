@@ -120,6 +120,31 @@
     }
     header h1 { margin: 0; font-size: 16px; font-weight: 600; }
     header .header-actions { display: flex; gap: var(--space-2); margin-left: auto; }
+    .header-draft-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      text-decoration: none;
+      font-size: var(--text-sm);
+      background: var(--panel-alt);
+    }
+    .header-draft-indicator:hover { background: var(--border); }
+    /* Pops when you're actively on a draft (not main) - editing a draft vs.
+       the live site is an important distinction to keep visible everywhere,
+       not just a neutral label you stop noticing. "On main" stays the calm/
+       default look; the accent fill is reserved for "you're somewhere else
+       right now." */
+    .header-draft-indicator.on-draft {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-text);
+      font-weight: 600;
+    }
+    .header-draft-indicator.on-draft:hover { background: var(--accent-hover); }
 
     /* ============================================================
        Layout: left sidebar (site switcher, Editor/Pages/Media/Tags/
