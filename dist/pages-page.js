@@ -143,11 +143,19 @@ const renderPagesList = () => {
 
     row.appendChild(makeIcon(page.isBlogHeading ? "doc-post" : "doc", "content-row-icon"));
 
+    const openInEditor = () => {
+      fileSelect.value = page.path;
+      openTab(page.path);
+      showAppMainPage("editor");
+    };
+
     const main = document.createElement("div");
     main.className = "content-row-main";
     const title = document.createElement("span");
-    title.className = "content-row-title";
+    title.className = "content-row-title content-row-title-link";
     title.textContent = page.label;
+    title.title = "Open in editor";
+    title.addEventListener("click", openInEditor);
     const path = document.createElement("span");
     path.className = "content-row-path";
     path.textContent = page.path;
@@ -193,11 +201,7 @@ const renderPagesList = () => {
     open.className = "secondary btn-icon";
     open.title = "Open in editor";
     open.appendChild(makeIcon("external-link"));
-    open.addEventListener("click", () => {
-      fileSelect.value = page.path;
-      openTab(page.path);
-      showAppMainPage("editor");
-    });
+    open.addEventListener("click", openInEditor);
     row.appendChild(open);
 
     pagesPageList.appendChild(row);

@@ -597,6 +597,8 @@
     .content-row .content-row-icon { color: var(--muted); flex-shrink: 0; }
     .content-row .content-row-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
     .content-row .content-row-title { font-size: var(--text-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .content-row .content-row-title-link { cursor: pointer; }
+    .content-row .content-row-title-link:hover { color: var(--accent); text-decoration: underline; }
     .content-row .content-row-path { font-size: var(--text-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .content-row .content-row-tags {
       flex: 1 1 0;

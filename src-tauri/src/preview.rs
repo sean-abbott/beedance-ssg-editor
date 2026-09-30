@@ -1,11 +1,12 @@
-//! The zola serve sidecar process, its preview window (an iframe pointed at
-//! the running server), and the separate log window showing its stdout/
-//! stderr.
+//! The zola serve sidecar process, its preview window (navigated directly at
+//! the running server - see open_or_focus_preview_window's own comment for
+//! why this isn't an iframe), and the separate log window showing its
+//! stdout/stderr.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::{Emitter, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, LogicalSize, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
@@ -82,38 +83,120 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
-#[derive(serde::Serialize, Clone, Copy)]
-struct PreviewNavigatePayload<'a> {
-    path: &'a str,
-    port: u16,
-}
+// A floating, self-contained toolbar (Back/Forward/Reload) injected directly
+// into whatever page the preview window is showing - inline styles only, no
+// dependency on this app's own styles.css (not loaded here at all) or any
+// asset that might not resolve against an arbitrary site's own base URL.
+// Deferred to DOMContentLoaded since initialization_script runs before the
+// document is parsed, well before `document.body` exists.
+const PREVIEW_TOOLBAR_SCRIPT: &str = r#"
+(function () {
+  function init() {
+    var bar = document.createElement("div");
+    bar.style.cssText =
+      "position:fixed;top:8px;left:8px;z-index:2147483647;display:flex;" +
+      "gap:2px;background:rgba(30,30,32,0.85);border-radius:8px;padding:4px;" +
+      "box-shadow:0 2px 8px rgba(0,0,0,0.35);font-family:-apple-system,sans-serif;";
+    var mkButton = function (label, title, onClick) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = label;
+      btn.title = title;
+      btn.style.cssText =
+        "all:unset;cursor:pointer;color:#fff;font-size:15px;line-height:1;" +
+        "padding:5px 9px;border-radius:6px;transition:background-color 0.15s ease;";
+      btn.addEventListener("mouseenter", function () {
+        btn.style.backgroundColor = "rgba(255,255,255,0.18)";
+      });
+      btn.addEventListener("mouseleave", function () {
+        btn.style.backgroundColor = "transparent";
+      });
+      btn.addEventListener("click", onClick);
+      return btn;
+    };
+    var reloadBtn = mkButton("↻", "Reload", function () {
+      // A brief visible flash before actually reloading - clicking Reload
+      // tore down this whole toolbar with no feedback otherwise (the new
+      // page's own redraw was the only signal, easy to miss/attribute to
+      // something else) - Sean/Dave: "reload might or might not work, no
+      // visual indicator". The flash itself doesn't need to survive the
+      // reload; it only has to be visible for the brief moment before it.
+      reloadBtn.style.backgroundColor = "rgba(255,255,255,0.35)";
+      setTimeout(function () {
+        window.location.reload();
+      }, 120);
+    });
+    bar.appendChild(mkButton("←", "Back", function () {
+      window.history.back();
+    }));
+    bar.appendChild(mkButton("→", "Forward", function () {
+      window.history.forward();
+    }));
+    bar.appendChild(reloadBtn);
+    document.documentElement.appendChild(bar);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+"#;
 
+/// Points the preview window straight at zola's own served URL - NOT an
+/// iframe inside a wrapper page (the original design, kept until 2026-09-30).
+/// That wrapper's Back/Forward/Reload had to operate on frame.contentWindow
+/// across a real origin boundary (the wrapper is this app's own tauri://
+/// origin; the iframe is http://127.0.0.1:<port>) - history.back()/forward()
+/// are spec-legal cross-origin, but confirmed broken in practice by two
+/// separate real users, and Reload couldn't know the iframe's actual current
+/// path at all (cross-origin location reads are blocked), so it kept
+/// reloading wherever the app last explicitly pointed it rather than
+/// wherever the user had since clicked to. Navigating the WINDOW itself
+/// removes the origin boundary entirely - the toolbar (PREVIEW_TOOLBAR_SCRIPT,
+/// re-injected fresh via initialization_script on every top-level navigation
+/// in this window, including ones from clicking a link inside the site, not
+/// just app-driven ones) calls plain same-origin history/location APIs, no
+/// different from any ordinary browser tab.
 fn open_or_focus_preview_window(app: &tauri::AppHandle, target_path: Option<&str>, port: u16) -> Result<(), String> {
     let target = target_path.unwrap_or("/");
+    let separator = if target.contains('?') { "&" } else { "?" };
+    // Cache-busting query param, same reasoning as this file's previous
+    // iframe-based approach: the embedded webview's HTTP cache (WKWebView on
+    // macOS in particular) persists across app restarts, so a fresh preview
+    // window can still serve a stale cached response left over from an
+    // earlier session even though zola itself is serving fresh content.
+    let url_string = format!("http://127.0.0.1:{port}{target}{separator}_t={}", now_millis());
+    let url = Url::parse(&url_string).map_err(|e| e.to_string())?;
 
     if let Some(win) = app.get_webview_window(PREVIEW_LABEL) {
         win.set_focus().map_err(|e| e.to_string())?;
         // Window's already open (e.g. hitting "Start preview" again after
-        // switching tabs, or after a site switch, which always picks a
-        // fresh port) - navigate its iframe rather than needing it
-        // reopened, since the initial nav script below only runs on
-        // creation. Always sends the CURRENT port - the window may have
-        // been created for an earlier, now-dead port.
-        let _ = win.emit("preview-navigate", PreviewNavigatePayload { path: target, port });
+        // switching tabs, or after a site switch, which always means a
+        // fresh port) - navigate it directly rather than needing it
+        // reopened. No event round-trip needed (the old emit("preview-
+        // navigate", ...) this replaced existed only because the previous
+        // iframe design had no other way to tell an already-loaded page to
+        // go somewhere else).
+        win.navigate(url).map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    let target_json = serde_json::to_string(target).map_err(|e| e.to_string())?;
-    let builder = WebviewWindowBuilder::new(app, PREVIEW_LABEL, WebviewUrl::App("preview.html".into()))
+    WebviewWindowBuilder::new(app, PREVIEW_LABEL, WebviewUrl::External(url))
         .title("Preview")
         .inner_size(DESKTOP_PREVIEW_SIZE.0, DESKTOP_PREVIEW_SIZE.1)
-        .initialization_script(&format!(
-            "window.__BEEDANCE_PREVIEW_TARGET__ = {target_json}; window.__BEEDANCE_PREVIEW_PORT__ = {port};"
-        ));
-
-    builder.build().map_err(|e| e.to_string())?;
+        .initialization_script(PREVIEW_TOOLBAR_SCRIPT)
+        .build()
+        .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+fn now_millis() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
 }
 
 /// Opens the log window if it isn't already, or just focuses the existing
