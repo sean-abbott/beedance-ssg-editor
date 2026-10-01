@@ -145,6 +145,21 @@
       font-weight: 600;
     }
     .header-draft-indicator.on-draft:hover { background: var(--accent-hover); }
+    /* Third header-pill state: actively reviewing someone else's draft.
+       Amber/warning - the SAME meaning "read-only, someone else's work"
+       already carries everywhere else in the app (review-mode badge/
+       outline, the Reviews page's own banner), never accent (reserved for
+       "this is my own draft"). A real button (not a link) since this state
+       is a .menu trigger - menus.js's existing delegated .menu > button
+       handler picks it up with no new JS for open/close. */
+    .header-draft-indicator.on-review {
+      background: var(--warning);
+      border-color: var(--warning);
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .header-draft-indicator.on-review:hover { background: color-mix(in srgb, var(--warning) 85%, black); }
 
     /* Review-mode chrome, inline on the Drafts page (not the top-level
        #review-mode-banner, which is the ambient "you're read-only right

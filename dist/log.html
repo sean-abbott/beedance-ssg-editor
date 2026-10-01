@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <title>Preview log</title>
+  <!-- Same reasoning as index.html's own copy of this script - avoids a
+       visible flash of the Blue theme before theme.js's async settings
+       fetch settles on Bee. -->
+  <script>try { if (localStorage.getItem("beedance-theme") === "bee") document.documentElement.setAttribute("data-theme", "bee"); } catch (e) {}</script>
   <link rel="stylesheet" href="styles.css" />
   <style>
     html, body { margin: 0; height: 100%; }

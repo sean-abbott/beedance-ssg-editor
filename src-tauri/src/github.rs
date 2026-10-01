@@ -133,6 +133,25 @@ fn github_api_request(url: &str, token: &str) -> Result<String, String> {
     }
 }
 
+/// The GitHub login the configured token actually authenticates as - the
+/// reliable way to know "which PRs are mine" for self-review blocking,
+/// rather than trusting the separately hand-typed username in Settings
+/// (which can be blank, stale, or simply mistyped - exactly what let
+/// Sean's own PRs show up as reviewable: "review doesn't properly block
+/// my own PRs"). None when no token is configured - nothing to derive an
+/// identity from (listing still works unauthenticated, but "who am I" has
+/// no answer there, same as it never did before this).
+#[tauri::command]
+pub fn github_current_username(auth: State<GitAuthConfigState>) -> Result<Option<String>, String> {
+    let token = auth.0.lock().unwrap().token.clone();
+    if token.is_empty() {
+        return Ok(None);
+    }
+    let body = github_api_request("https://api.github.com/user", &token)?;
+    let user: RawUser = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    Ok(Some(user.login))
+}
+
 #[tauri::command]
 pub fn github_list_open_prs(auth: State<GitAuthConfigState>) -> Result<Vec<PullRequestInfo>, String> {
     let (owner, repo) = owner_repo_for_current_remote()?;

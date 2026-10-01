@@ -92,6 +92,7 @@ fn main() {
             git::git_checkout_remote_branch,
             git::git_check_main_drift,
             git::git_clone_repo,
+            github::github_current_username,
             github::github_list_open_prs,
             github::github_create_pull_request,
             github::github_approve_pull_request,

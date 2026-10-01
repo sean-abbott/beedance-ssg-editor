@@ -110,6 +110,30 @@ headerDraftIndicator.addEventListener("click", (e) => {
   e.preventDefault();
   showAppMainPage("drafts");
 });
+
+// Third pill state (alongside plain-main/.on-draft): actively reviewing.
+// A separate element (not a 3rd state on the same <a>) swapped in via
+// display, same "normal vs. reviewing, toggle two elements" pattern this
+// file already uses for localDraftsNormal/ReviewActive and reviewPrNormal/
+// ReviewActive - global, not Reviews-page-specific, same reasoning as the
+// draft indicator itself living in the header rather than gated to one page.
+const headerReviewIndicator = document.getElementById("header-review-indicator");
+const headerReviewIndicatorLabel = document.getElementById("header-review-indicator-label");
+const headerReviewGotoItem = document.getElementById("header-review-goto-item");
+document.getElementById("header-review-github-item").addEventListener("click", () => {
+  if (reviewModeActive) window.__TAURI__.shell.open(reviewModeActive.url);
+});
+document.getElementById("header-review-exit-item").addEventListener("click", () => {
+  exitReviewMode();
+});
+headerReviewGotoItem.addEventListener("click", (e) => {
+  e.preventDefault();
+  showAppMainPage("reviews");
+});
+// Hidden on the Reviews page itself - already there, nowhere to "go to".
+document.addEventListener("beedance:page-changed", (e) => {
+  headerReviewGotoItem.style.display = e.detail.page === "reviews" ? "none" : "flex";
+});
 const localDraftsNormal = document.getElementById("local-drafts-normal");
 const localDraftsReviewActive = document.getElementById("local-drafts-review-active");
 const localDraftsReviewActiveMessage = document.getElementById("local-drafts-review-active-message");
@@ -227,6 +251,8 @@ const applyReviewModeUI = () => {
   // to miss.
   document.body.classList.toggle("review-mode-active", active);
   reviewModeHeaderBadge.style.display = active ? "inline-block" : "none";
+  headerDraftIndicator.style.display = active ? "none" : "inline-flex";
+  headerReviewIndicator.style.display = active ? "inline-block" : "none";
   if (active) {
     const message = `Reviewing PR #${reviewModeActive.number}: "${reviewModeActive.title}" by ${reviewModeActive.authorLogin}.`;
     localDraftsReviewActiveMessage.textContent = message;
@@ -282,8 +308,7 @@ const describeDrift = (drift) => {
 
 const updateBranchIndicator = (branches) => {
   if (reviewModeActive) {
-    headerDraftIndicatorLabel.textContent = `Reviewing PR #${reviewModeActive.number}`;
-    headerDraftIndicator.classList.add("on-draft");
+    headerReviewIndicatorLabel.textContent = `Reviewing PR #${reviewModeActive.number}`;
     return;
   }
   const current = branches.find((b) => b.isCurrent);
@@ -401,17 +426,31 @@ const switchDraft = async (name) => {
   }
 };
 
-const renderPrList = (prs) => {
+// Which GitHub login "mine" means, for filtering self-authored PRs out of
+// the review list. The token's OWN identity (github_current_username, a
+// real GitHub API call) is authoritative when a token is configured -
+// trusting the separately hand-typed Settings field instead is exactly
+// what let Sean's own PRs show up as reviewable ("review doesn't properly
+// block my own PRs"): blank, stale, or mistyped, and the filter below
+// silently does nothing. Falls back to that field only when there's no
+// token to ask GitHub directly (listing still works unauthenticated).
+const resolveMyGithubUsername = async () => {
+  try {
+    return (await invoke("github_current_username")) || currentGithubUsername || null;
+  } catch {
+    return currentGithubUsername || null;
+  }
+};
+
+const renderPrList = (prs, myUsername) => {
   reviewPrList.innerHTML = "";
-  const others = prs.filter(
-    (pr) => !currentGithubUsername || pr.authorLogin.toLowerCase() !== currentGithubUsername.toLowerCase()
-  );
+  const others = prs.filter((pr) => !myUsername || pr.authorLogin.toLowerCase() !== myUsername.toLowerCase());
   if (others.length === 0) {
     const empty = document.createElement("div");
     empty.style.cssText = "font-size: 12px; color: var(--muted);";
-    empty.textContent = currentGithubUsername
+    empty.textContent = myUsername
       ? "No open pull requests from anyone else right now."
-      : "No open pull requests right now. Set your GitHub username in Settings to filter out your own.";
+      : "No open pull requests right now. Set up a GitHub personal access token (Settings → GitHub sync) to filter out your own.";
     reviewPrList.appendChild(empty);
     return;
   }
@@ -516,8 +555,8 @@ document.getElementById("review-pr-load").addEventListener("click", async () => 
   reviewPrList.innerHTML = "";
   reviewPrStatus.textContent = "Loading pull requests...";
   try {
-    const prs = await invoke("github_list_open_prs");
-    renderPrList(prs);
+    const [prs, myUsername] = await Promise.all([invoke("github_list_open_prs"), resolveMyGithubUsername()]);
+    renderPrList(prs, myUsername);
     reviewPrStatus.textContent = "";
   } catch (err) {
     reviewPrStatus.textContent = "";
@@ -539,6 +578,18 @@ const startReviewingPr = async (pr) => {
       "Reviewing someone's draft needs a personal access token with \"Pull requests\" read and write " +
         "access (Settings → GitHub sync) - set one up first."
     );
+    return;
+  }
+  // Defense in depth - the list itself already filters these out (see
+  // resolveMyGithubUsername), but re-checking right before actually
+  // switching onto the branch means a stale rendered list (or anything
+  // else that slips a self-authored row through) still can't be used to
+  // "review" your own work. GitHub's own approval endpoint already
+  // refuses a self-approval server-side; this blocks the read-only entry
+  // point too, not just the one action.
+  const myUsername = await resolveMyGithubUsername();
+  if (myUsername && pr.authorLogin.toLowerCase() === myUsername.toLowerCase()) {
+    showError("That's your own pull request - review someone else's instead.");
     return;
   }
   const proceed = await askConfirm(

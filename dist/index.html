@@ -3,6 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <title>beedance-ssg-editor</title>
+  <!-- Sets the Bee theme attribute (if that's the last-known choice)
+       BEFORE the stylesheet is even requested, let alone before body
+       content paints - theme.js's own invoke("get_ui_settings") call is
+       the real, authoritative source (this is read-only, best-effort
+       localStorage used purely as a same-launch cache of theme.js's own
+       last write, see its own comment), but that's an async IPC
+       round-trip, which was visibly a 1-2s flash of the Blue theme before
+       settling on Bee every single startup. Corrected immediately after
+       by the real settings fetch regardless, so a stale/missing cache
+       entry (first run, a fresh profile) just means one more visible
+       flash that one time, not an incorrect theme that sticks. -->
+  <script>try { if (localStorage.getItem("beedance-theme") === "bee") document.documentElement.setAttribute("data-theme", "bee"); } catch (e) {}</script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -50,6 +62,19 @@
         <svg class="icon"><use href="#icon-branch"/></svg>
         <span id="header-draft-indicator-label">&hellip;</span>
       </a>
+      <div class="menu" id="header-review-indicator" style="display: none;">
+        <button class="header-draft-indicator on-review" title="Reviewing someone else's draft, read-only">
+          <svg class="icon"><use href="#icon-pull-request"/></svg>
+          <span id="header-review-indicator-label">&hellip;</span>
+          <svg class="icon" style="width:12px;height:12px;"><use href="#icon-chevron-down"/></svg>
+        </button>
+        <div class="menu-dropdown">
+          <button type="button" id="header-review-github-item"><svg class="icon"><use href="#icon-external-link"/></svg>Open on GitHub</button>
+          <button type="button" id="header-review-exit-item"><svg class="icon"><use href="#icon-branch"/></svg>Exit review</button>
+          <div class="menu-divider" id="header-review-divider"></div>
+          <a href="#" id="header-review-goto-item"><svg class="icon"><use href="#icon-pull-request"/></svg>Go to Reviews &rarr;</a>
+        </div>
+      </div>
       <button id="preview-start" title="Start the local preview server"><svg class="icon"><use href="#icon-external-link"/></svg>Start preview</button>
       <button id="preview-stop" class="secondary" title="Stop the preview server">Stop preview</button>
       <label class="secondary" style="display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:var(--radius); padding:6px 10px; cursor:pointer;">
