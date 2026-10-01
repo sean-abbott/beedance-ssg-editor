@@ -275,3 +275,36 @@ pub fn github_approve_pull_request(pr_number: u32, auth: State<GitAuthConfigStat
     }
     Err(format!("GitHub couldn't submit the approval ({status}): {text}"))
 }
+
+#[derive(serde::Serialize)]
+struct CreateCommentBody<'a> {
+    body: &'a str,
+}
+
+/// Posts a plain conversation comment on a pull request (GitHub treats a PR
+/// as an "issue" for commenting purposes, sharing that endpoint) - NOT a
+/// file/line-anchored "review comment", which needs a diff position rather
+/// than just a line number and can fail outright if that position isn't
+/// part of the diff. The file this feedback is about is folded into the
+/// comment body as plain text instead - works uniformly for every kind of
+/// change (a renamed file, an image, a deletion - not just line-addressable
+/// text), and reads naturally in GitHub's own PR conversation view.
+#[tauri::command]
+pub fn github_create_pr_comment(pr_number: u32, body: String, auth: State<GitAuthConfigState>) -> Result<(), String> {
+    let (owner, repo) = owner_repo_for_current_remote()?;
+    let token = auth.0.lock().unwrap().token.clone();
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments");
+    let (status, text) = github_api_post(&url, &token, &CreateCommentBody { body: &body })?;
+
+    if status == 201 {
+        return Ok(());
+    }
+    if status == 401 || status == 403 {
+        return Err(
+            "GitHub rejected the configured personal access token - check it's still valid \
+             and has \"Pull requests\" write access to this repository (Settings \u{2192} GitHub sync)."
+                .to_string(),
+        );
+    }
+    Err(format!("GitHub couldn't post the comment ({status}): {text}"))
+}

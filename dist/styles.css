@@ -146,6 +146,35 @@
     }
     .header-draft-indicator.on-draft:hover { background: var(--accent-hover); }
 
+    /* Review-mode chrome, inline on the Drafts page (not the top-level
+       #review-mode-banner, which is the ambient "you're read-only right
+       now" signal shown everywhere) - amber/warning is the same "read-only,
+       someone else's work" meaning that badge/outline already carry. */
+    .review-inline-banner {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      margin: 0 0 var(--space-3);
+      font-size: var(--text-sm);
+    }
+    .leave-feedback-box { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
+    .leave-feedback-box textarea {
+      flex: 1;
+      min-height: 60px;
+      font: inherit;
+      font-size: var(--text-sm);
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--panel);
+      color: var(--text);
+      resize: vertical;
+    }
+
     /* ============================================================
        Layout: left sidebar (site switcher, Editor/Pages/Media/Tags/
        Settings nav, a de-emphasized Debug tools link at the bottom)

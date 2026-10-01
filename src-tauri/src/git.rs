@@ -215,6 +215,56 @@ pub fn git_diff_for_file(path: String) -> Result<String, String> {
     run_git(&dir, &["diff", "--", &path])
 }
 
+/// Same shape as git_changed_files, but for reviewing a fully-committed
+/// branch (someone else's draft) rather than the working tree - `git
+/// status`/`git diff` alone would show nothing right after a clean checkout,
+/// since there's nothing uncommitted; what matters here is what THIS branch
+/// changed relative to the live site, which needs a real branch-to-branch
+/// diff instead. `...` (not `..`) diffs against the merge-base, not main's
+/// current tip directly - the PR's own changes, not also picking up
+/// whatever main has done since the PR branched off.
+#[tauri::command]
+pub fn review_changed_files() -> Result<Vec<ChangedFile>, String> {
+    ensure_site_repo()?;
+    let dir = site_dir();
+    let live = guess_live_branch(&dir)
+        .ok_or_else(|| "Can't tell which branch is the live site (expected a local \"main\" or \"master\").".to_string())?;
+    let raw = run_git(&dir, &["diff", "--name-status", &format!("{live}...HEAD")])?;
+    let mut files = Vec::new();
+    for line in raw.lines() {
+        let mut parts = line.split('\t');
+        let Some(code) = parts.next() else { continue };
+        let Some(first_path) = parts.next() else { continue };
+        // A rename line is "R100\told\tnew" - the new path is what a diff
+        // against this specific file needs, same reasoning as
+        // git_changed_files' own rename handling.
+        let path = parts.next().unwrap_or(first_path).to_string();
+        let status = if code.starts_with('D') {
+            "deleted"
+        } else if code.starts_with('A') {
+            "added"
+        } else if code.starts_with('R') {
+            "renamed"
+        } else {
+            "modified"
+        };
+        files.push(ChangedFile { path, status: status.to_string() });
+    }
+    Ok(files)
+}
+
+/// A real unified diff for one file, same live-branch comparison as
+/// review_changed_files (not the working tree, which is clean on a freshly
+/// checked-out branch).
+#[tauri::command]
+pub fn review_diff_for_file(path: String) -> Result<String, String> {
+    ensure_site_repo()?;
+    let dir = site_dir();
+    let live = guess_live_branch(&dir)
+        .ok_or_else(|| "Can't tell which branch is the live site (expected a local \"main\" or \"master\").".to_string())?;
+    run_git(&dir, &["diff", &format!("{live}...HEAD"), "--", &path])
+}
+
 #[tauri::command]
 pub fn git_commit(message: String) -> Result<String, String> {
     ensure_site_repo()?;

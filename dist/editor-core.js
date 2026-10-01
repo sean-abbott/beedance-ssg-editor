@@ -8,6 +8,27 @@ import { makeIcon } from "./icons.js";
 
 const { invoke } = window.__TAURI__.core;
 
+// Shared by describeGitError below (the reactive backstop) and git-
+// workflow.js's ensureNoUncheckpointedChanges (the proactive check) - same
+// underlying situation, same wording either way. A flat comma-joined list
+// reads fine for one or two files but turns into an unreadable wall of text
+// for a real editing session's worth of untouched drafts - one per line,
+// capped, is readable regardless of how long the list actually is.
+const MAX_LISTED_FILES = 10;
+export function formatUncheckpointedFilesMessage(files) {
+  const plural = files.length === 1 ? "has" : "have";
+  const pronoun = files.length === 1 ? "it" : "them";
+  const listed = files
+    .slice(0, MAX_LISTED_FILES)
+    .map((f) => `  - ${f}`)
+    .join("\n");
+  const overflow = files.length > MAX_LISTED_FILES ? `\n  ...and ${files.length - MAX_LISTED_FILES} more` : "";
+  return (
+    `${files.length} file${files.length === 1 ? "" : "s"} ${plural} changes that haven't been checkpointed ` +
+    `yet:\n\n${listed}${overflow}\n\nGo to Drafts → Review changes to checkpoint ${pronoun}, then try again.`
+  );
+}
+
 // Translates common raw git/SSH failure text into something a non-technical
 // person can actually act on. Found the necessity the hard way: even a
 // working developer (Dave) got stuck on a stale SSH host-key fingerprint
@@ -55,13 +76,7 @@ export function describeGitError(rawError) {
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean);
-    const fileList = files.length > 0 ? files.join(", ") : "one or more files";
-    const plural = files.length === 1 ? "has" : "have";
-    const pronoun = files.length === 1 ? "it" : "them";
-    return (
-      `${fileList} ${plural} changes that haven't been checkpointed yet. Go to Drafts → Review changes ` +
-      `to checkpoint ${pronoun}, then try again.\n\nRaw error: ` + text
-    );
+    return formatUncheckpointedFilesMessage(files.length > 0 ? files : ["one or more files"]) + "\n\nRaw error: " + text;
   }
   return text;
 }

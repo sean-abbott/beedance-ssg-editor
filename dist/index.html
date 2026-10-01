@@ -271,35 +271,6 @@
     </div>
   </div>
 
-  <div id="review-pr-panel" class="modal-overlay">
-    <div class="modal" style="max-height: 85vh;">
-      <div class="modal-header"><h3>Review someone's draft</h3></div>
-      <div class="modal-body">
-      <div id="review-pr-review-active" style="display: none;">
-        <p id="review-pr-review-active-message" style="margin-top: 0;"></p>
-        <div id="review-pr-approve-status" class="status-line" style="margin: 0 0 8px;"></div>
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
-          <button id="review-pr-approve" class="secondary">Approve</button>
-          <button id="review-pr-exit-review-inline" class="secondary">Exit review, back to editing</button>
-        </div>
-      </div>
-
-      <div id="review-pr-normal">
-        <p style="margin-top: 0;">
-          Read-only - you can't edit while reviewing. Needs a repository
-          connected in Settings &rarr; GitHub sync.
-        </p>
-        <button type="button" id="review-pr-load" class="secondary">Show open pull requests</button>
-        <div id="review-pr-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin-top: 10px;"></div>
-      </div>
-
-      <div id="review-pr-status" class="status-line" style="margin: 8px 0;"></div>
-      </div>
-      <div class="modal-footer">
-        <button id="review-pr-close" class="secondary">Close</button>
-      </div>
-    </div>
-  </div>
 
   <div id="external-change-banner">
     <span id="external-change-message">File changed on disk externally.</span>
@@ -722,11 +693,47 @@
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-header"><h4>Open drafts waiting for review</h4></div>
-          <p class="card-description">Pulled from GitHub's own list of open pull requests.</p>
-          <div class="card-footer" style="justify-content: flex-start;">
-            <button type="button" id="review-pr-button" class="secondary" title="Look at someone else's draft, read-only"><svg class="icon"><use href="#icon-pull-request"/></svg>Review someone's draft&hellip;</button>
+        <div id="review-pr-review-active" style="display: none;">
+          <div class="review-inline-banner">
+            <svg class="icon"><use href="#icon-pull-request"/></svg>
+            <span id="review-pr-review-active-message"></span>
+            <a href="#" id="review-pr-github-link" rel="noopener" class="secondary" style="margin-left: auto; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit;">Open on GitHub</a>
+            <button id="review-pr-exit-review-inline" class="secondary">Exit review</button>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h4>What's changed</h4></div>
+            <p class="card-description">Everything this draft changes, compared to the live site.</p>
+            <div style="display: flex; gap: 12px; height: 280px;">
+              <div id="review-pr-diff-list" style="width: 240px; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px;"></div>
+              <pre id="review-pr-diff-content" style="flex: 1; margin: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word; background: var(--panel);">Select a file to see its changes.</pre>
+            </div>
+            <div class="leave-feedback-box">
+              <textarea id="review-pr-feedback-text" placeholder="Leave feedback..."></textarea>
+              <button id="review-pr-feedback-submit" style="align-self: flex-end;">Comment</button>
+            </div>
+            <div id="review-pr-feedback-status" class="status-line" style="margin-top: 8px;"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h4>Approve</h4></div>
+            <p class="card-description">Approves the pull request on GitHub - doesn't publish/merge it.</p>
+            <div id="review-pr-approve-status" class="status-line"></div>
+            <div class="card-footer" style="justify-content: flex-start;">
+              <button id="review-pr-approve" class="secondary">Approve</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="review-pr-normal">
+          <div class="card">
+            <div class="card-header"><h4>Open drafts waiting for review</h4></div>
+            <p class="card-description">Pulled from GitHub's own list of open pull requests.</p>
+            <div id="review-pr-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto;"></div>
+            <div id="review-pr-status" class="status-line" style="margin-top: 8px;"></div>
+            <div class="card-footer" style="justify-content: flex-start;">
+              <button type="button" id="review-pr-load" class="secondary"><svg class="icon"><use href="#icon-reload"/></svg>Refresh list</button>
+            </div>
           </div>
         </div>
       </div>

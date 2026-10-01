@@ -15,7 +15,6 @@ import {
   openTab,
   refreshFileList,
   askConfirm,
-  wirePanelKeys,
   nowForZola,
   currentAuthorName,
   currentGithubUsername,
@@ -24,6 +23,7 @@ import {
   reviewModeActive,
   setReviewModeActive,
   describeGitError,
+  formatUncheckpointedFilesMessage,
   showError,
 } from "./editor-core.js";
 import { makeIcon } from "./icons.js";
@@ -51,17 +51,37 @@ const localDraftsNormal = document.getElementById("local-drafts-normal");
 const localDraftsReviewActive = document.getElementById("local-drafts-review-active");
 const localDraftsReviewActiveMessage = document.getElementById("local-drafts-review-active-message");
 
-// A top-level dialog of its own (beside "Branch: …" and "Review changes…"),
-// not nested inside Local Drafts - found the hard way that nesting it two
-// levels deep made it hard to discover at all.
-const reviewPrPanel = document.getElementById("review-pr-panel");
+// A permanent section of its own on the Drafts page (beside Switch draft and
+// Review changes), not nested inside either - found the hard way that
+// nesting it two levels deep (the old modal) made it hard to discover at all.
 const reviewPrNormal = document.getElementById("review-pr-normal");
 const reviewPrReviewActive = document.getElementById("review-pr-review-active");
 const reviewPrReviewActiveMessage = document.getElementById("review-pr-review-active-message");
+const reviewPrGithubLink = document.getElementById("review-pr-github-link");
 const reviewPrList = document.getElementById("review-pr-list");
 const reviewPrStatus = document.getElementById("review-pr-status");
 const reviewPrApprove = document.getElementById("review-pr-approve");
 const reviewPrApproveStatus = document.getElementById("review-pr-approve-status");
+// The read-only "what's changed" diff shown while reviewing - same list+diff
+// pattern as the Review changes card, but diffing the checked-out PR branch
+// against the live branch (review_changed_files/review_diff_for_file),
+// never the working tree (git_changed_files/git_diff_for_file) - a freshly
+// checked-out branch has nothing uncommitted to show there at all.
+const reviewPrDiffList = document.getElementById("review-pr-diff-list");
+const reviewPrDiffContent = document.getElementById("review-pr-diff-content");
+const reviewPrFeedbackText = document.getElementById("review-pr-feedback-text");
+const reviewPrFeedbackStatus = document.getElementById("review-pr-feedback-status");
+let reviewPrDiffFiles = [];
+let reviewPrDiffSelected = null;
+
+// Same reasoning as reviewModeLink below - target="_blank" doesn't reliably
+// open the system browser from inside this app's webview.
+reviewPrGithubLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (reviewPrGithubLink.href && reviewPrGithubLink.href !== "#" && !reviewPrGithubLink.href.endsWith("/#")) {
+    window.__TAURI__.shell.open(reviewPrGithubLink.href);
+  }
+});
 
 const reviewModeBanner = document.getElementById("review-mode-banner");
 const reviewModeHeaderBadge = document.getElementById("review-mode-header-badge");
@@ -135,8 +155,21 @@ const applyReviewModeUI = () => {
     reviewPrReviewActiveMessage.textContent = message;
     reviewModeMessage.textContent = message + " Read only - editing is disabled.";
     reviewModeLink.href = reviewModeActive.url;
+    reviewPrGithubLink.href = reviewModeActive.url;
     reviewPrApproveStatus.textContent = "";
     reviewPrApprove.disabled = false;
+    reviewPrFeedbackText.value = "";
+    reviewPrFeedbackStatus.textContent = "";
+    refreshReviewPrDiff().catch((err) => showError(err));
+    // Otherwise the header pill keeps showing whatever branch was current
+    // before entering review mode until something else happens to call
+    // refreshLocalDrafts (e.g. navigating to Drafts) - Sean: "the branch
+    // picker doesn't change." updateBranchIndicator ignores its argument
+    // entirely when reviewModeActive is set, so no real branch list is
+    // needed here. Exiting doesn't need the same call - exitReviewMode
+    // already ends with a real refreshLocalDrafts() that updates this from
+    // actual branch data.
+    updateBranchIndicator();
   }
 };
 
@@ -243,15 +276,10 @@ const refreshLocalDrafts = async () => {
 const ensureNoUncheckpointedChanges = async () => {
   const changed = await invoke("git_changed_files");
   if (changed.length === 0) return true;
-  const files = changed.map((f) => f.path);
-  const plural = files.length === 1 ? "has" : "have";
-  const pronoun = files.length === 1 ? "it" : "them";
-  showError(
-    `Can't do this yet - ${files.join(", ")} ${plural} changes that haven't been checkpointed. ` +
-      `Go to Drafts → Review changes to checkpoint ${pronoun}, then try again.`
-  );
+  showError(formatUncheckpointedFilesMessage(changed.map((f) => f.path)));
   return false;
 };
+
 
 const switchDraft = async (name) => {
   const proceed = await askConfirm(
@@ -328,13 +356,73 @@ const renderPrList = (prs) => {
   }
 };
 
-document.getElementById("review-pr-button").addEventListener("click", async () => {
-  reviewPrStatus.textContent = "";
-  reviewPrPanel.style.display = "flex";
-});
+// The read-only diff shown while actively reviewing a PR - same list+diff
+// pattern as the Review changes card, but against review_changed_files/
+// review_diff_for_file (the checked-out branch vs. the live branch), not
+// git_changed_files/git_diff_for_file (the working tree vs. the index,
+// which is empty right after a clean checkout - there's nothing
+// "uncommitted" to show for someone else's already-committed draft).
+const renderReviewPrDiffList = () => {
+  reviewPrDiffList.innerHTML = "";
+  if (reviewPrDiffFiles.length === 0) {
+    const empty = document.createElement("div");
+    empty.style.cssText = "font-size: 12px; color: var(--muted); padding: 6px;";
+    empty.textContent = "This draft doesn't change anything yet.";
+    reviewPrDiffList.appendChild(empty);
+    return;
+  }
+  for (const file of reviewPrDiffFiles) {
+    const row = document.createElement("div");
+    row.className = `review-row status-${file.status}` + (file.path === reviewPrDiffSelected ? " active" : "");
+    row.appendChild(makeIcon(REVIEW_STATUS_ICONS[file.status] || "doc", "review-row-status-icon"));
+    const pathSpan = document.createElement("span");
+    pathSpan.className = "review-row-path";
+    pathSpan.textContent = file.path;
+    const statusSpan = document.createElement("span");
+    statusSpan.className = "review-row-status";
+    statusSpan.textContent = REVIEW_STATUS_LABELS[file.status] || file.status;
+    row.appendChild(pathSpan);
+    row.appendChild(statusSpan);
+    row.addEventListener("click", () => selectReviewPrDiffFile(file.path));
+    reviewPrDiffList.appendChild(row);
+  }
+};
 
-document.getElementById("review-pr-close").addEventListener("click", () => {
-  reviewPrPanel.style.display = "none";
+const selectReviewPrDiffFile = async (path) => {
+  reviewPrDiffSelected = path;
+  renderReviewPrDiffList();
+  reviewPrDiffContent.textContent = "Loading...";
+  try {
+    reviewPrDiffContent.textContent = await invoke("review_diff_for_file", { path });
+  } catch (err) {
+    reviewPrDiffContent.textContent = "ERROR: " + err;
+  }
+};
+
+const refreshReviewPrDiff = async () => {
+  reviewPrDiffFiles = await invoke("review_changed_files");
+  reviewPrDiffSelected = null;
+  reviewPrDiffContent.textContent = "Select a file to see its changes.";
+  renderReviewPrDiffList();
+};
+
+document.getElementById("review-pr-feedback-submit").addEventListener("click", async () => {
+  const comment = reviewPrFeedbackText.value.trim();
+  if (!comment) {
+    reviewPrFeedbackStatus.textContent = "Write something first.";
+    return;
+  }
+  if (!reviewModeActive) return;
+  const body = reviewPrDiffSelected ? `On \`${reviewPrDiffSelected}\`:\n\n${comment}` : comment;
+  reviewPrFeedbackStatus.textContent = "Posting...";
+  try {
+    await invoke("github_create_pr_comment", { prNumber: reviewModeActive.number, body });
+    reviewPrFeedbackText.value = "";
+    reviewPrFeedbackStatus.textContent = "Posted.";
+  } catch (err) {
+    reviewPrFeedbackStatus.textContent = "";
+    showError(err);
+  }
 });
 
 document.getElementById("review-pr-load").addEventListener("click", async () => {
@@ -380,7 +468,6 @@ const startReviewingPr = async (pr) => {
     applyReviewModeUI();
     await refreshFileList();
     if (fileSelect.value) await openTab(fileSelect.value);
-    reviewPrPanel.style.display = "none";
     reviewPrStatus.textContent = "";
   } catch (err) {
     reviewPrStatus.textContent = "";
@@ -430,6 +517,9 @@ document.addEventListener("beedance:page-changed", (e) => {
   reviewChangesCommitMsg.value = "";
   reviewChangesStatus.textContent = "";
   refreshReviewChanges().catch((err) => showError(err));
+  // Only relevant in the "normal" (not actively reviewing) state - the list
+  // this loads is hidden while reviewModeActive anyway.
+  if (!reviewModeActive) document.getElementById("review-pr-load").click();
 });
 
 const createNewDraft = async () => {
@@ -624,8 +714,6 @@ listen("branch-changed", async () => {
     console.error("couldn't refresh after an external branch change:", err);
   }
 });
-
-wirePanelKeys(reviewPrPanel, null, "review-pr-close");
 
 // Startup drift check, per pws-y8t's design - a network call (fetch
 // against origin) when a remote's configured, so this runs in the
