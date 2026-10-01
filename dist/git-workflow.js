@@ -525,12 +525,24 @@ document.getElementById("review-mode-exit").addEventListener("click", exitReview
 // The Switch-draft/Review-changes/Sync sections are now permanent
 // Drafts-page content (not modals opened on demand) - loaded on
 // page-changed below, same pattern as every other sidebar page's own list.
+// Reviewing someone else's draft is a SEPARATE page (Reviews, below) - Sean,
+// testing the two sharing one page: "its confusing even me testing, let
+// alone someone new and non-technical."
 document.addEventListener("beedance:page-changed", (e) => {
   if (e.detail.page !== "drafts") return;
   refreshLocalDrafts();
   reviewChangesCommitMsg.value = "";
   reviewChangesStatus.textContent = "";
   refreshReviewChanges().catch((err) => showError(err));
+});
+
+document.getElementById("drafts-page-reviews-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  showAppMainPage("reviews");
+});
+
+document.addEventListener("beedance:page-changed", (e) => {
+  if (e.detail.page !== "reviews") return;
   // Only relevant in the "normal" (not actively reviewing) state - the list
   // this loads is hidden while reviewModeActive anyway.
   if (!reviewModeActive) updateReviewPrAvailability().catch((err) => showError(err));

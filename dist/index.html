@@ -337,6 +337,7 @@
         <a id="sidebar-nav-tags" data-page="tags"><svg class="icon"><use href="#icon-tag"/></svg>Tags</a>
         <a id="sidebar-nav-menu" data-page="menu"><svg class="icon"><use href="#icon-menu"/></svg>Menu</a>
         <a id="sidebar-nav-drafts" data-page="drafts"><svg class="icon"><use href="#icon-branch"/></svg>Drafts</a>
+        <a id="sidebar-nav-reviews" data-page="reviews"><svg class="icon"><use href="#icon-pull-request"/></svg>Reviews</a>
         <a id="open-settings" data-page="settings"><svg class="icon"><use href="#icon-gear"/></svg>Settings</a>
       </nav>
 
@@ -619,21 +620,14 @@
       <div class="page-header">
         <h2>Drafts</h2>
         <p>
-          Everything about switching drafts, reviewing changes, syncing, and
-          looking at someone else's work - used to be buried in the Editor's
-          own toolbar menu, easy to miss and disconnected from everywhere
-          else navigation lives.
+          Your own work: switching drafts, reviewing your changes, and
+          syncing - used to be buried in the Editor's own toolbar menu,
+          easy to miss and disconnected from everywhere else navigation
+          lives. Looking at someone else's draft instead? That's
+          <a href="#" id="drafts-page-reviews-link">Reviews</a> now, kept
+          separate on purpose.
         </p>
       </div>
-
-      <div class="settings-zone zone-installation">
-        <div class="settings-zone-header">
-          <svg class="icon"><use href="#icon-branch"/></svg>
-          <div>
-            <h3>Your drafts</h3>
-            <p>A draft is a local, independent copy of the site - edit without touching the live site until you're ready.</p>
-          </div>
-        </div>
 
         <div class="card">
           <div class="card-header"><h4>Switch draft</h4></div>
@@ -683,69 +677,73 @@
             <span id="review-sync-status" class="status-line"></span>
           </div>
         </div>
+    </div>
+    <div id="reviews-page" style="display: none;">
+      <div class="page-header">
+        <h2>Reviews</h2>
+        <p>
+          Looking at someone else's draft, read-only. Split out from
+          Drafts (which is your own work) since the two kept getting
+          confused with each other.
+        </p>
       </div>
 
-      <div class="settings-zone zone-site">
-        <div class="settings-zone-header">
+      <div id="review-pr-review-active" style="display: none;">
+        <div class="review-inline-banner">
           <svg class="icon"><use href="#icon-pull-request"/></svg>
-          <div>
-            <h3>Review someone's draft</h3>
-            <p>Read-only - you can't edit while reviewing. Needs a repository connected in Settings &rarr; GitHub sync.</p>
-          </div>
+          <span id="review-pr-review-active-message"></span>
+          <a href="#" id="review-pr-github-link" rel="noopener" class="secondary" style="margin-left: auto; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit;">Open on GitHub</a>
+          <button id="review-pr-exit-review-inline" class="secondary">Exit review</button>
         </div>
 
-        <div id="review-pr-review-active" style="display: none;">
-          <div class="review-inline-banner">
-            <svg class="icon"><use href="#icon-pull-request"/></svg>
-            <span id="review-pr-review-active-message"></span>
-            <a href="#" id="review-pr-github-link" rel="noopener" class="secondary" style="margin-left: auto; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit;">Open on GitHub</a>
-            <button id="review-pr-exit-review-inline" class="secondary">Exit review</button>
+        <div class="card">
+          <div class="card-header"><h4>What's changed</h4></div>
+          <p class="card-description">Everything this draft changes, compared to the live site.</p>
+          <div style="display: flex; gap: 12px; height: 280px;">
+            <div id="review-pr-diff-list" style="width: 240px; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px;"></div>
+            <pre id="review-pr-diff-content" style="flex: 1; margin: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word; background: var(--panel);">Select a file to see its changes.</pre>
           </div>
-
-          <div class="card">
-            <div class="card-header"><h4>What's changed</h4></div>
-            <p class="card-description">Everything this draft changes, compared to the live site.</p>
-            <div style="display: flex; gap: 12px; height: 280px;">
-              <div id="review-pr-diff-list" style="width: 240px; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px;"></div>
-              <pre id="review-pr-diff-content" style="flex: 1; margin: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word; background: var(--panel);">Select a file to see its changes.</pre>
-            </div>
-            <div class="leave-feedback-box">
-              <textarea id="review-pr-feedback-text" placeholder="Leave feedback..."></textarea>
-              <button id="review-pr-feedback-submit" style="align-self: flex-end;">Comment</button>
-            </div>
-            <div id="review-pr-feedback-status" class="status-line" style="margin-top: 8px;"></div>
+          <div class="leave-feedback-box">
+            <textarea id="review-pr-feedback-text" placeholder="Leave feedback..."></textarea>
+            <button id="review-pr-feedback-submit" style="align-self: flex-end;">Comment</button>
           </div>
-
-          <div class="card">
-            <div class="card-header"><h4>Approve</h4></div>
-            <p class="card-description">Approves the pull request on GitHub - doesn't publish/merge it.</p>
-            <div id="review-pr-approve-status" class="status-line"></div>
-            <div class="card-footer" style="justify-content: flex-start;">
-              <button id="review-pr-approve" class="secondary">Approve</button>
-            </div>
-          </div>
+          <div id="review-pr-feedback-status" class="status-line" style="margin-top: 8px;"></div>
         </div>
 
-        <div id="review-pr-normal">
-          <div id="review-pr-no-token-notice" class="card" style="display: none;">
-            <div class="card-header"><h4>Set up GitHub access first</h4></div>
-            <p class="card-description">
-              Reviewing someone's draft needs a personal access token with
-              "Pull requests" read and write access - it's what lets you
-              leave feedback or approve once you're looking at it, and
-              without one you'd get partway in before hitting a wall. Set
-              one up in Settings &rarr; This installation &rarr; GitHub
-              sync, then come back here.
-            </p>
+        <div class="card">
+          <div class="card-header"><h4>Approve</h4></div>
+          <p class="card-description">Approves the pull request on GitHub - doesn't publish/merge it.</p>
+          <div id="review-pr-approve-status" class="status-line"></div>
+          <div class="card-footer" style="justify-content: flex-start;">
+            <button id="review-pr-approve" class="secondary">Approve</button>
           </div>
-          <div id="review-pr-card" class="card">
-            <div class="card-header"><h4>Open drafts waiting for review</h4></div>
-            <p class="card-description">Pulled from GitHub's own list of open pull requests.</p>
-            <div id="review-pr-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto;"></div>
-            <div id="review-pr-status" class="status-line" style="margin-top: 8px;"></div>
-            <div class="card-footer" style="justify-content: flex-start;">
-              <button type="button" id="review-pr-load" class="secondary"><svg class="icon"><use href="#icon-reload"/></svg>Refresh list</button>
-            </div>
+        </div>
+      </div>
+
+      <div id="review-pr-normal">
+        <div id="review-pr-no-token-notice" class="card" style="display: none;">
+          <div class="card-header"><h4>Set up GitHub access first</h4></div>
+          <p class="card-description">
+            Reviewing someone's draft needs a personal access token with
+            "Pull requests" read and write access - it's what lets you
+            leave feedback or approve once you're looking at it, and
+            without one you'd get partway in before hitting a wall. Set
+            one up in Settings &rarr; This installation &rarr; GitHub
+            sync, then come back here.
+          </p>
+        </div>
+        <div id="review-pr-card" class="card">
+          <div class="card-header"><h4>Open drafts waiting for review</h4></div>
+          <p class="card-description">
+            Pulled from GitHub's own list of open pull requests. One that
+            gets published or closed elsewhere just stops appearing here
+            on the next refresh - the same way it would disappear from
+            this list on GitHub itself.
+          </p>
+          <div id="review-pr-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto;"></div>
+          <div id="review-pr-status" class="status-line" style="margin-top: 8px;"></div>
+          <div class="card-footer" style="justify-content: flex-start;">
+            <button type="button" id="review-pr-load" class="secondary"><svg class="icon"><use href="#icon-reload"/></svg>Refresh list</button>
           </div>
         </div>
       </div>

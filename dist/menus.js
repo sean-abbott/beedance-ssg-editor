@@ -1,13 +1,13 @@
 // Sidebar layout chrome: the File/Insert dropdown "app menus" (open/close on
 // click, one at a time, closed by an outside click) and the sidebar nav's
-// real page-switching (Editor/Pages/Media/Tags/Menu/Drafts/Settings each
-// swap which #x-page container is visible in app-main, per pws-898q's later
+// real page-switching (Editor/Pages/Media/Tags/Menu/Drafts/Reviews/Settings
+// each swap which #x-page container is visible in app-main, per pws-898q's later
 // full-page-not-modal direction) plus the de-emphasized Debug tools link.
 // Kept as its own module (rather than in app.js, which is deliberately just
 // import-for-side-effects) since this is generic app-chrome behavior, not
 // owned by any one feature module.
 
-const APP_MAIN_PAGES = ["editor", "pages", "media", "tags", "menu", "drafts", "settings"];
+const APP_MAIN_PAGES = ["editor", "pages", "media", "tags", "menu", "drafts", "reviews", "settings"];
 
 // Each destination module (site-menu.js for Pages, content-editing.js for
 // Tags, media-page.js for Media) listens for this rather than each owning
