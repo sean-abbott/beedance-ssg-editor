@@ -36,6 +36,57 @@ const localDraftsList = document.getElementById("local-drafts-list");
 const localDraftsDriftStatus = document.getElementById("local-drafts-drift-status");
 const localDraftsNewName = document.getElementById("local-drafts-new-name");
 const localDraftsStatus = document.getElementById("local-drafts-status");
+
+const draftFeedbackList = document.getElementById("draft-feedback-list");
+const draftFeedbackStatus = document.getElementById("draft-feedback-status");
+
+// Comments left on the current draft's own open PR, read-only - pws-662d.4.
+// Fetched unauthenticated-OK, same as listing PRs elsewhere in this file -
+// this is a read, not a write, so it isn't gated behind a token the way
+// the Reviews page's Comment/Approve actions are. "No open PR yet" or "no
+// comments yet" both just render as an empty, non-error state.
+const renderDraftFeedback = (comments) => {
+  draftFeedbackList.innerHTML = "";
+  if (comments.length === 0) {
+    const empty = document.createElement("div");
+    empty.style.cssText = "font-size: 12px; color: var(--muted);";
+    empty.textContent = "No feedback yet.";
+    draftFeedbackList.appendChild(empty);
+    return;
+  }
+  for (const comment of comments) {
+    const item = document.createElement("div");
+    item.className = "feedback-item";
+    const meta = document.createElement("div");
+    meta.className = "feedback-item-meta";
+    const icon = makeIcon("pull-request");
+    icon.style.width = "13px";
+    icon.style.height = "13px";
+    meta.appendChild(icon);
+    const metaText = document.createElement("span");
+    metaText.textContent = comment.file ? `${comment.author}, on ${comment.file}` : comment.author;
+    meta.appendChild(metaText);
+    item.appendChild(meta);
+    const body = document.createElement("div");
+    body.className = "feedback-item-body";
+    body.textContent = comment.body;
+    item.appendChild(body);
+    draftFeedbackList.appendChild(item);
+  }
+};
+
+const refreshDraftFeedback = async () => {
+  draftFeedbackStatus.textContent = "";
+  try {
+    renderDraftFeedback(await invoke("github_list_feedback_for_current_draft"));
+  } catch (err) {
+    // A brand new site with no remote configured yet is a normal, common
+    // state here, not a failure worth an error popup over - quiet inline
+    // text instead, same tone as the card's own "no feedback yet" case.
+    draftFeedbackList.innerHTML = "";
+    draftFeedbackStatus.textContent = String(err);
+  }
+};
 // The persistent header pill (every page, not just Editor/Drafts) - only
 // this inner label span's text updates, so an update never clobbers the
 // branch icon sitting beside it. Lives in the header rather than being
@@ -315,6 +366,7 @@ const switchDraft = async (name) => {
     if (fileSelect.value) await openTab(fileSelect.value);
     localDraftsStatus.textContent = `Switched to "${name}".`;
     await refreshLocalDrafts();
+    refreshDraftFeedback();
   } catch (err) {
     localDraftsStatus.textContent = "";
     showError(describeGitError(err));
@@ -531,6 +583,7 @@ document.getElementById("review-mode-exit").addEventListener("click", exitReview
 document.addEventListener("beedance:page-changed", (e) => {
   if (e.detail.page !== "drafts") return;
   refreshLocalDrafts();
+  refreshDraftFeedback();
   reviewChangesCommitMsg.value = "";
   reviewChangesStatus.textContent = "";
   refreshReviewChanges().catch((err) => showError(err));
@@ -592,6 +645,7 @@ const createNewDraft = async () => {
     if (fileSelect.value) await openTab(fileSelect.value);
     localDraftsStatus.textContent = "New draft created.";
     await refreshLocalDrafts();
+    refreshDraftFeedback();
   } catch (err) {
     localDraftsStatus.textContent = "";
     showError(err);
@@ -797,6 +851,7 @@ listen("branch-changed", async () => {
     await refreshFileList();
     if (fileSelect.value) await openTab(fileSelect.value);
     await refreshLocalDrafts();
+    refreshDraftFeedback();
     bannerMessage.textContent = "The checked-out branch changed outside the app - reloaded.";
     banner.style.display = "block";
   } catch (err) {

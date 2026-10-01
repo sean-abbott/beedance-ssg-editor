@@ -97,6 +97,7 @@ fn main() {
             github::github_approve_pull_request,
             github::github_create_pr_comment,
             github::github_validate_token,
+            github::github_list_feedback_for_current_draft,
             preview::zola_serve,
             preview::zola_stop,
             preview::open_log_window,

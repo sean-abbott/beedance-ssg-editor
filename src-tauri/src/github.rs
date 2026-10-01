@@ -309,6 +309,100 @@ pub fn github_create_pr_comment(pr_number: u32, body: String, auth: State<GitAut
     Err(format!("GitHub couldn't post the comment ({status}): {text}"))
 }
 
+#[derive(serde::Deserialize)]
+struct RawComment {
+    body: String,
+    user: RawUser,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackComment {
+    author: String,
+    // None when the comment wasn't posted through this app's own "Leave
+    // feedback" flow (github_create_pr_comment) - e.g. someone commented
+    // directly on GitHub's own PR page instead. Parsed back out of that
+    // flow's own "On `path`: ..." body prefix rather than tracked
+    // separately server-side, since a plain issue comment has no field of
+    // its own for "which file this is about."
+    file: Option<String>,
+    body: String,
+}
+
+// Mirrors exactly the prefix github_create_pr_comment writes - kept as the
+// one place that format is assumed, so the two stay in sync if it ever
+// changes.
+fn split_feedback_body(raw: &str) -> (Option<String>, String) {
+    if let Some(rest) = raw.strip_prefix("On `") {
+        if let Some(end) = rest.find('`') {
+            let file = &rest[..end];
+            if let Some(body) = rest[end + 1..].strip_prefix(":\n\n") {
+                return (Some(file.to_string()), body.to_string());
+            }
+        }
+    }
+    (None, raw.to_string())
+}
+
+/// Every comment on the current draft's own open pull request, for the
+/// author to read without leaving the app - pws-662d.4. Not an error when
+/// there's no open PR yet (nothing published for review yet is a normal,
+/// common state, not a failure) or no comments on it yet - both just
+/// return an empty list.
+#[tauri::command]
+pub fn github_list_feedback_for_current_draft(auth: State<GitAuthConfigState>) -> Result<Vec<FeedbackComment>, String> {
+    let (owner, repo) = owner_repo_for_current_remote()?;
+    let branch = crate::git::current_branch()?;
+    let token = auth.0.lock().unwrap().token.clone();
+
+    let pr_url = format!("https://api.github.com/repos/{owner}/{repo}/pulls?state=open&head={owner}:{branch}");
+    let pr_text = github_api_request(&pr_url, &token)?;
+    let prs: Vec<RawPullRequest> = serde_json::from_str(&pr_text).map_err(|e| e.to_string())?;
+    let Some(pr) = prs.into_iter().next() else {
+        return Ok(Vec::new()); // No open PR for this draft yet.
+    };
+
+    let comments_url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{}/comments", pr.number);
+    let comments_text = github_api_request(&comments_url, &token)?;
+    let raw: Vec<RawComment> = serde_json::from_str(&comments_text).map_err(|e| e.to_string())?;
+
+    Ok(raw
+        .into_iter()
+        .map(|c| {
+            let (file, body) = split_feedback_body(&c.body);
+            FeedbackComment { author: c.user.login, file, body }
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_feedback_body_extracts_the_file_prefix_github_create_pr_comment_writes() {
+        let (file, body) = split_feedback_body("On `content/about.md`:\n\nCan we mention the new time?");
+        assert_eq!(file, Some("content/about.md".to_string()));
+        assert_eq!(body, "Can we mention the new time?");
+    }
+
+    #[test]
+    fn split_feedback_body_passes_through_a_comment_with_no_recognized_prefix() {
+        // e.g. posted directly on GitHub's own PR page, not through this
+        // app's "Leave feedback" flow.
+        let (file, body) = split_feedback_body("Looks good otherwise!");
+        assert_eq!(file, None);
+        assert_eq!(body, "Looks good otherwise!");
+    }
+
+    #[test]
+    fn split_feedback_body_does_not_misparse_a_backtick_elsewhere_in_the_body() {
+        let (file, body) = split_feedback_body("On `a.md`:\n\nUse `inline code` here too");
+        assert_eq!(file, Some("a.md".to_string()));
+        assert_eq!(body, "Use `inline code` here too");
+    }
+}
+
 #[derive(Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenCheckResult {
