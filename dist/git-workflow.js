@@ -441,6 +441,19 @@ document.getElementById("review-pr-load").addEventListener("click", async () => 
 // Same flush-then-close-tabs pattern as switchDraft, plus entering
 // review mode once the checkout succeeds.
 const startReviewingPr = async (pr) => {
+  // Backstop for whatever got the row rendered/clickable despite no token
+  // being configured (reviewPrCard is hidden without one, so this
+  // shouldn't normally be reachable) - same reasoning as
+  // ensureNoUncheckpointedChanges: block up front with a clear message
+  // rather than let Comment/Approve fail later with their own separate
+  // errors.
+  if (!(await hasGithubToken())) {
+    showError(
+      "Reviewing someone's draft needs a personal access token with \"Pull requests\" read and write " +
+        "access (Settings → GitHub sync) - set one up first."
+    );
+    return;
+  }
   const proceed = await askConfirm(
     "Review this pull request?",
     `Switch to "#${pr.number} ${pr.title}" by ${pr.authorLogin}? Open tabs close and reload read-only.`,
@@ -519,8 +532,28 @@ document.addEventListener("beedance:page-changed", (e) => {
   refreshReviewChanges().catch((err) => showError(err));
   // Only relevant in the "normal" (not actively reviewing) state - the list
   // this loads is hidden while reviewModeActive anyway.
-  if (!reviewModeActive) document.getElementById("review-pr-load").click();
+  if (!reviewModeActive) updateReviewPrAvailability().catch((err) => showError(err));
 });
+
+const reviewPrNoTokenNotice = document.getElementById("review-pr-no-token-notice");
+const reviewPrCard = document.getElementById("review-pr-card");
+
+// Listing open PRs technically works unauthenticated (rate-limited), but
+// the whole point of reviewing here is leaving feedback or approving,
+// which both hard-require a token (github.rs's github_api_post refuses
+// outright with no token) - letting someone get partway into a read-only
+// checkout only to hit a wall on Comment/Approve is worse than not
+// offering the interface at all. Sean: "I feel like we should block even
+// the review interface when the PAT isn't set up yet."
+const hasGithubToken = async () => !!(await invoke("get_git_auth_config")).token;
+
+const updateReviewPrAvailability = async () => {
+  const available = await hasGithubToken();
+  reviewPrNoTokenNotice.style.display = available ? "none" : "block";
+  reviewPrCard.style.display = available ? "block" : "none";
+  if (available) document.getElementById("review-pr-load").click();
+  return available;
+};
 
 const createNewDraft = async () => {
   const name = localDraftsNewName.value.trim();
@@ -592,6 +625,28 @@ const REVIEW_STATUS_ICONS = {
   untracked: "doc-post",
 };
 
+// Discarding is a real, irreversible loss of whatever that file's own
+// uncommitted edits were - Sean: "we're gonna need a way to revert
+// uncommitted files", the diff view had no way to back out of an edit
+// short of retyping it by hand. Confirmed per-file rather than offering a
+// blanket "discard everything" - less to lose in one click, and a rename
+// is explicitly unsupported here (git_discard_file's own doc comment).
+const discardReviewChangesFile = async (path) => {
+  const proceed = await askConfirm(
+    "Discard changes?",
+    `Discard every uncommitted change to "${path}"? This can't be undone.`,
+    "Discard"
+  );
+  if (!proceed) return;
+  try {
+    await invoke("git_discard_file", { path });
+    if (path === reviewChangesSelected) reviewChangesSelected = null;
+    await refreshReviewChanges();
+  } catch (err) {
+    showError(err);
+  }
+};
+
 const renderReviewChangesList = () => {
   reviewChangesList.innerHTML = "";
   if (reviewChangesFiles.length === 0) {
@@ -601,6 +656,7 @@ const renderReviewChangesList = () => {
     reviewChangesList.appendChild(empty);
     return;
   }
+  const isReviewing = reviewModeActive != null;
   for (const file of reviewChangesFiles) {
     const row = document.createElement("div");
     row.className = `review-row status-${file.status}` + (file.path === reviewChangesSelected ? " active" : "");
@@ -613,6 +669,20 @@ const renderReviewChangesList = () => {
     statusSpan.textContent = REVIEW_STATUS_LABELS[file.status] || file.status;
     row.appendChild(pathSpan);
     row.appendChild(statusSpan);
+
+    const discardBlocked = isReviewing || file.status === "renamed";
+    const discard = document.createElement("button");
+    discard.type = "button";
+    discard.className = "secondary btn-icon";
+    discard.title = file.status === "renamed" ? "Can't discard a rename here - ask for git help" : "Discard changes to this file";
+    discard.disabled = discardBlocked;
+    discard.appendChild(makeIcon("trash"));
+    discard.addEventListener("click", (e) => {
+      e.stopPropagation();
+      discardReviewChangesFile(file.path);
+    });
+    row.appendChild(discard);
+
     row.addEventListener("click", () => selectReviewChangesFile(file.path));
     reviewChangesList.appendChild(row);
   }

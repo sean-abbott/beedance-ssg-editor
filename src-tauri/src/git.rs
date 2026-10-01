@@ -215,6 +215,38 @@ pub fn git_diff_for_file(path: String) -> Result<String, String> {
     run_git(&dir, &["diff", "--", &path])
 }
 
+/// Discards one file's uncommitted changes - restores a tracked file to its
+/// last commit, or deletes an untracked one outright (nothing committed to
+/// restore to). Sean: "we're gonna need a way to revert uncommitted files" -
+/// the Review changes card's diff was read-only otherwise, no way to back
+/// out of an edit short of retyping it by hand. Doesn't handle an
+/// already-staged rename (needs un-staging both halves of it first) - rare
+/// enough in this app's own workflow (git_commit only stages right before
+/// committing, so a rename shows as staged only in the narrow window
+/// between those two calls) to surface as a clear error instead of building
+/// that out now.
+#[tauri::command]
+pub fn git_discard_file(path: String) -> Result<(), String> {
+    ensure_site_repo()?;
+    let dir = site_dir();
+    let status = run_git(&dir, &["status", "--porcelain", "--", &path])?;
+    if status.len() < 2 {
+        // Already matches HEAD - nothing to discard.
+        return Ok(());
+    }
+    let code = &status[..2];
+    if code == "??" {
+        return std::fs::remove_file(dir.join(&path)).map_err(|e| e.to_string());
+    }
+    if code.contains('R') {
+        return Err(
+            "Can't discard a rename automatically - this needs someone comfortable with git to sort out directly."
+                .to_string(),
+        );
+    }
+    run_git(&dir, &["checkout", "--", &path]).map(|_| ())
+}
+
 /// Same shape as git_changed_files, but for reviewing a fully-committed
 /// branch (someone else's draft) rather than the working tree - `git
 /// status`/`git diff` alone would show nothing right after a clean checkout,

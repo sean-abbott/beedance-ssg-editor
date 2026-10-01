@@ -433,6 +433,7 @@
     .status-line { color: var(--muted); }
     .status-line.status-success { color: #2e7d32; font-weight: 600; }
     .status-line.status-error { color: #c0392b; font-weight: 600; }
+    .status-line.status-dirty { color: var(--warning); font-weight: 600; }
 
     /* Shared by every createSearchCombobox instance (the main "Open file"
        control, and each site-menu row's page picker) - a class, not an id,
@@ -491,7 +492,7 @@
       padding: 1px 6px;
     }
 
-    button, select, input[type=text] {
+    button, select, input[type=text], input[type=number], input[type=password] {
       font: inherit;
       font-size: 13px;
       color: var(--text);

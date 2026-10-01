@@ -39,8 +39,69 @@ const gitTokenInput = document.getElementById("git-token");
 const gitUsernameInput = document.getElementById("git-username");
 const gitAuthSettingsStatus = document.getElementById("git-auth-settings-status");
 
+// Dirty/saved visual feedback, one instance per card: amber "Unsaved
+// changes" the moment any of that card's own fields change, replaced by a
+// green "Saved" once its own Save click succeeds - and back to dirty again
+// on the very next edit, rather than a stale "Saved." sitting there
+// forever regardless of what's since changed (the previous behavior).
+// Sean: "we need a bit more visual feedback in settings when we need to
+// save and when we have saved."
+const wireDirtyTracking = (statusEl, inputs) => {
+  const markDirty = () => {
+    statusEl.textContent = "Unsaved changes";
+    statusEl.classList.remove("status-success");
+    statusEl.classList.add("status-dirty");
+  };
+  const markSaved = () => {
+    statusEl.textContent = "✓ Saved";
+    statusEl.classList.remove("status-dirty");
+    statusEl.classList.add("status-success");
+  };
+  const clear = () => {
+    statusEl.textContent = "";
+    statusEl.classList.remove("status-dirty", "status-success");
+  };
+  for (const input of inputs) {
+    input.addEventListener("input", markDirty);
+    input.addEventListener("change", markDirty);
+  }
+  return { markDirty, markSaved, clear };
+};
+
+const authorDirty = wireDirtyTracking(authorSettingsStatus, [authorDisplayNameInput]);
+const tierDirty = wireDirtyTracking(tierSettingsStatus, [
+  tierWebCap,
+  tierWebQuality,
+  tierHighCap,
+  tierHighQuality,
+  tierPostInternalCap,
+  tierPostInternalQuality,
+]);
+const r2SiteDirty = wireDirtyTracking(r2SiteSettingsStatus, [r2Bucket, r2PublicUrlBase]);
+const r2PersonalDirty = wireDirtyTracking(r2PersonalSettingsStatus, [
+  r2Enabled,
+  r2AccountId,
+  r2AccessKeyId,
+  r2SecretAccessKey,
+]);
+const gitAuthDirty = wireDirtyTracking(gitAuthSettingsStatus, [gitRemoteUrlInput, gitTokenInput, gitUsernameInput]);
+
+// A masked password field gives no way to actually see what you just typed
+// or pasted - Sean: "need to be able to unmask the PAT so you can see if
+// it's changed." Toggles the field itself between password/text rather
+// than showing a copy elsewhere, so there's only ever one value to look at.
+const wireUnmaskToggle = (input, button) => {
+  button.addEventListener("click", () => {
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    button.classList.toggle("active", show);
+  });
+};
+wireUnmaskToggle(gitTokenInput, document.getElementById("git-token-toggle"));
+wireUnmaskToggle(r2SecretAccessKey, document.getElementById("r2-secret-access-key-toggle"));
+
 document.getElementById("open-settings").addEventListener("click", async () => {
-  authorSettingsStatus.textContent = "";
+  authorDirty.clear();
   try {
     const author = await invoke("get_author_settings");
     authorDisplayNameInput.value = author.displayName;
@@ -49,7 +110,7 @@ document.getElementById("open-settings").addEventListener("click", async () => {
     authorSettingsStatus.textContent = "Couldn't load author settings: " + err;
   }
 
-  tierSettingsStatus.textContent = "";
+  tierDirty.clear();
   try {
     const tiers = await invoke("get_tier_settings");
     tierWebCap.value = tiers.webCap;
@@ -62,7 +123,7 @@ document.getElementById("open-settings").addEventListener("click", async () => {
     tierSettingsStatus.textContent = "Couldn't load image size settings: " + err;
   }
 
-  r2SiteSettingsStatus.textContent = "";
+  r2SiteDirty.clear();
   try {
     const r2Site = await invoke("get_r2_site_config");
     r2Bucket.value = r2Site.bucket;
@@ -71,7 +132,7 @@ document.getElementById("open-settings").addEventListener("click", async () => {
     r2SiteSettingsStatus.textContent = "Couldn't load bucket settings: " + err;
   }
 
-  r2PersonalSettingsStatus.textContent = "";
+  r2PersonalDirty.clear();
   try {
     const r2Personal = await invoke("get_r2_personal_config");
     r2Enabled.checked = r2Personal.enabled;
@@ -82,7 +143,7 @@ document.getElementById("open-settings").addEventListener("click", async () => {
     r2PersonalSettingsStatus.textContent = "Couldn't load R2 credentials: " + err;
   }
 
-  gitAuthSettingsStatus.textContent = "";
+  gitAuthDirty.clear();
   try {
     const [remoteUrl, gitAuth] = await Promise.all([
       invoke("git_get_remote_url"),
@@ -102,9 +163,9 @@ document.getElementById("save-author-settings").addEventListener("click", async 
     const displayName = authorDisplayNameInput.value.trim();
     await invoke("set_author_settings", { settings: { displayName } });
     setCurrentAuthorName(displayName);
-    authorSettingsStatus.textContent = "Saved.";
+    authorDirty.markSaved();
   } catch (err) {
-    authorSettingsStatus.textContent = "";
+    authorDirty.markDirty();
     showError(err);
   }
 });
@@ -121,9 +182,9 @@ document.getElementById("save-tier-settings").addEventListener("click", async ()
         postInternalQuality: Number(tierPostInternalQuality.value),
       },
     });
-    tierSettingsStatus.textContent = "Saved.";
+    tierDirty.markSaved();
   } catch (err) {
-    tierSettingsStatus.textContent = "";
+    tierDirty.markDirty();
     showError(err);
   }
 });
@@ -147,9 +208,9 @@ document.getElementById("save-r2-site-settings").addEventListener("click", async
         publicUrlBase: r2PublicUrlBase.value,
       },
     });
-    r2SiteSettingsStatus.textContent = "Saved.";
+    r2SiteDirty.markSaved();
   } catch (err) {
-    r2SiteSettingsStatus.textContent = "";
+    r2SiteDirty.markDirty();
     showError(err);
   }
 });
@@ -164,9 +225,9 @@ document.getElementById("save-r2-personal-settings").addEventListener("click", a
         secretAccessKey: r2SecretAccessKey.value,
       },
     });
-    r2PersonalSettingsStatus.textContent = "Saved.";
+    r2PersonalDirty.markSaved();
   } catch (err) {
-    r2PersonalSettingsStatus.textContent = "";
+    r2PersonalDirty.markDirty();
     showError(err);
   }
 });
@@ -180,9 +241,9 @@ document.getElementById("save-git-auth-settings").addEventListener("click", asyn
     const githubUsername = gitUsernameInput.value.trim();
     await invoke("set_git_auth_config", { token: gitTokenInput.value, githubUsername });
     setCurrentGithubUsername(githubUsername);
-    gitAuthSettingsStatus.textContent = "Saved.";
+    gitAuthDirty.markSaved();
   } catch (err) {
-    gitAuthSettingsStatus.textContent = "";
+    gitAuthDirty.markDirty();
     showError(err);
   }
 });

@@ -75,6 +75,7 @@ fn main() {
             git::git_status,
             git::git_changed_files,
             git::git_diff_for_file,
+            git::git_discard_file,
             git::review_changed_files,
             git::review_diff_for_file,
             git::git_commit,

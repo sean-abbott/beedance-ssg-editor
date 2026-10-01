@@ -38,6 +38,7 @@
     <symbol id="icon-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
     <symbol id="icon-kebab" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></g></symbol>
     <symbol id="icon-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></symbol>
   </svg>
   <header>
     <div class="header-titles">
@@ -726,7 +727,18 @@
         </div>
 
         <div id="review-pr-normal">
-          <div class="card">
+          <div id="review-pr-no-token-notice" class="card" style="display: none;">
+            <div class="card-header"><h4>Set up GitHub access first</h4></div>
+            <p class="card-description">
+              Reviewing someone's draft needs a personal access token with
+              "Pull requests" read and write access - it's what lets you
+              leave feedback or approve once you're looking at it, and
+              without one you'd get partway in before hitting a wall. Set
+              one up in Settings &rarr; This installation &rarr; GitHub
+              sync, then come back here.
+            </p>
+          </div>
+          <div id="review-pr-card" class="card">
             <div class="card-header"><h4>Open drafts waiting for review</h4></div>
             <p class="card-description">Pulled from GitHub's own list of open pull requests.</p>
             <div id="review-pr-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto;"></div>
@@ -815,7 +827,10 @@
             <input type="text" id="r2-access-key-id" placeholder="from beedance-cli create-user-key" />
 
             <label for="r2-secret-access-key">Secret access key</label>
-            <input type="password" id="r2-secret-access-key" placeholder="from beedance-cli create-user-key" />
+            <span style="position: relative; display: block;">
+              <input type="password" id="r2-secret-access-key" placeholder="from beedance-cli create-user-key" style="width: 100%; padding-right: 32px;" />
+              <button type="button" id="r2-secret-access-key-toggle" class="secondary btn-icon" title="Show/hide" style="position: absolute; right: 2px; top: 2px; width: 24px; height: 24px;"><svg class="icon"><use href="#icon-eye"/></svg></button>
+            </span>
           </div>
           <div class="card-footer">
             <span id="r2-personal-settings-status" class="status-line"></span>
@@ -845,11 +860,18 @@
 
           <label class="field-label">
             Personal access token (optional)
-            <input type="password" id="git-token" placeholder="only needed for HTTPS sync" />
+            <span style="position: relative; display: block;">
+              <input type="password" id="git-token" placeholder="only needed for HTTPS sync" style="width: 100%; padding-right: 32px;" />
+              <button type="button" id="git-token-toggle" class="secondary btn-icon" title="Show/hide" style="position: absolute; right: 2px; top: 2px; width: 24px; height: 24px;"><svg class="icon"><use href="#icon-eye"/></svg></button>
+            </span>
           </label>
           <p class="card-description">
             Create a fine-grained token scoped to just this repository, with
-            "Contents" read and write access, from
+            two permissions: "Contents" read and write (for syncing over
+            HTTPS - skip this one if you're using SSH for syncing instead),
+            and "Pull requests" read and write (for listing, reviewing,
+            approving, and commenting on drafts - needed either way, since
+            GitHub's pull request API has no SSH equivalent). From
             <a id="github-token-help-link" href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens" rel="noopener">GitHub's own token settings help</a>.
           </p>
 
