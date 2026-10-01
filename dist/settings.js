@@ -47,25 +47,22 @@ const gitAuthSettingsStatus = document.getElementById("git-auth-settings-status"
 // Sean: "we need a bit more visual feedback in settings when we need to
 // save and when we have saved."
 const wireDirtyTracking = (statusEl, inputs) => {
-  const markDirty = () => {
-    statusEl.textContent = "Unsaved changes";
-    statusEl.classList.remove("status-success");
-    statusEl.classList.add("status-dirty");
+  // kind: "dirty" | "success" | "error" | null - a plain status-line reuses
+  // the same 3 semantic colors already established elsewhere (site-menu.js's
+  // own setSiteMenuStatus), rather than inventing a second convention.
+  const setStatus = (text, kind) => {
+    statusEl.textContent = text;
+    statusEl.classList.remove("status-dirty", "status-success", "status-error");
+    if (kind) statusEl.classList.add(`status-${kind}`);
   };
-  const markSaved = () => {
-    statusEl.textContent = "✓ Saved";
-    statusEl.classList.remove("status-dirty");
-    statusEl.classList.add("status-success");
-  };
-  const clear = () => {
-    statusEl.textContent = "";
-    statusEl.classList.remove("status-dirty", "status-success");
-  };
+  const markDirty = () => setStatus("Unsaved changes", "dirty");
+  const markSaved = () => setStatus("✓ Saved", "success");
+  const clear = () => setStatus("", null);
   for (const input of inputs) {
     input.addEventListener("input", markDirty);
     input.addEventListener("change", markDirty);
   }
-  return { markDirty, markSaved, clear };
+  return { markDirty, markSaved, clear, setStatus };
 };
 
 const authorDirty = wireDirtyTracking(authorSettingsStatus, [authorDisplayNameInput]);
@@ -232,6 +229,40 @@ document.getElementById("save-r2-personal-settings").addEventListener("click", a
   }
 });
 
+// Summarizes github_validate_token's result as one line. GitHub has no way
+// to introspect a fine-grained token's own granted permissions (confirmed:
+// unlike a classic token's X-OAuth-Scopes response header, fine-grained
+// tokens expose nothing to inspect) - this only reports what it could
+// actually test, by calling the lightest real endpoint each READ
+// permission gates. Write access (Contents/Pull requests) isn't claimed
+// either way - there's no safe way to check that without performing a real
+// write just to find out.
+const renderGithubTokenCheck = (token, check) => {
+  if (!token) {
+    gitAuthDirty.markSaved();
+    return;
+  }
+  if (!check.valid) {
+    gitAuthDirty.setStatus("Saved, but " + (check.error || "the token looks invalid"), "error");
+    return;
+  }
+  const who = check.username ? ` as ${check.username}` : "";
+  if (check.canReadContents == null) {
+    gitAuthDirty.setStatus(`✓ Saved. Token valid${who}. Set a repository URL to check repo access too.`, "success");
+    return;
+  }
+  const parts = [
+    `Contents: read ${check.canReadContents ? "✓" : "✗"}`,
+    `Pull requests: read ${check.canReadPullRequests ? "✓" : "✗"}`,
+  ];
+  const allGood = check.canReadContents && check.canReadPullRequests;
+  gitAuthDirty.setStatus(
+    `✓ Saved. Token valid${who}. ${parts.join(" · ")}` +
+      (allGood ? "" : " - write access isn't checked here, but a missing read above means matching features won't work."),
+    allGood ? "success" : "error"
+  );
+};
+
 document.getElementById("save-git-auth-settings").addEventListener("click", async () => {
   try {
     const url = gitRemoteUrlInput.value.trim();
@@ -239,9 +270,17 @@ document.getElementById("save-git-auth-settings").addEventListener("click", asyn
       await invoke("git_set_remote_url", { url });
     }
     const githubUsername = gitUsernameInput.value.trim();
-    await invoke("set_git_auth_config", { token: gitTokenInput.value, githubUsername });
+    const token = gitTokenInput.value;
+    await invoke("set_git_auth_config", { token, githubUsername });
     setCurrentGithubUsername(githubUsername);
-    gitAuthDirty.markSaved();
+
+    if (!token) {
+      gitAuthDirty.markSaved();
+      return;
+    }
+    gitAuthDirty.setStatus("Saved. Checking the token against GitHub...", null);
+    const check = await invoke("github_validate_token", { token });
+    renderGithubTokenCheck(token, check);
   } catch (err) {
     gitAuthDirty.markDirty();
     showError(err);

@@ -13,6 +13,7 @@ import {
   closeAllTabsQuietly,
   cancelTabAutosave,
   openTab,
+  reloadTabFromDisk,
   refreshFileList,
   askConfirm,
   nowForZola,
@@ -641,6 +642,12 @@ const discardReviewChangesFile = async (path) => {
   try {
     await invoke("git_discard_file", { path });
     if (path === reviewChangesSelected) reviewChangesSelected = null;
+    // If this file is also open as a tab, its in-memory buffer still has
+    // the just-discarded edit - left alone, the NEXT autosave (or even just
+    // switching branches, which flushes the active tab first) would
+    // silently write that stale content right back to disk, making the
+    // discard look like it never took effect.
+    await reloadTabFromDisk(path);
     await refreshReviewChanges();
   } catch (err) {
     showError(err);

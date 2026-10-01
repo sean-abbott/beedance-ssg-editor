@@ -884,25 +884,40 @@ window.addEventListener("beforeunload", () => {
   for (const path of tabs.keys()) flushTab(path);
 });
 
+// Reloads one tab's buffer from whatever's actually on disk right now -
+// shared by the "Reload from disk" button (always the active tab) and
+// anything else that changes a file's on-disk content out from under an
+// open tab's buffer without that tab knowing about it (e.g. git-workflow.js's
+// discard-changes action). Without this, a pending (or even a brand new)
+// autosave for that tab would silently overwrite the fresh disk content
+// right back with the tab's own stale in-memory copy the next time it
+// fires - found exactly this way: discarding a file whose tab was still
+// open looked like it hadn't done anything, because the next git operation
+// re-flushed the tab's old content before checking for anything
+// uncommitted. A no-op if that path isn't even open as a tab.
+export const reloadTabFromDisk = async (path) => {
+  const tab = tabs.get(path);
+  if (!tab) return;
+  cancelTabAutosave(path);
+  const content = await invoke("read_file", { path });
+  tab.content = content;
+  tab.dirty = false;
+  tab.externallyChanged = false;
+  tab.undoStack.length = 0;
+  tab.redoStack.length = 0;
+  tab.lastUndoTime = null;
+  if (path === activeTab) {
+    editorEl.value = content;
+    updateStatusForActiveTab();
+    banner.style.display = "none";
+  }
+  renderTabBar();
+};
+
 document.getElementById("reload").addEventListener("click", async () => {
   if (!activeTab) return;
-  const path = activeTab;
-  cancelTabAutosave(path);
   try {
-    const content = await invoke("read_file", { path });
-    const tab = tabs.get(path);
-    tab.content = content;
-    tab.dirty = false;
-    tab.externallyChanged = false;
-    tab.undoStack.length = 0;
-    tab.redoStack.length = 0;
-    tab.lastUndoTime = null;
-    if (path === activeTab) {
-      editorEl.value = content;
-      updateStatusForActiveTab();
-      banner.style.display = "none";
-    }
-    renderTabBar();
+    await reloadTabFromDisk(activeTab);
   } catch (err) {
     statusEl.textContent = "";
     showError(err);

@@ -308,3 +308,64 @@ pub fn github_create_pr_comment(pr_number: u32, body: String, auth: State<GitAut
     }
     Err(format!("GitHub couldn't post the comment ({status}): {text}"))
 }
+
+#[derive(Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenCheckResult {
+    valid: bool,
+    username: Option<String>,
+    // None (not Some(false)) when there's no repository configured yet to
+    // check against - "couldn't check" and "checked and it failed" are
+    // different situations, and collapsing them into one false would read
+    // as a failure that was never actually tested.
+    can_read_contents: Option<bool>,
+    can_read_pull_requests: Option<bool>,
+    error: Option<String>,
+}
+
+/// Best-effort verification that a just-entered token actually works -
+/// never blocks the save itself (the token is persisted regardless, by the
+/// caller, before this even runs), just reports what it found. GitHub has
+/// no endpoint to introspect a fine-grained token's own granted
+/// permissions - unlike a classic token's X-OAuth-Scopes response header,
+/// fine-grained tokens return nothing to inspect (confirmed against
+/// GitHub's own docs/community discussions, not assumed). The only real way
+/// to check is the one GitHub itself documents: call the lightest real
+/// endpoint each permission actually gates, and read the status code - a
+/// 401 means the token itself is bad, a 403 means it's valid but missing
+/// that specific permission. Only checks READ access (Contents, Pull
+/// requests) - there's no safe way to verify WRITE access without
+/// performing a real write (create/modify a file, open a PR, post a
+/// comment), which this deliberately doesn't do just to tick a box.
+#[tauri::command]
+pub fn github_validate_token(token: String) -> TokenCheckResult {
+    if token.is_empty() {
+        return TokenCheckResult::default();
+    }
+
+    let mut result = TokenCheckResult::default();
+    match github_api_request("https://api.github.com/user", &token) {
+        Ok(body) => {
+            result.valid = true;
+            if let Ok(user) = serde_json::from_str::<RawUser>(&body) {
+                result.username = Some(user.login);
+            }
+        }
+        Err(err) => {
+            result.error = Some(err);
+            return result;
+        }
+    }
+
+    let Ok((owner, repo)) = owner_repo_for_current_remote() else {
+        return result; // No repository configured yet - nothing more to check.
+    };
+
+    let contents_url = format!("https://api.github.com/repos/{owner}/{repo}/contents");
+    result.can_read_contents = Some(github_api_request(&contents_url, &token).is_ok());
+
+    let pulls_url = format!("https://api.github.com/repos/{owner}/{repo}/pulls?per_page=1");
+    result.can_read_pull_requests = Some(github_api_request(&pulls_url, &token).is_ok());
+
+    result
+}
