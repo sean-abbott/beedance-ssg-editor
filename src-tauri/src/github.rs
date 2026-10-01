@@ -310,6 +310,60 @@ pub fn github_create_pr_comment(pr_number: u32, body: String, auth: State<GitAut
 }
 
 #[derive(serde::Deserialize)]
+struct RawPullRequestState {
+    number: u32,
+    html_url: String,
+    state: String,
+    // Only ever set once a PR has actually been merged - the one reliable
+    // signal that distinguishes "closed because it was published" from
+    // "closed without merging" (state alone can't tell those apart).
+    merged_at: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftPrState {
+    // "none" | "open" | "published" | "closed" (closed without merging -
+    // rare, but a real possibility, and reporting it as "none" would read
+    // as "nothing was ever sent" when something was, then got closed).
+    status: String,
+    number: Option<u32>,
+    url: Option<String>,
+}
+
+/// The current draft's own PR state, independent of whatever the last
+/// Send-changes click happened to show - pws-662d.2's "persistent, not a
+/// one-time toast" requirement, and the same open-PR-for-this-branch
+/// lookup pws-662d.6 needs for detecting an external publish. Picks the
+/// most recently created PR for this exact branch if more than one exists
+/// (rare - a branch normally only ever has one, across this app's own
+/// reuse-by-name-via--B checkout pattern).
+#[tauri::command]
+pub fn github_current_draft_pr_state(auth: State<GitAuthConfigState>) -> Result<DraftPrState, String> {
+    let (owner, repo) = owner_repo_for_current_remote()?;
+    let branch = crate::git::current_branch()?;
+    let token = auth.0.lock().unwrap().token.clone();
+
+    let url = format!(
+        "https://api.github.com/repos/{owner}/{repo}/pulls?state=all&head={owner}:{branch}&sort=created&direction=desc"
+    );
+    let text = github_api_request(&url, &token)?;
+    let prs: Vec<RawPullRequestState> = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+
+    let Some(pr) = prs.into_iter().next() else {
+        return Ok(DraftPrState { status: "none".to_string(), number: None, url: None });
+    };
+    let status = if pr.merged_at.is_some() {
+        "published"
+    } else if pr.state == "open" {
+        "open"
+    } else {
+        "closed"
+    };
+    Ok(DraftPrState { status: status.to_string(), number: Some(pr.number), url: Some(pr.html_url) })
+}
+
+#[derive(serde::Deserialize)]
 struct RawComment {
     body: String,
     user: RawUser,

@@ -40,18 +40,20 @@ const localDraftsStatus = document.getElementById("local-drafts-status");
 const draftFeedbackList = document.getElementById("draft-feedback-list");
 const draftFeedbackStatus = document.getElementById("draft-feedback-status");
 
-// Comments left on the current draft's own open PR, read-only - pws-662d.4.
-// Fetched unauthenticated-OK, same as listing PRs elsewhere in this file -
-// this is a read, not a write, so it isn't gated behind a token the way
-// the Reviews page's Comment/Approve actions are. "No open PR yet" or "no
-// comments yet" both just render as an empty, non-error state.
-const renderDraftFeedback = (comments) => {
-  draftFeedbackList.innerHTML = "";
+// Same {author, file, body} shape, same component, in two places: the
+// Drafts page's "Feedback on this draft" card (pws-662d.4 - the author's
+// own view) and the Reviews page's "Feedback so far" list (pws-662d.8 - a
+// reviewer's view of what's already been said, same underlying PR while
+// actively reviewing it, since entering review mode checks out that PR's
+// own branch). One render function, two call sites, rather than a second
+// near-identical copy.
+const renderFeedbackItems = (containerEl, comments) => {
+  containerEl.innerHTML = "";
   if (comments.length === 0) {
     const empty = document.createElement("div");
     empty.style.cssText = "font-size: 12px; color: var(--muted);";
     empty.textContent = "No feedback yet.";
-    draftFeedbackList.appendChild(empty);
+    containerEl.appendChild(empty);
     return;
   }
   for (const comment of comments) {
@@ -71,14 +73,14 @@ const renderDraftFeedback = (comments) => {
     body.className = "feedback-item-body";
     body.textContent = comment.body;
     item.appendChild(body);
-    draftFeedbackList.appendChild(item);
+    containerEl.appendChild(item);
   }
 };
 
 const refreshDraftFeedback = async () => {
   draftFeedbackStatus.textContent = "";
   try {
-    renderDraftFeedback(await invoke("github_list_feedback_for_current_draft"));
+    renderFeedbackItems(draftFeedbackList, await invoke("github_list_feedback_for_current_draft"));
   } catch (err) {
     // A brand new site with no remote configured yet is a normal, common
     // state here, not a failure worth an error popup over - quiet inline
@@ -87,6 +89,15 @@ const refreshDraftFeedback = async () => {
     draftFeedbackStatus.textContent = String(err);
   }
 };
+
+// Nothing re-fetches this card on its own while you're already sitting on
+// an open Drafts page - the existing triggers (page-changed, switching/
+// creating a draft, an external branch change) all require actually
+// leaving and coming back, or something else happening first. Sean posted
+// a comment on GitHub directly and it didn't appear until exactly that -
+// same manual escape hatch the Reviews page's PR list already has.
+document.getElementById("draft-feedback-refresh").addEventListener("click", refreshDraftFeedback);
+
 // The persistent header pill (every page, not just Editor/Drafts) - only
 // this inner label span's text updates, so an update never clobbers the
 // branch icon sitting beside it. Lives in the header rather than being
@@ -121,10 +132,25 @@ const reviewPrApproveStatus = document.getElementById("review-pr-approve-status"
 // checked-out branch has nothing uncommitted to show there at all.
 const reviewPrDiffList = document.getElementById("review-pr-diff-list");
 const reviewPrDiffContent = document.getElementById("review-pr-diff-content");
+const reviewPrFeedbackList = document.getElementById("review-pr-feedback-list");
+const reviewPrFeedbackListStatus = document.getElementById("review-pr-feedback-list-status");
 const reviewPrFeedbackText = document.getElementById("review-pr-feedback-text");
 const reviewPrFeedbackStatus = document.getElementById("review-pr-feedback-status");
 let reviewPrDiffFiles = [];
 let reviewPrDiffSelected = null;
+
+// Reuses github_list_feedback_for_current_draft (pws-662d.4) unchanged -
+// entering review mode already checks out this PR's own branch, so
+// "current draft" and "the PR being reviewed" are the same branch here.
+const refreshReviewPrFeedback = async () => {
+  reviewPrFeedbackListStatus.textContent = "";
+  try {
+    renderFeedbackItems(reviewPrFeedbackList, await invoke("github_list_feedback_for_current_draft"));
+  } catch (err) {
+    reviewPrFeedbackList.innerHTML = "";
+    reviewPrFeedbackListStatus.textContent = String(err);
+  }
+};
 
 // Same reasoning as reviewModeLink below - target="_blank" doesn't reliably
 // open the system browser from inside this app's webview.
@@ -208,11 +234,12 @@ const applyReviewModeUI = () => {
     reviewModeMessage.textContent = message + " Read only - editing is disabled.";
     reviewModeLink.href = reviewModeActive.url;
     reviewPrGithubLink.href = reviewModeActive.url;
-    reviewPrApproveStatus.textContent = "";
+    reviewPrApproveStatus.textContent = "Done reading and commenting?";
     reviewPrApprove.disabled = false;
     reviewPrFeedbackText.value = "";
     reviewPrFeedbackStatus.textContent = "";
     refreshReviewPrDiff().catch((err) => showError(err));
+    refreshReviewPrFeedback().catch((err) => showError(err));
     // Otherwise the header pill keeps showing whatever branch was current
     // before entering review mode until something else happens to call
     // refreshLocalDrafts (e.g. navigating to Drafts) - Sean: "the branch
@@ -234,7 +261,7 @@ reviewPrApprove.addEventListener("click", async () => {
     reviewPrApproveStatus.textContent = "Approved.";
   } catch (err) {
     reviewPrApprove.disabled = false;
-    reviewPrApproveStatus.textContent = "";
+    reviewPrApproveStatus.textContent = "Done reading and commenting?";
     showError(describeGitError(err));
   }
 });
@@ -367,6 +394,7 @@ const switchDraft = async (name) => {
     localDraftsStatus.textContent = `Switched to "${name}".`;
     await refreshLocalDrafts();
     refreshDraftFeedback();
+    refreshDraftPrState();
   } catch (err) {
     localDraftsStatus.textContent = "";
     showError(describeGitError(err));
@@ -472,6 +500,12 @@ document.getElementById("review-pr-feedback-submit").addEventListener("click", a
     await invoke("github_create_pr_comment", { prNumber: reviewModeActive.number, body });
     reviewPrFeedbackText.value = "";
     reviewPrFeedbackStatus.textContent = "Posted.";
+    // Refetch rather than optimistically appending - matches how Manage
+    // Tags already re-fetches its whole list after a change instead of
+    // patching the DOM, and avoids showing a comment that may not have
+    // actually posted (e.g. GitHub accepted it but something after this
+    // point still failed).
+    await refreshReviewPrFeedback();
   } catch (err) {
     reviewPrFeedbackStatus.textContent = "";
     showError(err);
@@ -584,6 +618,7 @@ document.addEventListener("beedance:page-changed", (e) => {
   if (e.detail.page !== "drafts") return;
   refreshLocalDrafts();
   refreshDraftFeedback();
+  refreshDraftPrState();
   reviewChangesCommitMsg.value = "";
   reviewChangesStatus.textContent = "";
   refreshReviewChanges().catch((err) => showError(err));
@@ -646,6 +681,7 @@ const createNewDraft = async () => {
     localDraftsStatus.textContent = "New draft created.";
     await refreshLocalDrafts();
     refreshDraftFeedback();
+    refreshDraftPrState();
   } catch (err) {
     localDraftsStatus.textContent = "";
     showError(err);
@@ -673,8 +709,54 @@ const reviewChangesCommitMsg = document.getElementById("review-changes-commit-ms
 // the Sync card instead of a message appearing in a different card than
 // the buttons that produced it.
 const reviewSyncStatus = document.getElementById("review-sync-status");
+const reviewSyncLink = document.getElementById("review-sync-pr-link");
+const reviewChangesPullButton = document.getElementById("review-changes-pull");
+const reviewChangesPushButton = document.getElementById("review-changes-push");
 let reviewChangesFiles = [];
 let reviewChangesSelected = null;
+
+// Same reasoning as reviewModeLink/reviewPrGithubLink - target="_blank"
+// doesn't reliably open the system browser from inside this app's webview.
+reviewSyncLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (reviewSyncLink.href && reviewSyncLink.href !== "#" && !reviewSyncLink.href.endsWith("/#")) {
+    window.__TAURI__.shell.open(reviewSyncLink.href);
+  }
+});
+
+// The Sync card's status is the current draft's actual PR state (none/
+// open/published/closed), not a one-time toast left over from the last
+// time Get latest/Send changes was clicked - pws-662d.2's "persistent,
+// not a one-time toast" ask. Reuses github_current_draft_pr_state, the
+// same open-PR-for-this-branch lookup pws-662d.6 needs for detecting a
+// publish that happened outside the app - one piece of state, shown here
+// and (once .6 lands) wherever else it matters, not two things to keep in
+// sync separately.
+const refreshDraftPrState = async () => {
+  try {
+    const state = await invoke("github_current_draft_pr_state");
+    reviewSyncStatus.classList.remove("status-success", "status-error");
+    if (state.status === "open") {
+      reviewSyncStatus.textContent = `Pull request #${state.number} is up for review.`;
+      reviewSyncStatus.classList.add("status-success");
+    } else if (state.status === "published") {
+      reviewSyncStatus.textContent = `Published - pull request #${state.number} was merged.`;
+      reviewSyncStatus.classList.add("status-success");
+    } else if (state.status === "closed") {
+      reviewSyncStatus.textContent = `Pull request #${state.number} was closed without merging.`;
+      reviewSyncStatus.classList.add("status-error");
+    } else {
+      reviewSyncStatus.textContent = "Not sent yet.";
+    }
+    reviewSyncLink.style.display = state.url ? "inline" : "none";
+    reviewSyncLink.href = state.url || "#";
+  } catch (err) {
+    reviewSyncStatus.classList.remove("status-success");
+    reviewSyncStatus.classList.add("status-error");
+    reviewSyncStatus.textContent = String(err);
+    reviewSyncLink.style.display = "none";
+  }
+};
 
 const REVIEW_STATUS_LABELS = {
   modified: "Modified",
@@ -799,7 +881,15 @@ document.getElementById("review-changes-commit").addEventListener("click", async
   }
 });
 
+// Disabled for the duration of their own operation - a correctness fix,
+// not just polish (prevents a double-submit mid-push/mid-pull), per
+// design's pws-662d.2 note. Both end by refreshing the persistent PR-state
+// display regardless of how they finished, rather than leaving behind a
+// stale one-time message.
 document.getElementById("review-changes-pull").addEventListener("click", async () => {
+  reviewChangesPullButton.disabled = true;
+  reviewChangesPushButton.disabled = true;
+  reviewSyncStatus.classList.remove("status-success", "status-error");
   reviewSyncStatus.textContent = "Getting the latest changes...";
   try {
     await invoke("git_pull");
@@ -808,33 +898,38 @@ document.getElementById("review-changes-pull").addEventListener("click", async (
     // Picks up anything the pull changed in the file currently open -
     // reload's own click handler is a no-op with nothing open.
     document.getElementById("reload").click();
-    reviewSyncStatus.textContent = "Up to date.";
   } catch (err) {
-    reviewSyncStatus.textContent = "";
     showError(describeGitError(err));
   }
+  await refreshDraftPrState();
+  reviewChangesPullButton.disabled = false;
+  reviewChangesPushButton.disabled = false;
 });
 
 document.getElementById("review-changes-push").addEventListener("click", async () => {
+  reviewChangesPullButton.disabled = true;
+  reviewChangesPushButton.disabled = true;
+  reviewSyncStatus.classList.remove("status-success", "status-error");
   reviewSyncStatus.textContent = "Sending changes...";
   try {
     await invoke("git_push");
     reviewSyncStatus.textContent = "Sent. Opening a pull request for review...";
     try {
       const branch = await invoke("current_branch");
-      const pr = await invoke("github_create_pull_request", { title: branch, body: "" });
-      reviewSyncStatus.textContent = `Sent. Pull request #${pr.number} is up for review.`;
+      await invoke("github_create_pull_request", { title: branch, body: "" });
     } catch (prErr) {
       // The branch itself sent fine - a PR is a separate, best-effort step
       // on top of that, most commonly missing because no personal access
       // token is configured yet (see github_create_pull_request's own
       // errors) - so this doesn't get treated as the push itself failing.
-      reviewSyncStatus.textContent = "Sent, but couldn't open a pull request: " + prErr;
+      showError("Sent, but couldn't open a pull request: " + prErr);
     }
   } catch (err) {
-    reviewSyncStatus.textContent = "";
     showError(describeGitError(err));
   }
+  await refreshDraftPrState();
+  reviewChangesPullButton.disabled = false;
+  reviewChangesPushButton.disabled = false;
 });
 
 // Someone switched branches from outside the app (a terminal `git
@@ -852,6 +947,7 @@ listen("branch-changed", async () => {
     if (fileSelect.value) await openTab(fileSelect.value);
     await refreshLocalDrafts();
     refreshDraftFeedback();
+    refreshDraftPrState();
     bannerMessage.textContent = "The checked-out branch changed outside the app - reloaded.";
     banner.style.display = "block";
   } catch (err) {
