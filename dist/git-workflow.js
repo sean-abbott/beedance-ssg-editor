@@ -39,6 +39,7 @@ const localDraftsStatus = document.getElementById("local-drafts-status");
 
 const draftFeedbackList = document.getElementById("draft-feedback-list");
 const draftFeedbackStatus = document.getElementById("draft-feedback-status");
+const draftPublishStatus = document.getElementById("draft-publish-status");
 
 // Same {author, file, body} shape, same component, in two places: the
 // Drafts page's "Feedback on this draft" card (pws-662d.4 - the author's
@@ -213,6 +214,7 @@ const REVIEW_MODE_DISABLED_IDS = [
   "new-page",
   "review-changes-commit",
   "review-changes-push",
+  "draft-publish-button",
   "local-drafts-new-confirm",
   "fmt-bold",
   "fmt-italic",
@@ -264,6 +266,12 @@ const applyReviewModeUI = () => {
     reviewPrApprove.disabled = false;
     reviewPrFeedbackText.value = "";
     reviewPrFeedbackStatus.textContent = "";
+    // Reset to the normal banner every time review mode is freshly entered
+    // - otherwise a PREVIOUS review session ending in the "published while
+    // reviewing" state would still be showing on the NEXT one, for an
+    // entirely different PR.
+    reviewPrBannerNormal.style.display = "flex";
+    reviewPrBannerPublished.style.display = "none";
     refreshReviewPrDiff().catch((err) => showError(err));
     refreshReviewPrFeedback().catch((err) => showError(err));
     // Otherwise the header pill keeps showing whatever branch was current
@@ -320,7 +328,27 @@ const updateBranchIndicator = (branches) => {
   headerDraftIndicator.classList.toggle("on-draft", !onLive);
 };
 
-const renderLocalDraftsList = (branches) => {
+// Unifies pws-662d.6's "Clean up this draft" (externally-published case)
+// with pws-662d.9's general "delete a stale draft I'm never going to
+// publish" - the same action (delete the local branch) either way, just
+// reached via the same kebab regardless of why. Confirm wording differs
+// depending on whether there's real unpublished work to lose.
+const deleteDraft = async (branchName, prState) => {
+  const published = prState && prState.status === "published";
+  const message = published
+    ? "Already published on GitHub - there's nothing left to publish from this draft. Deleting it just removes the local copy."
+    : "This draft was never published - it has changes that only exist here. Deleting it can't be undone.";
+  const proceed = await askConfirm("Delete this draft?", message, "Delete");
+  if (!proceed) return;
+  try {
+    await invoke("git_delete_local_branch", { branch: branchName });
+    await refreshLocalDrafts();
+  } catch (err) {
+    showError(err);
+  }
+};
+
+const renderLocalDraftsList = (branches, prStates) => {
   localDraftsList.innerHTML = "";
   for (const branch of branches) {
     const row = document.createElement("div");
@@ -329,13 +357,58 @@ const renderLocalDraftsList = (branches) => {
     const label = document.createElement("span");
     label.className = "review-row-path";
     label.textContent = branch.isLive ? `Live site (${branch.name})` : branch.name;
+    row.appendChild(label);
+
+    const prState = prStates.get(branch.name);
+    if (!branch.isCurrent && !branch.isLive && prState && prState.status === "published") {
+      const badge = document.createElement("span");
+      badge.className = "draft-external-badge";
+      badge.title = `Pull request #${prState.number} was already merged on GitHub - nothing left to publish from here.`;
+      badge.appendChild(makeIcon("check"));
+      badge.appendChild(document.createTextNode("Published"));
+      row.appendChild(badge);
+    }
+
     const status = document.createElement("span");
     status.className = "review-row-status";
     status.textContent = branch.isCurrent ? "current" : "";
-    row.appendChild(label);
     row.appendChild(status);
+
+    // Neither the draft you're actively on nor the live branch itself can
+    // be deleted (git.rs's own git_delete_local_branch refuses both too -
+    // this is just the UI not offering what the backend would reject).
+    if (!branch.isCurrent && !branch.isLive) {
+      const menu = document.createElement("div");
+      menu.className = "menu";
+      menu.style.marginLeft = "auto";
+      const kebab = document.createElement("button");
+      kebab.type = "button";
+      kebab.className = "secondary btn-icon";
+      kebab.title = "More actions";
+      kebab.appendChild(makeIcon("kebab"));
+      const dropdown = document.createElement("div");
+      dropdown.className = "menu-dropdown";
+      const deleteItem = document.createElement("button");
+      deleteItem.type = "button";
+      deleteItem.style.color = "var(--danger)";
+      deleteItem.appendChild(makeIcon("trash"));
+      deleteItem.appendChild(document.createTextNode("Delete this draft…"));
+      deleteItem.addEventListener("click", () => deleteDraft(branch.name, prState));
+      dropdown.appendChild(deleteItem);
+      menu.append(kebab, dropdown);
+      row.appendChild(menu);
+    }
+
     if (!branch.isCurrent) {
-      row.addEventListener("click", () => switchDraft(branch.name));
+      // The kebab's own click needs to reach menus.js's document-level
+      // delegated open/close handler unimpeded (stopPropagation here would
+      // block that too, not just this row's switchDraft) - bailing out
+      // early based on where the click actually landed is simpler than
+      // fighting over propagation with a handler several ancestors away.
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".menu")) return;
+        switchDraft(branch.name);
+      });
     }
     localDraftsList.appendChild(row);
   }
@@ -343,8 +416,16 @@ const renderLocalDraftsList = (branches) => {
 
 const refreshLocalDrafts = async () => {
   try {
-    const branches = await invoke("git_list_local_branches");
-    renderLocalDraftsList(branches);
+    const [branches, prStateList] = await Promise.all([
+      invoke("git_list_local_branches"),
+      // Best-effort - no remote/token configured yet is normal early on,
+      // and shouldn't block the draft list itself from rendering. An empty
+      // map just means every row falls back to the "real loss" delete
+      // wording, which is the safer default anyway.
+      invoke("github_list_draft_pr_states").catch(() => []),
+    ]);
+    const prStates = new Map(prStateList.map((s) => [s.branch, s]));
+    renderLocalDraftsList(branches, prStates);
     updateBranchIndicator(branches);
   } catch (err) {
     localDraftsStatus.textContent = "ERROR: " + err;
@@ -682,10 +763,38 @@ document.getElementById("drafts-page-reviews-link").addEventListener("click", (e
 
 document.addEventListener("beedance:page-changed", (e) => {
   if (e.detail.page !== "reviews") return;
-  // Only relevant in the "normal" (not actively reviewing) state - the list
-  // this loads is hidden while reviewModeActive anyway.
-  if (!reviewModeActive) updateReviewPrAvailability().catch((err) => showError(err));
+  if (!reviewModeActive) {
+    // Only relevant in the "normal" (not actively reviewing) state - the
+    // list this loads is hidden while reviewModeActive anyway.
+    updateReviewPrAvailability().catch((err) => showError(err));
+    return;
+  }
+  // Someone (Sean, as repo admin) may have published this exact draft
+  // directly on GitHub while it was open for review - checked here rather
+  // than polling, since revisiting the Reviews page while still reviewing
+  // is already the natural "catch me up" moment (pws-662d.6). current_branch
+  // during review mode IS the PR's own branch (that's what entering review
+  // mode checks out), so this is the same per-current-branch lookup the
+  // Drafts page's Sync card already uses, reused as-is.
+  checkReviewedPrStillOpen().catch((err) => showError(err));
 });
+
+// Swaps the amber "still reviewing" banner for a green "published while you
+// were reviewing it" notice - a live-session interrupt, not a permanent
+// list state (someone else's PR closing elsewhere just drops off the list
+// on next refresh instead, no lingering badge - a different case, see
+// updateReviewPrAvailability/renderPrList).
+const reviewPrBannerNormal = document.getElementById("review-pr-banner-normal");
+const reviewPrBannerPublished = document.getElementById("review-pr-banner-published");
+document.getElementById("review-pr-exit-review-published").addEventListener("click", exitReviewMode);
+
+const checkReviewedPrStillOpen = async () => {
+  const state = await invoke("github_current_draft_pr_state");
+  if (state.status === "published") {
+    reviewPrBannerNormal.style.display = "none";
+    reviewPrBannerPublished.style.display = "flex";
+  }
+};
 
 const reviewPrNoTokenNotice = document.getElementById("review-pr-no-token-notice");
 const reviewPrCard = document.getElementById("review-pr-card");
@@ -808,6 +917,36 @@ const refreshDraftPrState = async () => {
     reviewSyncLink.style.display = "none";
   }
 };
+
+// pws-662d.5 - the simple case only. Author-only and conflict-fallback are
+// both enforced server-side (github_publish_current_draft), not just by
+// this button being hidden from a reviewer - this handler just surfaces
+// whatever that command decides, success or not.
+document.getElementById("draft-publish-button").addEventListener("click", async () => {
+  const proceed = await askConfirm(
+    "Publish this draft?",
+    "Merge this draft into the live site? Anyone can see it there immediately afterward.",
+    "Publish"
+  );
+  if (!proceed) return;
+  const button = document.getElementById("draft-publish-button");
+  button.disabled = true;
+  draftPublishStatus.classList.remove("status-success", "status-error");
+  draftPublishStatus.textContent = "Publishing...";
+  try {
+    draftPublishStatus.textContent = await invoke("github_publish_current_draft");
+    draftPublishStatus.classList.add("status-success");
+    // The Sync card's own persistent state covers the same PR - keep both
+    // in sync immediately rather than leaving the Sync card saying "open"
+    // right next to this card saying "Published" until something else
+    // happens to refresh it.
+    await refreshDraftPrState();
+  } catch (err) {
+    draftPublishStatus.textContent = String(err);
+    draftPublishStatus.classList.add("status-error");
+  }
+  button.disabled = false;
+});
 
 const REVIEW_STATUS_LABELS = {
   modified: "Modified",

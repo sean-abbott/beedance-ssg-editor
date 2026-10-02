@@ -7,8 +7,15 @@
 //! unauthenticated too, subject to GitHub's low per-IP rate limit for
 //! anonymous requests; creating a PR or submitting a review is always a
 //! write and always requires a token - there's no anonymous fallback for
-//! those. Deliberately no merge action anywhere here - see
-//! github_approve_pull_request's own doc comment.
+//! those. A merge action does exist (github_publish_current_draft) -
+//! deliberately narrow, though: the simple/no-conflict case for your OWN
+//! draft only (author-checked against the token's own identity, not just
+//! hidden in the UI), with anything conflicted or complex still falling
+//! back to "Open on GitHub" rather than an in-app conflict-resolution
+//! flow. This reverses an earlier, more blanket "no merge action, full
+//! stop" call - Sean's own later ask (pws-662d.5): "a button to complete
+//! normal PRs would be good and the more complicated stuff could still
+//! link out to GH."
 
 use tauri::State;
 
@@ -171,7 +178,17 @@ pub fn github_list_open_prs(auth: State<GitAuthConfigState>) -> Result<Vec<PullR
 /// status (a 422 "PR already exists", a self-approval rejection) can inspect
 /// it themselves instead of getting a bare status code with the body thrown
 /// away.
-fn github_api_post(url: &str, token: &str, body: &impl serde::Serialize) -> Result<(u16, String), String> {
+// Takes the HTTP-method constructor itself (ureq::post, ureq::put, ...) -
+// every one of those returns the exact same RequestBuilder<WithBody> type,
+// so the rest of the request-building/response-reading is identical
+// regardless of verb. Added for github_publish_current_draft, which needs
+// PUT (GitHub's merge endpoint), not POST like everything else here.
+fn github_api_write(
+    make_request: fn(&str) -> ureq::RequestBuilder<ureq::typestate::WithBody>,
+    url: &str,
+    token: &str,
+    body: &impl serde::Serialize,
+) -> Result<(u16, String), String> {
     if token.is_empty() {
         return Err(
             "This needs a personal access token configured (Settings \u{2192} GitHub sync) - \
@@ -179,7 +196,7 @@ fn github_api_post(url: &str, token: &str, body: &impl serde::Serialize) -> Resu
                 .to_string(),
         );
     }
-    let mut response = ureq::post(url)
+    let mut response = make_request(url)
         .header("User-Agent", "beedance-ssg-editor")
         .header("Accept", "application/vnd.github+json")
         .header("Authorization", &format!("Bearer {token}"))
@@ -191,6 +208,13 @@ fn github_api_post(url: &str, token: &str, body: &impl serde::Serialize) -> Resu
     let status = response.status().as_u16();
     let text = response.body_mut().read_to_string().map_err(|e| e.to_string())?;
     Ok((status, text))
+}
+
+fn github_api_post(url: &str, token: &str, body: &impl serde::Serialize) -> Result<(u16, String), String> {
+    // ureq::post/put are generic (fn<T>(uri: T) -> ...) - a non-capturing
+    // closure coerces to the plain fn(&str) pointer github_api_write
+    // wants, but the bare generic fn item itself doesn't coerce directly.
+    github_api_write(|u: &str| ureq::post(u), url, token, body)
 }
 
 #[derive(serde::Serialize)]
@@ -263,11 +287,10 @@ struct SubmitReviewBody<'a> {
     event: &'a str,
 }
 
-/// Submits an "approve" review on an existing pull request. Deliberately no
-/// merge action anywhere in this app - actually merging is a materially
-/// bigger, harder-to-undo step than opening or approving a PR, and leaving
-/// the final merge click on GitHub's own web UI is an intentional safety
-/// boundary, not a missing feature.
+/// Submits an "approve" review on an existing pull request. See
+/// github_publish_current_draft for the one merge action this app does
+/// have - narrowly scoped (your own draft, simple case only), not a
+/// general conflict-resolution flow.
 #[tauri::command]
 pub fn github_approve_pull_request(pr_number: u32, auth: State<GitAuthConfigState>) -> Result<(), String> {
     let (owner, repo) = owner_repo_for_current_remote()?;
@@ -337,14 +360,25 @@ struct RawPullRequestState {
     // signal that distinguishes "closed because it was published" from
     // "closed without merging" (state alone can't tell those apart).
     merged_at: Option<String>,
+    head: RawHead,
+}
+
+// "none" | "open" | "published" | "closed" (closed without merging - rare,
+// but a real possibility, and reporting it as "none" would read as
+// "nothing was ever sent" when something was, then got closed).
+fn pr_status(state: &str, merged_at: &Option<String>) -> &'static str {
+    if merged_at.is_some() {
+        "published"
+    } else if state == "open" {
+        "open"
+    } else {
+        "closed"
+    }
 }
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftPrState {
-    // "none" | "open" | "published" | "closed" (closed without merging -
-    // rare, but a real possibility, and reporting it as "none" would read
-    // as "nothing was ever sent" when something was, then got closed).
     status: String,
     number: Option<u32>,
     url: Option<String>,
@@ -372,14 +406,124 @@ pub fn github_current_draft_pr_state(auth: State<GitAuthConfigState>) -> Result<
     let Some(pr) = prs.into_iter().next() else {
         return Ok(DraftPrState { status: "none".to_string(), number: None, url: None });
     };
-    let status = if pr.merged_at.is_some() {
-        "published"
-    } else if pr.state == "open" {
-        "open"
-    } else {
-        "closed"
-    };
+    let status = pr_status(&pr.state, &pr.merged_at);
     Ok(DraftPrState { status: status.to_string(), number: Some(pr.number), url: Some(pr.html_url) })
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrStateForBranch {
+    branch: String,
+    status: String,
+    number: u32,
+    url: String,
+}
+
+/// Every local draft's PR state in one shot (not one API call per branch) -
+/// pws-662d.6/.9's "detect a publish that happened outside the app" and
+/// "is there really unpublished work to lose before deleting this draft"
+/// both need this same per-branch lookup. Fetches every PR regardless of
+/// state (open/closed/merged) and keeps only the most recent one per head
+/// branch (GitHub's own sort=created,desc ordering, first-seen-per-branch
+/// wins) - a branch normally only ever has one PR across this app's own
+/// reuse-by-name checkout pattern, so this is almost always exact, not an
+/// approximation.
+#[tauri::command]
+pub fn github_list_draft_pr_states(auth: State<GitAuthConfigState>) -> Result<Vec<PrStateForBranch>, String> {
+    let (owner, repo) = owner_repo_for_current_remote()?;
+    let token = auth.0.lock().unwrap().token.clone();
+
+    let url =
+        format!("https://api.github.com/repos/{owner}/{repo}/pulls?state=all&per_page=100&sort=created&direction=desc");
+    let text = github_api_request(&url, &token)?;
+    let prs: Vec<RawPullRequestState> = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for pr in prs {
+        if !seen.insert(pr.head.ref_name.clone()) {
+            continue;
+        }
+        out.push(PrStateForBranch {
+            branch: pr.head.ref_name,
+            status: pr_status(&pr.state, &pr.merged_at).to_string(),
+            number: pr.number,
+            url: pr.html_url,
+        });
+    }
+    Ok(out)
+}
+
+#[derive(serde::Deserialize)]
+struct RawPullRequestForPublish {
+    number: u32,
+    user: RawUser,
+}
+
+#[derive(serde::Serialize)]
+struct MergePullRequestBody {
+    merge_method: &'static str,
+}
+
+/// Merges the current draft's own open PR into the live branch - pws-662d.5,
+/// the one merge action this app has (see this module's own header comment
+/// for why that's no longer "never"). Two things are enforced here, in the
+/// backend, not just left to the UI to hide: (1) author-only - the PR's
+/// actual author (from GitHub itself) must match the token's own identity,
+/// never trusting a client-supplied claim of "this is my draft"; (2) simple
+/// case only - a single PUT attempt at the merge, no retrying, no conflict
+/// resolution; GitHub rejecting it (409/405, almost always a conflict or an
+/// unsatisfied required check) just means falling back to "Open on GitHub",
+/// exactly per this feature's own scope.
+#[tauri::command]
+pub fn github_publish_current_draft(auth: State<GitAuthConfigState>) -> Result<String, String> {
+    let (owner, repo) = owner_repo_for_current_remote()?;
+    let branch = crate::git::current_branch()?;
+    let token = auth.0.lock().unwrap().token.clone();
+
+    if token.is_empty() {
+        return Err(
+            "Needs a personal access token with \"Pull requests\" read and write access \
+             (Settings \u{2192} GitHub sync) first."
+                .to_string(),
+        );
+    }
+
+    let pr_url = format!("https://api.github.com/repos/{owner}/{repo}/pulls?state=open&head={owner}:{branch}");
+    let pr_text = github_api_request(&pr_url, &token)?;
+    let prs: Vec<RawPullRequestForPublish> = serde_json::from_str(&pr_text).map_err(|e| e.to_string())?;
+    let Some(pr) = prs.into_iter().next() else {
+        return Err("No open pull request for this draft yet - send your changes first.".to_string());
+    };
+
+    let user_body = github_api_request("https://api.github.com/user", &token)?;
+    let me: RawUser = serde_json::from_str(&user_body).map_err(|e| e.to_string())?;
+    if !pr.user.login.eq_ignore_ascii_case(&me.login) {
+        return Err("This draft's pull request wasn't opened by you - only its author can publish it.".to_string());
+    }
+
+    let merge_url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{}/merge", pr.number);
+    let (status, text) =
+        github_api_write(|u: &str| ureq::put(u), &merge_url, &token, &MergePullRequestBody { merge_method: "merge" })?;
+
+    if status == 200 {
+        return Ok(format!("Published - pull request #{} was merged.", pr.number));
+    }
+    if status == 405 || status == 409 {
+        return Err(format!(
+            "Pull request #{} can't be merged automatically here (a conflict, or a required check \
+             hasn't passed) - use \"Open on GitHub\" to finish it there.",
+            pr.number
+        ));
+    }
+    if status == 401 || status == 403 {
+        return Err(
+            "GitHub rejected the configured personal access token - check it's still valid and \
+             has \"Pull requests\" write access to this repository (Settings \u{2192} GitHub sync)."
+                .to_string(),
+        );
+    }
+    Err(format!("GitHub couldn't merge the pull request ({status}): {text}"))
 }
 
 #[derive(serde::Deserialize)]

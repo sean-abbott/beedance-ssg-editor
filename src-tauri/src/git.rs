@@ -378,6 +378,29 @@ pub fn git_checkout_branch(branch: String, tracker: State<SelfWriteTracker>) -> 
     run_git(&site_dir(), &["checkout", &branch])
 }
 
+/// Deletes a local draft branch outright - pws-662d.9 ("we need a way to
+/// delete stale branches we're not gonna publish"), unified with pws-662d.6's
+/// "Clean up this draft" rather than two separate delete mechanisms. Force
+/// delete (-D, not -d) deliberately - a stale/never-published draft by
+/// definition has commits `-d` would refuse to drop without force, and the
+/// frontend's own confirm dialog is the actual safety gate here, not git's.
+/// Refuses the currently-checked-out branch and the live branch itself as a
+/// backstop - the frontend never offers either as deletable rows, but this
+/// guards the command directly rather than trusting that alone.
+#[tauri::command]
+pub fn git_delete_local_branch(branch: String) -> Result<(), String> {
+    ensure_site_repo()?;
+    let dir = site_dir();
+    if branch == current_branch()? {
+        return Err("Can't delete the draft you're currently on - switch to another one first.".to_string());
+    }
+    if guess_live_branch(&dir).as_deref() == Some(branch.as_str()) {
+        return Err("Can't delete the live branch.".to_string());
+    }
+    run_git(&dir, &["branch", "-D", &branch])?;
+    Ok(())
+}
+
 /// Fetches a branch that only exists on the remote so far and checks it out
 /// locally, (re)creating a local branch of the same name pointed at the
 /// remote's current tip - used for the "review someone else's pull request"

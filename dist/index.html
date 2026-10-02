@@ -688,6 +688,15 @@
         </div>
 
         <div class="card">
+          <div class="card-header"><h4>Publish this draft</h4></div>
+          <p class="card-description" id="draft-publish-description">Merges this draft into the live site. Only you can do this for your own drafts - someone reviewing it can only leave feedback, never publish it.</p>
+          <div id="draft-publish-status" class="status-line"></div>
+          <div class="card-footer" style="justify-content: flex-start;">
+            <button type="button" id="draft-publish-button" title="Merges this draft into the live site - only you can do this for your own drafts"><svg class="icon"><use href="#icon-external-link"/></svg>Publish to live site</button>
+          </div>
+        </div>
+
+        <div class="card">
           <div class="card-header"><h4>Review changes</h4></div>
           <p class="card-description">
             Everything changed since the last save point. Committing saves
@@ -726,11 +735,16 @@
       </div>
 
       <div id="review-pr-review-active" style="display: none;">
-        <div class="review-inline-banner">
+        <div class="review-inline-banner" id="review-pr-banner-normal">
           <svg class="icon"><use href="#icon-pull-request"/></svg>
           <span id="review-pr-review-active-message"></span>
           <a href="#" id="review-pr-github-link" rel="noopener" class="secondary" style="margin-left: auto; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit;">Open on GitHub</a>
           <button id="review-pr-exit-review-inline" class="secondary">Exit review</button>
+        </div>
+        <div class="review-published-notice" id="review-pr-banner-published" style="display: none;">
+          <svg class="icon" style="color: var(--success);"><use href="#icon-check"/></svg>
+          <span>This draft was published on GitHub while you were reviewing it.</span>
+          <button type="button" id="review-pr-exit-review-published" class="secondary" style="margin-left: auto;">Exit review</button>
         </div>
 
         <div class="card">

@@ -176,6 +176,42 @@
       margin: 0 0 var(--space-3);
       font-size: var(--text-sm);
     }
+    /* Swaps in for .review-inline-banner specifically when the draft being
+       actively reviewed turns out to have been published on GitHub in the
+       meantime (pws-662d.6) - a live-session interrupt, not a permanent
+       list state, so success/green (matching the "Published" badge
+       elsewhere) rather than another flavor of the amber "still reviewing"
+       banner it replaces. */
+    .review-published-notice {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      background: color-mix(in srgb, var(--success) 15%, var(--panel));
+      border: 1px solid color-mix(in srgb, var(--success) 40%, var(--border));
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      margin: 0 0 var(--space-3);
+      font-size: var(--text-sm);
+    }
+    /* A draft whose PR/GitHub state has moved on without the app's own
+       action - e.g. Sean, as repo admin, merging directly on GitHub - shown
+       distinctly so a stale Switch-to/Publish action is never offered for
+       something that's already resolved elsewhere (pws-662d.6). Success
+       green, matching the "Published" verb (same word as the Publish
+       action/its result, not "Merged"). */
+    .draft-external-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: var(--text-xs);
+      font-weight: 700;
+      color: var(--success);
+      background: color-mix(in srgb, var(--success) 15%, var(--panel));
+      border: 1px solid color-mix(in srgb, var(--success) 40%, var(--border));
+      border-radius: 999px;
+      padding: 2px 8px;
+      flex-shrink: 0;
+    }
     .feedback-item {
       padding: var(--space-2) var(--space-3);
       border-radius: var(--radius);
