@@ -26,6 +26,7 @@ import {
   describeGitError,
   formatUncheckpointedFilesMessage,
   showError,
+  wirePanelKeys,
 } from "./editor-core.js";
 import { makeIcon } from "./icons.js";
 import { showAppMainPage } from "./menus.js";
@@ -40,6 +41,28 @@ const localDraftsStatus = document.getElementById("local-drafts-status");
 const draftFeedbackList = document.getElementById("draft-feedback-list");
 const draftFeedbackStatus = document.getElementById("draft-feedback-status");
 const draftPublishStatus = document.getElementById("draft-publish-status");
+
+// pws-662d.7 - the Editor page's own escalated "you're on a draft" banner,
+// with the same Feedback/Review & checkpoint/Publish actions as the Drafts
+// page, reachable without navigating away mid-edit.
+const editorDraftBanner = document.getElementById("editor-draft-banner");
+const editorDraftBannerName = document.getElementById("editor-draft-banner-name");
+const editorFeedbackCountLabel = document.getElementById("editor-feedback-count-label");
+const editorBannerStatus = document.getElementById("editor-draft-banner-status");
+
+const editorFeedbackModal = document.getElementById("editor-feedback-modal");
+const editorFeedbackModalTitle = document.getElementById("editor-feedback-modal-title");
+const editorFeedbackList = document.getElementById("editor-feedback-list");
+const editorFeedbackStatus = document.getElementById("editor-feedback-status");
+
+const editorReviewModal = document.getElementById("editor-review-modal");
+const editorReviewModalTitle = document.getElementById("editor-review-modal-title");
+const editorReviewModalSlot = document.getElementById("editor-review-modal-slot");
+// Reparented in and back out again (same elements, same listeners) rather
+// than a second copy of the Review-changes card's markup/logic - see the
+// editor-review-open/-close handlers below.
+const reviewChangesBody = document.getElementById("review-changes-body");
+const reviewChangesBodyHome = reviewChangesBody.parentElement;
 
 // Same {author, file, body} shape, same component, in two places: the
 // Drafts page's "Feedback on this draft" card (pws-662d.4 - the author's
@@ -81,15 +104,59 @@ const renderFeedbackItems = (containerEl, comments) => {
 const refreshDraftFeedback = async () => {
   draftFeedbackStatus.textContent = "";
   try {
-    renderFeedbackItems(draftFeedbackList, await invoke("github_list_feedback_for_current_draft"));
+    const comments = await invoke("github_list_feedback_for_current_draft");
+    renderFeedbackItems(draftFeedbackList, comments);
+    // Same data backs the Editor banner's "Feedback (N)" count - updated
+    // here rather than a separate fetch, since this already runs on every
+    // trigger that could change it (switching/creating a draft, exiting
+    // review, etc.) via this function's own existing call sites.
+    editorFeedbackCountLabel.textContent = comments.length > 0 ? `Feedback (${comments.length})` : "Feedback";
   } catch (err) {
     // A brand new site with no remote configured yet is a normal, common
     // state here, not a failure worth an error popup over - quiet inline
     // text instead, same tone as the card's own "no feedback yet" case.
     draftFeedbackList.innerHTML = "";
     draftFeedbackStatus.textContent = String(err);
+    editorFeedbackCountLabel.textContent = "Feedback";
   }
 };
+
+// Opens the SAME feedback data in a modal from the Editor page's banner -
+// re-fetched fresh rather than trusting the banner badge's last count,
+// which could be stale by the time this is clicked.
+document.getElementById("editor-feedback-open").addEventListener("click", async () => {
+  editorFeedbackModalTitle.textContent = `Feedback — ${editorDraftBannerName.textContent}`;
+  editorFeedbackStatus.textContent = "";
+  editorFeedbackModal.style.display = "flex";
+  try {
+    renderFeedbackItems(editorFeedbackList, await invoke("github_list_feedback_for_current_draft"));
+  } catch (err) {
+    editorFeedbackList.innerHTML = "";
+    editorFeedbackStatus.textContent = String(err);
+  }
+});
+
+document.getElementById("editor-feedback-close").addEventListener("click", () => {
+  editorFeedbackModal.style.display = "none";
+});
+
+// Reparents review-changes-body (the Drafts page's actual list/diff/commit
+// elements) into the modal and back - one implementation of Review changes,
+// shown inline there and as a modal here, never two divergent copies.
+document.getElementById("editor-review-open").addEventListener("click", async () => {
+  editorReviewModalTitle.textContent = `Review changes — ${editorDraftBannerName.textContent}`;
+  editorReviewModalSlot.appendChild(reviewChangesBody);
+  editorReviewModal.style.display = "flex";
+  await refreshReviewChanges().catch((err) => showError(err));
+});
+
+document.getElementById("editor-review-close").addEventListener("click", () => {
+  reviewChangesBodyHome.appendChild(reviewChangesBody);
+  editorReviewModal.style.display = "none";
+});
+
+wirePanelKeys(editorFeedbackModal, null, "editor-feedback-close");
+wirePanelKeys(editorReviewModal, "review-changes-commit", "editor-review-close");
 
 // Nothing re-fetches this card on its own while you're already sitting on
 // an open Drafts page - the existing triggers (page-changed, switching/
@@ -317,6 +384,10 @@ const describeDrift = (drift) => {
 const updateBranchIndicator = (branches) => {
   if (reviewModeActive) {
     headerReviewIndicatorLabel.textContent = `Reviewing PR #${reviewModeActive.number}`;
+    // Review mode means read-only review of someone ELSE's draft, not
+    // editing your own - the Editor banner's actions (checkpoint, publish)
+    // don't apply, so it stays hidden the same way it does on "main".
+    editorDraftBanner.style.display = "none";
     return;
   }
   const current = branches.find((b) => b.isCurrent);
@@ -326,6 +397,14 @@ const updateBranchIndicator = (branches) => {
   const onLive = !current || current.isLive;
   headerDraftIndicatorLabel.textContent = current ? (current.isLive ? "main" : current.name) : "…";
   headerDraftIndicator.classList.toggle("on-draft", !onLive);
+
+  editorDraftBanner.style.display = onLive ? "none" : "flex";
+  if (!onLive) {
+    editorDraftBannerName.textContent = current.name;
+    editorBannerStatus.textContent = "";
+    editorBannerStatus.classList.remove("status-success", "status-error");
+    refreshDraftFeedback();
+  }
 };
 
 // Unifies pws-662d.6's "Clean up this draft" (externally-published case)
@@ -924,33 +1003,45 @@ const refreshDraftPrState = async () => {
 
 // pws-662d.5 - the simple case only. Author-only and conflict-fallback are
 // both enforced server-side (github_publish_current_draft), not just by
-// this button being hidden from a reviewer - this handler just surfaces
-// whatever that command decides, success or not.
-document.getElementById("draft-publish-button").addEventListener("click", async () => {
+// whichever button is hidden from a reviewer - this just surfaces whatever
+// that command decides, success or not. Shared by the Drafts page's own
+// Publish card, the Editor banner's Publish button, and the Feedback
+// modal's own Publish footer button (pws-662d.7) - one real action, three
+// entry points, not three separate implementations.
+const publishCurrentDraft = async (statusEl) => {
   const proceed = await askConfirm(
     "Publish this draft?",
     "Merge this draft into the live site? Anyone can see it there immediately afterward.",
     "Publish"
   );
   if (!proceed) return;
-  const button = document.getElementById("draft-publish-button");
-  button.disabled = true;
-  draftPublishStatus.classList.remove("status-success", "status-error");
-  draftPublishStatus.textContent = "Publishing...";
+  statusEl.classList.remove("status-success", "status-error");
+  statusEl.textContent = "Publishing...";
   try {
-    draftPublishStatus.textContent = await invoke("github_publish_current_draft");
-    draftPublishStatus.classList.add("status-success");
+    statusEl.textContent = await invoke("github_publish_current_draft");
+    statusEl.classList.add("status-success");
     // The Sync card's own persistent state covers the same PR - keep both
-    // in sync immediately rather than leaving the Sync card saying "open"
-    // right next to this card saying "Published" until something else
-    // happens to refresh it.
+    // in sync immediately rather than leaving it saying "open" right next
+    // to this saying "Published" until something else happens to refresh it.
     await refreshDraftPrState();
   } catch (err) {
-    draftPublishStatus.textContent = String(err);
-    draftPublishStatus.classList.add("status-error");
+    statusEl.textContent = String(err);
+    statusEl.classList.add("status-error");
   }
-  button.disabled = false;
-});
+};
+
+const wirePublishButton = (buttonId, statusEl) => {
+  const button = document.getElementById(buttonId);
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    await publishCurrentDraft(statusEl);
+    button.disabled = false;
+  });
+};
+
+wirePublishButton("draft-publish-button", draftPublishStatus);
+wirePublishButton("editor-publish-open", editorBannerStatus);
+wirePublishButton("editor-feedback-modal-publish", editorBannerStatus);
 
 const REVIEW_STATUS_LABELS = {
   modified: "Modified",

@@ -19,6 +19,7 @@ import {
   currentAuthorName,
   reviewModeActive,
   showError,
+  createSearchCombobox,
 } from "./editor-core.js";
 import { makeIcon } from "./icons.js";
 import { showAppMainPage } from "./menus.js";
@@ -251,26 +252,112 @@ const numberLines = () => {
   emitEdited();
 };
 
-// Wraps the selection as link text and leaves the placeholder URL
-// selected, so typing the real URL right after clicking just replaces it.
-const insertLink = () => {
-  const start = editorEl.selectionStart;
-  const end = editorEl.selectionEnd;
-  const value = editorEl.value;
-  const linkText = value.slice(start, end) || "link text";
-  const url = "https://";
+// pws-0ayq - one entry point ("Link") for both an internal page link and a
+// plain web address, rather than a second toolbar button, per design's
+// "keeps one discoverable entry point for insert a link" call. Opening the
+// panel moves focus away from the textarea, so the selection has to be
+// captured up front - everything below reads from this, never from
+// editorEl.selectionStart/End directly.
+const linkPanel = document.getElementById("link-panel");
+const linkPanelPageMode = document.getElementById("link-panel-page-mode");
+const linkPanelUrlMode = document.getElementById("link-panel-url-mode");
+const linkPanelPageSearch = document.getElementById("link-panel-page-search");
+const linkPanelPageSearchResults = document.getElementById("link-panel-page-search-results");
+const linkPanelUrlInput = document.getElementById("link-panel-url-input");
+const linkPanelConfirm = document.getElementById("link-panel-confirm");
+let linkSelectionStart = 0;
+let linkSelectionEnd = 0;
+let linkSelectedText = "";
+let linkableFileEntries = [];
 
-  editorEl.value = value.slice(0, start) + "[" + linkText + "](" + url + ")" + value.slice(end);
+// Inserts at the ORIGINAL selection (captured when the panel opened, not
+// wherever focus happens to be now), leaves the caret right after the
+// inserted markdown, and closes the panel.
+const insertLinkMarkdown = (linkText, target) => {
+  const value = editorEl.value;
+  const inserted = "[" + linkText + "](" + target + ")";
+  editorEl.value = value.slice(0, linkSelectionStart) + inserted + value.slice(linkSelectionEnd);
+  linkPanel.style.display = "none";
   editorEl.focus();
-  const urlStart = start + 1 + linkText.length + 2;
-  editorEl.setSelectionRange(urlStart, urlStart + url.length);
+  const caret = linkSelectionStart + inserted.length;
+  editorEl.setSelectionRange(caret, caret);
   emitEdited();
 };
+
+// EditableFile.path is site-relative INCLUDING the "content/" prefix (see
+// its own doc comment in site.rs); Zola's @/ link syntax is already
+// content-relative, so that prefix has to come off here or the built link
+// would 404 (Zola would look for content/content/...).
+const zolaLinkPath = (path) => "@/" + path.replace(/^content\//, "");
+
+const linkPagePicker = createSearchCombobox({
+  input: linkPanelPageSearch,
+  resultsEl: linkPanelPageSearchResults,
+  getEntries: () => linkableFileEntries,
+  onSelect: (entry) => {
+    insertLinkMarkdown(linkSelectedText || entry.title, zolaLinkPath(entry.path));
+  },
+});
+
+const setLinkPanelMode = (mode) => {
+  linkPanelMode.querySelectorAll("button[data-mode]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.mode === mode);
+  });
+  linkPanelPageMode.style.display = mode === "page" ? "block" : "none";
+  linkPanelUrlMode.style.display = mode === "url" ? "block" : "none";
+  linkPanelConfirm.disabled = mode !== "url";
+  if (mode === "page") {
+    linkPanelPageSearch.focus();
+  } else {
+    linkPanelUrlInput.focus();
+    linkPanelUrlInput.select();
+  }
+};
+
+const linkPanelMode = document.getElementById("link-panel-mode");
+linkPanelMode.querySelectorAll("button[data-mode]").forEach((btn) => {
+  btn.addEventListener("click", () => setLinkPanelMode(btn.dataset.mode));
+});
+
+const openLinkPanel = async () => {
+  linkSelectionStart = editorEl.selectionStart;
+  linkSelectionEnd = editorEl.selectionEnd;
+  linkSelectedText = editorEl.value.slice(linkSelectionStart, linkSelectionEnd);
+  linkPanelUrlInput.value = "https://";
+  linkPanel.style.display = "flex";
+  setLinkPanelMode("page");
+  try {
+    const files = await invoke("list_editable_files_detailed");
+    linkableFileEntries = files.map((f) => ({
+      label: `${f.label} (${f.group})`,
+      title: f.label,
+      path: f.path,
+      group: f.group,
+      isSectionIndex: f.isSectionIndex,
+    }));
+  } catch (err) {
+    linkableFileEntries = [];
+    showError(err);
+  }
+  linkPagePicker.syncDisplay();
+};
+
+document.getElementById("link-panel-cancel").addEventListener("click", () => {
+  linkPanel.style.display = "none";
+});
+
+linkPanelConfirm.addEventListener("click", () => {
+  if (linkPanelConfirm.disabled) return;
+  const url = linkPanelUrlInput.value.trim() || "https://";
+  insertLinkMarkdown(linkSelectedText || "link text", url);
+});
+
+wirePanelKeys(linkPanel, "link-panel-confirm", "link-panel-cancel");
 
 document.getElementById("fmt-bold").addEventListener("click", withActiveTab(() => wrapSelection("**", "**")));
 document.getElementById("fmt-italic").addEventListener("click", withActiveTab(() => wrapSelection("_", "_")));
 document.getElementById("fmt-code").addEventListener("click", withActiveTab(() => wrapSelection("`", "`")));
-document.getElementById("fmt-link").addEventListener("click", withActiveTab(insertLink));
+document.getElementById("fmt-link").addEventListener("click", withActiveTab(openLinkPanel));
 document.getElementById("fmt-h2").addEventListener("click", withActiveTab(() => prefixLines("## ")));
 document.getElementById("fmt-h3").addEventListener("click", withActiveTab(() => prefixLines("### ")));
 document.getElementById("fmt-quote").addEventListener("click", withActiveTab(() => prefixLines("> ")));

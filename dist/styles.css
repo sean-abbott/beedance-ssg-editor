@@ -161,6 +161,23 @@
     }
     .header-draft-indicator.on-review:hover { background: color-mix(in srgb, var(--warning) 85%, black); }
 
+    /* The Editor page's own escalated "you're on a draft" signal (pws-
+       662d.7) - accent-colored, deliberately NOT amber/warning, which stays
+       reserved for review-mode's distinct "read-only, someone else's work"
+       meaning (.review-inline-banner, right below). */
+    .draft-mode-banner {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      background: color-mix(in srgb, var(--accent) 15%, var(--panel));
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      margin: 0 0 var(--space-3);
+      font-size: var(--text-sm);
+    }
+    .draft-mode-banner button.secondary { background: transparent; }
+
     /* Review-mode chrome, inline on the Drafts page (not the top-level
        #review-mode-banner, which is the ambient "you're read-only right
        now" signal shown everywhere) - amber/warning is the same "read-only,

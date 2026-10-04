@@ -250,6 +250,41 @@
     </div>
   </div>
 
+  <!-- pws-662d.7 - Editor-page entry points for the same Feedback/Review/
+       Publish actions the Drafts page already has, reachable without
+       navigating away mid-edit. Feedback renders into its own list here
+       (renderFeedbackItems takes any target container); the Review &
+       checkpoint modal instead reparents review-changes-body itself (the
+       Drafts page's actual list/diff/commit elements) in and back out again,
+       so there is exactly one implementation of that feature, not two. -->
+  <div id="editor-feedback-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <svg class="icon" style="width:18px;height:18px;"><use href="#icon-pull-request"/></svg>
+        <h3 id="editor-feedback-modal-title">Feedback</h3>
+      </div>
+      <div class="modal-body">
+        <div id="editor-feedback-list"></div>
+        <div id="editor-feedback-status" class="status-line" style="margin-top: 8px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="editor-feedback-close" class="secondary">Close</button>
+        <button type="button" id="editor-feedback-modal-publish" title="Merges this draft into the live site - only you can do this for your own drafts"><svg class="icon"><use href="#icon-external-link"/></svg>Publish to live site</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="editor-review-modal" class="modal-overlay">
+    <div class="modal modal-xwide" style="max-height: 85vh;">
+      <div class="modal-header">
+        <svg class="icon" style="width:18px;height:18px;"><use href="#icon-doc"/></svg>
+        <h3 id="editor-review-modal-title">Review changes</h3>
+        <button type="button" id="editor-review-close" class="secondary btn-icon" title="Close"><svg class="icon"><use href="#icon-close"/></svg></button>
+      </div>
+      <div class="modal-body" id="editor-review-modal-slot"></div>
+    </div>
+  </div>
+
   <div id="tags-panel" class="modal-overlay">
     <div class="modal">
       <div class="modal-header"><h3>Tags</h3></div>
@@ -274,6 +309,42 @@
     </div>
   </div>
 
+  <!-- pws-0ayq - one entry point ("Link" toolbar button) for both an
+       internal page link and a plain web address, rather than a second
+       button. "Page on this site" reuses the same createSearchCombobox
+       already built for Open-file/site-menu's page picker. -->
+  <div id="link-panel" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header"><h3>Insert link</h3></div>
+      <div class="modal-body">
+        <span class="segmented" id="link-panel-mode">
+          <button type="button" class="active" data-mode="page">Page on this site</button>
+          <button type="button" data-mode="url">Web address</button>
+        </span>
+
+        <div id="link-panel-page-mode" style="margin-top: var(--space-3);">
+          <label>
+            Page:
+            <span style="position: relative; display: block;">
+              <input type="text" id="link-panel-page-search" placeholder="Type to search by title or path..." autocomplete="off" style="width: 100%;" />
+              <div id="link-panel-page-search-results" class="search-combobox-results"></div>
+            </span>
+          </label>
+        </div>
+
+        <div id="link-panel-url-mode" style="display: none; margin-top: var(--space-3);">
+          <label>
+            Web address:
+            <input type="text" id="link-panel-url-input" placeholder="https://" style="width: 100%;" />
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="link-panel-cancel" class="secondary">Cancel</button>
+        <button id="link-panel-confirm" disabled>Insert link</button>
+      </div>
+    </div>
+  </div>
 
   <div id="site-menu-create-panel" class="modal-overlay" style="z-index: 20;">
     <div class="modal">
@@ -377,6 +448,14 @@
 
     <div class="app-main">
     <div id="editor-page">
+    <div id="editor-draft-banner" class="draft-mode-banner" style="display: none;">
+      <svg class="icon"><use href="#icon-branch"/></svg>
+      <span>Editing draft: <strong id="editor-draft-banner-name"></strong></span>
+      <button type="button" id="editor-feedback-open" class="secondary" style="margin-left: auto;"><svg class="icon"><use href="#icon-pull-request"/></svg><span id="editor-feedback-count-label">Feedback</span></button>
+      <button type="button" id="editor-review-open" class="secondary"><svg class="icon"><use href="#icon-doc"/></svg>Review &amp; checkpoint&hellip;</button>
+      <button type="button" id="editor-publish-open" title="Merges this draft into the live site - only you can do this for your own drafts"><svg class="icon"><use href="#icon-external-link"/></svg>Publish to live site</button>
+      <span id="editor-draft-banner-status" class="status-line"></span>
+    </div>
     <div class="toolbar">
       <div class="menu" id="file-menu">
         <button class="secondary" title="File actions"><svg class="icon"><use href="#icon-doc"/></svg>File<svg class="icon" style="width:12px;height:12px;"><use href="#icon-chevron-down"/></svg></button>
@@ -388,7 +467,7 @@
           <button id="delete-content"><svg class="icon"><use href="#icon-trash"/></svg>Delete&hellip;</button>
           <div class="menu-divider"></div>
           <button id="reload"><svg class="icon"><use href="#icon-reload"/></svg>Reload from disk</button>
-          <button id="refresh-files" class="menu-item-muted" title="Rescan for template files (e.g. after just add-theme)"><svg class="icon"><use href="#icon-reload"/></svg>Rescan templates</button>
+          <button id="refresh-files" class="menu-item-muted" title="Rescan content/ for pages/posts added outside the app"><svg class="icon"><use href="#icon-reload"/></svg>Rescan files</button>
         </div>
       </div>
 
@@ -702,14 +781,20 @@
             Everything changed since the last checkpoint. Checkpointing saves
             this as a point you can always come back to.
           </p>
-          <div style="display: flex; gap: 12px; height: 280px;">
-            <div id="review-changes-list" style="width: 240px; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px;"></div>
-            <pre id="review-changes-diff" style="flex: 1; margin: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word; background: var(--panel);">Select a file to see its changes.</pre>
-          </div>
-          <div id="review-changes-status" class="status-line" style="margin-top: 8px;"></div>
-          <div class="card-footer">
-            <input type="text" id="review-changes-commit-msg" placeholder="Describe what changed" style="flex: 1;" />
-            <button id="review-changes-commit">Checkpoint</button>
+          <!-- review-changes-body is also opened (reparented, not copied -
+               same elements, same listeners) as a modal from the Editor
+               page's draft-mode-banner (pws-662d.7's "Review & checkpoint…"
+               button) and moved back here when that modal closes. -->
+          <div id="review-changes-body">
+            <div style="display: flex; gap: 12px; height: 280px;">
+              <div id="review-changes-list" style="width: 240px; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px;"></div>
+              <pre id="review-changes-diff" style="flex: 1; margin: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word; background: var(--panel);">Select a file to see its changes.</pre>
+            </div>
+            <div id="review-changes-status" class="status-line" style="margin-top: 8px;"></div>
+            <div class="card-footer">
+              <input type="text" id="review-changes-commit-msg" placeholder="Describe what changed" style="flex: 1;" />
+              <button id="review-changes-commit">Checkpoint</button>
+            </div>
           </div>
         </div>
 
