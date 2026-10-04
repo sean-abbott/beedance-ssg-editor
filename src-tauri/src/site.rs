@@ -209,16 +209,15 @@ pub fn collect_files_with_ext(dir: &Path, root: &Path, ext: &str, out: &mut Vec<
     }
 }
 
-/// Lists every .md file under content/ (every page/post in the site, however
-/// many there are), plus every .html template under the site's own templates/
-/// (if any) and any vendored theme's templates/ (themes/*/templates/), so the
-/// editor's file switcher covers a real multi-page site, not just one file.
 /// Every .html template under the site's own templates/ (if any) plus every
 /// vendored theme's templates/ (themes/*/templates/, whichever one is
 /// actually active or not - Zola lets a site override individual theme
 /// templates by name, so a hardcoded reference could live in either place).
-/// Shared by list_editable_files (the file switcher) and
-/// find_taxonomy_term_template_refs (content.rs's tag-rewrite safety check).
+/// Templates aren't editable in this app (pws-dbs.18 - content only; template/
+/// CSS/JS editing belongs in a dedicated tool like VS Code) - this exists
+/// purely for find_taxonomy_term_template_refs (content.rs's tag-rewrite
+/// safety check), which still needs to know what references a tag name even
+/// though the app itself can't open these files.
 pub fn collect_template_files() -> Vec<String> {
     let dir = site_dir();
     let mut files = Vec::new();
@@ -234,13 +233,14 @@ pub fn collect_template_files() -> Vec<String> {
     files
 }
 
+/// Every .md file under content/ (every page/post in the site, however many
+/// there are) - content only (pws-dbs.18), not templates/theme files.
 #[tauri::command]
 pub fn list_editable_files() -> Vec<String> {
     let dir = site_dir();
     let mut files = Vec::new();
 
     collect_files_with_ext(&dir.join(zola::CONTENT_DIR), &dir, zola::CONTENT_EXT, &mut files);
-    files.extend(collect_template_files());
 
     files.sort();
     files
@@ -294,10 +294,9 @@ fn read_tags(full: &Path) -> Vec<String> {
 
 /// Same files as list_editable_files, but with a friendly label (the page's
 /// own title, falling back to its filename) and a group (its section's
-/// title, or "Templates") for the file browser's "page titles" view, so
-/// browsing feels like the site's real structure instead of raw content/
-/// paths. Raw-path mode still uses list_editable_files directly; this is
-/// purely additive.
+/// title) for the file browser's "page titles" view, so browsing feels like
+/// the site's real structure instead of raw content/ paths. Raw-path mode
+/// still uses list_editable_files directly; this is purely additive.
 #[tauri::command]
 pub fn list_editable_files_detailed() -> Vec<EditableFile> {
     let dir = site_dir();
@@ -337,26 +336,6 @@ pub fn list_editable_files_detailed() -> Vec<EditableFile> {
             date: read_date(&full),
             is_blog_heading: section_is_blog_heading(&section_index),
             tags: if is_section_index { Vec::new() } else { read_tags(&full) },
-        });
-    }
-
-    let mut template_paths = Vec::new();
-    collect_files_with_ext(&dir.join(zola::TEMPLATES_DIR), &dir, zola::TEMPLATE_EXT, &mut template_paths);
-    if let Ok(entries) = std::fs::read_dir(dir.join(zola::THEMES_DIR)) {
-        for entry in entries.flatten() {
-            collect_files_with_ext(&entry.path().join(zola::TEMPLATES_DIR), &dir, zola::TEMPLATE_EXT, &mut template_paths);
-        }
-    }
-    template_paths.sort();
-    for rel in template_paths {
-        out.push(EditableFile {
-            label: rel.clone(),
-            path: rel,
-            group: "Templates".to_string(),
-            is_section_index: false,
-            date: None,
-            is_blog_heading: false,
-            tags: Vec::new(),
         });
     }
 

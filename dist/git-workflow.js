@@ -390,7 +390,11 @@ const renderLocalDraftsList = (branches, prStates) => {
       dropdown.className = "menu-dropdown";
       const deleteItem = document.createElement("button");
       deleteItem.type = "button";
-      deleteItem.style.color = "var(--danger)";
+      // Published: cleaning up something already safely merged, not a risky
+      // action - danger red would overstate the stakes. Unpublished: real,
+      // unrecoverable data loss, so it keeps the danger color.
+      const isPublished = prState && prState.status === "published";
+      deleteItem.style.color = isPublished ? "var(--success)" : "var(--danger)";
       deleteItem.appendChild(makeIcon("trash"));
       deleteItem.appendChild(document.createTextNode("Delete this draft…"));
       deleteItem.addEventListener("click", () => deleteDraft(branch.name, prState));
@@ -997,7 +1001,7 @@ const renderReviewChangesList = () => {
   if (reviewChangesFiles.length === 0) {
     const empty = document.createElement("div");
     empty.style.cssText = "font-size: 12px; color: var(--muted); padding: 6px;";
-    empty.textContent = "No changes since the last commit.";
+    empty.textContent = "No changes since the last checkpoint.";
     reviewChangesList.appendChild(empty);
     return;
   }
@@ -1059,11 +1063,11 @@ document.getElementById("review-changes-commit").addEventListener("click", async
     reviewChangesStatus.textContent = "Describe what changed first.";
     return;
   }
-  reviewChangesStatus.textContent = "Committing...";
+  reviewChangesStatus.textContent = "Checkpointing...";
   try {
     await invoke("git_commit", { message });
     reviewChangesCommitMsg.value = "";
-    reviewChangesStatus.textContent = "Committed.";
+    reviewChangesStatus.textContent = "Checkpointed.";
     await refreshReviewChanges();
   } catch (err) {
     reviewChangesStatus.textContent = "";

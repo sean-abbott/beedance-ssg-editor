@@ -313,7 +313,6 @@ let fileListMode = "titles";
 const fileListModeToggle = document.getElementById("file-list-mode-toggle");
 
 const GROUP_ORDER_FIRST = "Home";
-const GROUP_ORDER_LAST = "Templates";
 
 const populateFileSelectGrouped = (entries) => {
   const groups = new Map();
@@ -325,8 +324,6 @@ const populateFileSelectGrouped = (entries) => {
     if (a === b) return 0;
     if (a === GROUP_ORDER_FIRST) return -1;
     if (b === GROUP_ORDER_FIRST) return 1;
-    if (a === GROUP_ORDER_LAST) return 1;
-    if (b === GROUP_ORDER_LAST) return -1;
     return a.localeCompare(b);
   });
   for (const groupName of groupNames) {
@@ -964,7 +961,6 @@ export const switchToSiteDir = async (folder) => {
   for (const path of [...tabs.keys()]) closeTab(path);
 
   await invoke("zola_stop");
-  document.getElementById("phone-toggle").checked = false;
 
   const result = await invoke("set_site_dir", { path: folder });
   currentSiteDir = folder;

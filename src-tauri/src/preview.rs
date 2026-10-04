@@ -12,6 +12,7 @@ use tauri_plugin_shell::ShellExt;
 
 use crate::content::resolve_preview_path;
 use crate::site::site_dir;
+use crate::ui_settings::UiSettingsState;
 
 pub const PREVIEW_LABEL: &str = "preview";
 // "idiomatic average web page" desktop viewport, and a common phone reference size.
@@ -158,7 +159,7 @@ const PREVIEW_TOOLBAR_SCRIPT: &str = r#"
 /// in this window, including ones from clicking a link inside the site, not
 /// just app-driven ones) calls plain same-origin history/location APIs, no
 /// different from any ordinary browser tab.
-fn open_or_focus_preview_window(app: &tauri::AppHandle, target_path: Option<&str>, port: u16) -> Result<(), String> {
+fn open_or_focus_preview_window(app: &tauri::AppHandle, target_path: Option<&str>, port: u16, phone: bool) -> Result<(), String> {
     let target = target_path.unwrap_or("/");
     let separator = if target.contains('?') { "&" } else { "?" };
     // Cache-busting query param, same reasoning as this file's previous
@@ -182,9 +183,10 @@ fn open_or_focus_preview_window(app: &tauri::AppHandle, target_path: Option<&str
         return Ok(());
     }
 
+    let (w, h) = if phone { PHONE_PREVIEW_SIZE } else { DESKTOP_PREVIEW_SIZE };
     WebviewWindowBuilder::new(app, PREVIEW_LABEL, WebviewUrl::External(url))
         .title("Preview")
-        .inner_size(DESKTOP_PREVIEW_SIZE.0, DESKTOP_PREVIEW_SIZE.1)
+        .inner_size(w, h)
         .initialization_script(PREVIEW_TOOLBAR_SCRIPT)
         .build()
         .map_err(|e| e.to_string())?;
@@ -228,6 +230,7 @@ pub async fn zola_serve(
     state: tauri::State<'_, ServeState>,
     port_state: tauri::State<'_, PreviewPortState>,
     backlog: tauri::State<'_, LogBacklog>,
+    ui_settings: tauri::State<'_, UiSettingsState>,
     network: bool,
     current_content_path: Option<String>,
 ) -> Result<String, String> {
@@ -308,7 +311,8 @@ pub async fn zola_serve(
         ));
     }
     let target_path = current_content_path.and_then(resolve_preview_path);
-    open_or_focus_preview_window(&app, target_path.as_deref(), port)?;
+    let phone = ui_settings.0.lock().unwrap().phone_preview;
+    open_or_focus_preview_window(&app, target_path.as_deref(), port, phone)?;
 
     if network {
         let lan_ip = local_ip_address::local_ip().map_err(|e| e.to_string())?;
@@ -344,11 +348,27 @@ pub fn zola_stop(app: tauri::AppHandle, state: tauri::State<ServeState>) -> Resu
     }
 }
 
+/// Always persists the preference (pws-0i5h: a standing preference, not
+/// gated on whether a preview window happens to be open right now). If a
+/// preview window IS open, also resizes it live; otherwise the next window
+/// open (zola_serve's open_or_focus_preview_window) reads the saved
+/// preference and sizes itself accordingly.
 #[tauri::command]
-pub fn set_preview_phone_mode(app: tauri::AppHandle, phone: bool) -> Result<(), String> {
-    let win = app
-        .get_webview_window(PREVIEW_LABEL)
-        .ok_or_else(|| "preview window is not open".to_string())?;
-    let (w, h) = if phone { PHONE_PREVIEW_SIZE } else { DESKTOP_PREVIEW_SIZE };
-    win.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())
+pub fn set_preview_phone_mode(
+    app: tauri::AppHandle,
+    ui_settings: tauri::State<UiSettingsState>,
+    phone: bool,
+) -> Result<(), String> {
+    let snapshot = {
+        let mut current = ui_settings.0.lock().unwrap();
+        current.phone_preview = phone;
+        current.clone()
+    };
+    crate::ui_settings::persist_ui_settings(&snapshot)?;
+
+    if let Some(win) = app.get_webview_window(PREVIEW_LABEL) {
+        let (w, h) = if phone { PHONE_PREVIEW_SIZE } else { DESKTOP_PREVIEW_SIZE };
+        win.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

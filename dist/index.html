@@ -699,8 +699,8 @@
         <div class="card">
           <div class="card-header"><h4>Review changes</h4></div>
           <p class="card-description">
-            Everything changed since the last save point. Committing saves
-            this as a checkpoint you can always come back to.
+            Everything changed since the last checkpoint. Checkpointing saves
+            this as a point you can always come back to.
           </p>
           <div style="display: flex; gap: 12px; height: 280px;">
             <div id="review-changes-list" style="width: 240px; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px;"></div>
@@ -709,7 +709,7 @@
           <div id="review-changes-status" class="status-line" style="margin-top: 8px;"></div>
           <div class="card-footer">
             <input type="text" id="review-changes-commit-msg" placeholder="Describe what changed" style="flex: 1;" />
-            <button id="review-changes-commit">Commit</button>
+            <button id="review-changes-commit">Checkpoint</button>
           </div>
         </div>
 

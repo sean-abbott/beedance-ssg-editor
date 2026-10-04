@@ -567,8 +567,8 @@ const renderTagsPageList = () => {
       badge.className = "tag-manage-protected-badge";
       badge.title =
         `Referenced by name in ${tag.protectedBy.join(", ")} - Rename and Delete are disabled until that ` +
-        `template no longer needs this exact tag. You can edit that template directly (it's just a file, ` +
-        `in the Templates group of Open File) - this just won't rewrite it for you.`;
+        `template no longer needs this exact tag. Templates aren't editable in this app - open that file in ` +
+        `a code editor (e.g. VS Code) to change it; this just won't rewrite it for you.`;
       badge.appendChild(makeIcon("lock"));
       badge.appendChild(document.createTextNode("Required"));
       row.appendChild(badge);

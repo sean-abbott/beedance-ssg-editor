@@ -75,7 +75,6 @@ const stopPreview = async () => {
   try {
     await invoke("zola_stop");
     previewRunning = false;
-    document.getElementById("phone-toggle").checked = false;
   } catch (err) {
     status.textContent = "";
     showError(err);
@@ -97,6 +96,10 @@ networkServeToggle.addEventListener("change", async (e) => {
 document.getElementById("preview-start").addEventListener("click", startPreview);
 document.getElementById("preview-stop").addEventListener("click", stopPreview);
 
+// A standing preference (pws-0i5h), not gated on whether a preview window
+// happens to be open - the backend always persists it, and additionally
+// resizes an already-open window live if there is one. No reason for this
+// to ever fail in a way that needs reverting the checkbox.
 document.getElementById("phone-toggle").addEventListener("change", async (e) => {
   const status = document.getElementById("editor-status");
   try {
@@ -104,6 +107,11 @@ document.getElementById("phone-toggle").addEventListener("change", async (e) => 
   } catch (err) {
     status.textContent = "";
     showError(err);
-    e.target.checked = !e.target.checked;
   }
 });
+
+invoke("get_ui_settings")
+  .then((settings) => {
+    document.getElementById("phone-toggle").checked = !!settings.phonePreview;
+  })
+  .catch(() => {});

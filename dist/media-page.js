@@ -411,8 +411,8 @@ const render = () => {
       req.style.marginTop = "2px";
       req.title =
         `Referenced by name in ${img.templateRefs.join(", ")} - every page using that template needs this ` +
-        `exact image, not just one post. You can edit that template directly (it's just a file, in the ` +
-        `Templates group of Open File) - these actions just won't rewrite it for you.`;
+        `exact image, not just one post. Templates aren't editable in this app - open that file in a code ` +
+        `editor (e.g. VS Code) to change it; these actions just won't rewrite it for you.`;
       req.appendChild(makeIcon("lock"));
       req.appendChild(document.createTextNode("Required"));
       body.appendChild(req);
