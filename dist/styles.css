@@ -1133,7 +1133,11 @@
       letter-spacing: 0.03em;
       font-size: 10px;
       margin-bottom: 2px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
+    .frontmatter-other-label .icon-tooltip { cursor: help; }
     .frontmatter-raw {
       width: 100%;
       box-sizing: border-box;
@@ -1179,6 +1183,22 @@
       border-top-color: var(--text);
     }
     .icon-tooltip:hover .icon-tooltip-popup { display: block; }
+    /* Opens downward instead - the default upward popup gets clipped by
+       the editor panel's own overflow:hidden (there to clip the textarea's
+       square corners to the panel's rounded ones) when the icon sits near
+       the panel's top edge, which both frontmatter-box tooltips do. */
+    .icon-tooltip-popup.below {
+      bottom: auto;
+      top: 100%;
+      margin-bottom: 0;
+      margin-top: 8px;
+    }
+    .icon-tooltip-popup.below::after {
+      top: auto;
+      bottom: 100%;
+      border-top-color: transparent;
+      border-bottom-color: var(--text);
+    }
 
     /* First-use feature tour (pws-1nj3) - a transparent box with an
        enormous box-shadow, so everything BUT the box reads as dimmed,

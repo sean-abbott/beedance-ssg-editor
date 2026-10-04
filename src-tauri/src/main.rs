@@ -147,6 +147,8 @@ fn main() {
             site::set_site_dir,
             site::has_completed_onboarding,
             site::mark_onboarding_complete,
+            site::has_shown_tour,
+            site::mark_tour_shown,
             site::read_file,
             site::close_file,
             site::write_file,

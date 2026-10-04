@@ -118,6 +118,27 @@ pub fn mark_onboarding_complete() -> Result<(), String> {
     std::fs::write(dir.join(ONBOARDING_MARKER_FILE), "").map_err(|e| e.to_string())
 }
 
+const TOUR_SHOWN_MARKER_FILE: &str = "tour-shown";
+
+/// Whether the first-use feature tour (pws-1nj3) has ever auto-fired - same
+/// plain-marker-file pattern as onboarding, just a different file, and
+/// deliberately WITHOUT onboarding's own pre-existing-install bootstrapping
+/// (which treats an install with other config files already present as
+/// already onboarded). An install upgrading into the version that
+/// introduces this marker should still see the tour once, not be silently
+/// treated as having already seen it.
+#[tauri::command]
+pub fn has_shown_tour() -> bool {
+    config_dir().is_some_and(|dir| dir.join(TOUR_SHOWN_MARKER_FILE).exists())
+}
+
+#[tauri::command]
+pub fn mark_tour_shown() -> Result<(), String> {
+    let dir = config_dir().ok_or_else(|| "could not resolve a config directory for this platform".to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(TOUR_SHOWN_MARKER_FILE), "").map_err(|e| e.to_string())
+}
+
 /// Lets the frontend ask whether a content path is already a Zola bundle
 /// page/section (see zola::is_bundle_page) instead of hand-copying that
 /// convention in JS - a duplicated copy of exactly this check is what caused

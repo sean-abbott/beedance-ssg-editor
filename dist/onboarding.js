@@ -39,6 +39,10 @@ const finishOnboarding = async () => {
   } catch (err) {
     console.error("couldn't record onboarding completion:", err);
   }
+  // tour.js listens for this to auto-fire the feature tour right after
+  // setup finishes, not instead of/during it - on a pre-existing install
+  // (onboarding already complete, this never runs), it checks on its own.
+  document.dispatchEvent(new Event("beedance:onboarding-complete"));
 };
 
 const openSiteStep = () => {

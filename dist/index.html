@@ -547,14 +547,20 @@
             Frontmatter
             <span class="icon-tooltip">
               <svg class="icon" style="width:13px;height:13px;"><use href="#icon-info"/></svg>
-              <span class="icon-tooltip-popup">Frontmatter is the metadata at the top of a page — title, date, tags — kept separate here from the words you're writing.</span>
+              <span class="icon-tooltip-popup below">Frontmatter is the metadata at the top of a page — title, date, tags — kept separate here from the words you're writing.</span>
             </span>
           </span>
           <button type="button" id="frontmatter-edit-open" class="secondary btn-icon" title="Manually edit frontmatter"><svg class="icon"><use href="#icon-pencil"/></svg></button>
         </div>
         <div id="frontmatter-fields" class="frontmatter-fields"></div>
         <div id="frontmatter-other" class="frontmatter-other" style="display: none;">
-          <span class="frontmatter-other-label">Other fields (set by the theme, not individually editable here)</span>
+          <span class="frontmatter-other-label">
+            Other fields
+            <span class="icon-tooltip">
+              <svg class="icon" style="width:11px;height:11px;"><use href="#icon-info"/></svg>
+              <span class="icon-tooltip-popup below">Set by the theme, not individually editable here.</span>
+            </span>
+          </span>
           <div id="frontmatter-other-list"></div>
         </div>
       </div>
@@ -964,6 +970,18 @@
             already running.
           </p>
           <div id="lan-address" style="font-size: var(--text-sm); color: var(--muted);"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Feature tour</h4></div>
+          <label style="display: block; font-size: var(--text-base); margin-bottom: var(--space-2);">
+            <input type="checkbox" id="tour-auto-show-toggle" /> Show the tour automatically for new installs
+          </label>
+          <p class="card-description">
+            A short walkthrough of the sidebar, Preview, and the draft
+            indicator, shown once automatically. You can always take it
+            again from the (i) button in the header.
+          </p>
         </div>
 
         <div class="card">

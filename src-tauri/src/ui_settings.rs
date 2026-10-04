@@ -8,6 +8,10 @@ use std::sync::Mutex;
 
 use crate::site::config_dir;
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiSettings {
@@ -19,11 +23,17 @@ pub struct UiSettings {
     // window happens to be open right now (see set_preview_phone_mode).
     #[serde(default)]
     pub phone_preview: bool,
+    // Whether the first-use feature tour (pws-1nj3) is allowed to auto-fire
+    // once per install - defaults to true (missing from an existing config
+    // file, e.g. an install upgrading from before this setting existed,
+    // means "hasn't opted out yet", not "already said no").
+    #[serde(default = "default_true")]
+    pub tour_auto_show: bool,
 }
 
 impl Default for UiSettings {
     fn default() -> Self {
-        Self { theme: "bee".to_string(), phone_preview: false }
+        Self { theme: "bee".to_string(), phone_preview: false, tour_auto_show: true }
     }
 }
 
@@ -37,6 +47,7 @@ impl Default for UiSettings {
 pub struct UiSettingsPatch {
     theme: Option<String>,
     phone_preview: Option<bool>,
+    tour_auto_show: Option<bool>,
 }
 
 const UI_SETTINGS_FILE: &str = "ui-settings.json";
@@ -76,6 +87,9 @@ pub fn set_ui_settings(settings: UiSettingsPatch, state: tauri::State<UiSettings
         }
         if let Some(phone_preview) = settings.phone_preview {
             current.phone_preview = phone_preview;
+        }
+        if let Some(tour_auto_show) = settings.tour_auto_show {
+            current.tour_auto_show = tour_auto_show;
         }
         current.clone()
     };

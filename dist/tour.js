@@ -151,3 +151,47 @@ export const startTour = () => {
 };
 
 document.getElementById("take-tour-button").addEventListener("click", startTour);
+
+const { invoke } = window.__TAURI__.core;
+
+// Auto-fires once per install, after onboarding's own setup wizard finishes
+// (not instead of/during it) - gated on the Settings → This installation →
+// Feature tour checkbox (settings.js), and marked shown immediately so a
+// second launch never re-fires it even if something below throws.
+const maybeAutoShowTour = async () => {
+  try {
+    const [shown, settings] = await Promise.all([invoke("has_shown_tour"), invoke("get_ui_settings")]);
+    if (shown || !settings.tourAutoShow) return;
+    await invoke("mark_tour_shown");
+    startTour();
+  } catch (err) {
+    console.error("couldn't check whether to auto-show the tour:", err);
+  }
+};
+
+invoke("has_completed_onboarding").then((done) => {
+  if (done) {
+    maybeAutoShowTour();
+  } else {
+    // Brand new install - onboarding's welcome panel is about to show;
+    // wait for it to actually finish rather than firing underneath it.
+    document.addEventListener("beedance:onboarding-complete", maybeAutoShowTour, { once: true });
+  }
+});
+
+// Settings → This installation → Feature tour - the only control over
+// whether maybeAutoShowTour is allowed to fire at all. Doesn't affect the
+// manual "Take the tour" header button either way.
+const tourAutoShowToggle = document.getElementById("tour-auto-show-toggle");
+
+invoke("get_ui_settings").then((settings) => {
+  tourAutoShowToggle.checked = settings.tourAutoShow !== false;
+});
+
+tourAutoShowToggle.addEventListener("change", async () => {
+  try {
+    await invoke("set_ui_settings", { settings: { tourAutoShow: tourAutoShowToggle.checked } });
+  } catch (err) {
+    console.error("couldn't save the tour auto-show preference:", err);
+  }
+});
