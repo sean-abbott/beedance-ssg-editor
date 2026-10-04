@@ -18,23 +18,45 @@ no build tools or command line needed.
 ## About the security warning on first launch
 
 The first time you open it, macOS or Windows will likely show a warning -
-macOS says it's "from an unidentified developer"; Windows says "Windows
-protected your PC". Both mean the same thing: this app isn't signed with a
-paid developer certificate (Apple charges $99/year, Windows code-signing
-certificates cost money too), not that anything's actually wrong with it.
-Every unsigned app gets this same warning, regardless of whether it's
-trustworthy - it's not a judgment about this app specifically.
+macOS says it's "from an unidentified developer" (or won't offer to open it
+at all); Windows says "Windows protected your PC". Both mean the same thing:
+this app isn't signed with a paid developer certificate, not that anything's
+actually wrong with it. Every unsigned app gets this same warning, regardless
+of whether it's trustworthy - it's not a judgment about this app
+specifically.
 
-- **macOS**: right-click (or Control-click) the app in Applications and
-  choose "Open", then confirm in the dialog that appears. You only need to
-  do this once.
+Why it's unsigned: Apple's developer program is $99/year, and Windows
+code-signing certificates cost money too, recurring, indefinitely, for a free
+open-source tool maintained on no particular budget. On top of the cost,
+properly signing and notarizing a macOS build also effectively requires a
+Mac to set up and maintain that pipeline on - this project doesn't have one.
+Neither cost is worth it just to make a one-time warning disappear; the
+sections below exist instead so you can get past that warning (or verify the
+build yourself) without paying for either.
+
 - **Windows**: click "More info", then "Run anyway".
+- **macOS**: right-click (or Control-click) the app in Applications and
+  choose "Open", then confirm "Open" in the dialog that appears - you only
+  need to do this once. If right-clicking doesn't offer an "Open" option (or
+  nothing happens), open System Settings → Privacy & Security, scroll to the
+  Security section, and click "Open Anyway" next to the message about this
+  app, then confirm in the dialog that follows. If that still doesn't work,
+  the Terminal fallback is to clear the quarantine attribute Gatekeeper
+  checks directly:
+  ```
+  xattr -cr /Applications/beedance-ssg-editor.app
+  ```
+  (adjust the path if you installed it somewhere else), then open the app
+  normally.
 
-If you'd rather not take that on trust: this project is open source (see
-`LICENSE`), the release you downloaded was built directly from this
+If you'd rather not take any of that on trust: this project is open source
+(see `LICENSE`), the release you downloaded was built directly from this
 repository's own source by GitHub's public build servers (not hand-assembled
 and uploaded), and you're always free to build it yourself from source
-instead (see "Setup" below).
+instead (see "Setup" below) - or, if you do have a paid Apple developer
+account and want to sign/notarize your own build, see Tauri's own writeup on
+macOS code signing and notarization:
+[v2.tauri.app/distribute/sign/macos](https://v2.tauri.app/distribute/sign/macos/).
 
 # Setup
 
