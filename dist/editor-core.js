@@ -486,6 +486,148 @@ const updateStatusForActiveTab = () => {
 const externalContentBanner = document.getElementById("external-content-banner");
 const externalContentMessage = document.getElementById("external-content-message");
 
+// pws-dbs.19 - frontmatter lives in its own de-emphasized box above the
+// body textarea, not mixed into one uniformly-styled buffer. tab.content
+// stays the FULL file text (unchanged - still what write_file, undo, and
+// external-change-detection all key off); the frontmatter box and editorEl
+// (body only) are just two views DERIVED from splitting it apart, re-split
+// fresh on every render rather than cached, so there's exactly one source
+// of truth to keep consistent.
+const FRONTMATTER_RE = /^(\+\+\+|---)\r?\n([\s\S]*?)\r?\n\1\r?\n?/;
+
+// Lossless by construction: frontmatter + body === content always, since
+// frontmatter is a literal leading substring and body is exactly whatever
+// follows it.
+const splitFrontmatter = (content) => {
+  const match = content.match(FRONTMATTER_RE);
+  if (!match) return { frontmatter: "", body: content };
+  return { frontmatter: match[0], body: content.slice(match[0].length) };
+};
+
+const frontmatterBlockText = (frontmatterRaw) => {
+  const match = frontmatterRaw.match(FRONTMATTER_RE);
+  return match ? match[2] : "";
+};
+
+// Same simple line-based "key = value" / "key: value" convention as
+// frontmatter.rs's own front_matter_field (not a real TOML parser) - an
+// intentional match, not a shortcut: anything that convention can't parse
+// correctly, the Rust side can't either, so this isn't a new gap on top of
+// an existing one.
+const parseFrontmatterFields = (block) => {
+  const fields = new Map();
+  for (const rawLine of block.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    const colon = line.indexOf(":");
+    const sep = eq === -1 ? colon : colon === -1 ? eq : Math.min(eq, colon);
+    if (sep === -1) continue;
+    const key = line.slice(0, sep).trim();
+    const value = line.slice(sep + 1).trim();
+    if (key) fields.set(key, value);
+  }
+  return fields;
+};
+
+const cleanFrontmatterValue = (raw) => raw.trim().replace(/^["']|["']$/g, "");
+
+const formatFrontmatterTags = (raw) =>
+  raw
+    .trim()
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .split(",")
+    .map((s) => cleanFrontmatterValue(s))
+    .filter(Boolean)
+    .join(", ");
+
+const formatFrontmatterDate = (raw) => {
+  const cleaned = cleanFrontmatterValue(raw);
+  const d = new Date(cleaned);
+  if (Number.isNaN(d.getTime())) return cleaned;
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+};
+
+const frontmatterViewEl = document.getElementById("frontmatter-view");
+const frontmatterEditEl = document.getElementById("frontmatter-edit");
+const frontmatterFieldsEl = document.getElementById("frontmatter-fields");
+const frontmatterOtherEl = document.getElementById("frontmatter-other");
+const frontmatterOtherListEl = document.getElementById("frontmatter-other-list");
+const frontmatterRawEl = document.getElementById("frontmatter-raw");
+
+// [frontmatter key, display label, value formatter] - anything in the
+// block NOT listed here falls through to the plain key = value "Other
+// fields" list instead (pws-dbs.19's explicit answer to "what about fields
+// the app doesn't recognize but a theme does" - never hidden).
+const KNOWN_FRONTMATTER_FIELDS = [
+  ["title", "Title", cleanFrontmatterValue],
+  ["date", "Date", formatFrontmatterDate],
+  ["tags", "Tags", formatFrontmatterTags],
+];
+
+const renderFrontmatterFieldsAndExtras = (block) => {
+  const fields = parseFrontmatterFields(block);
+
+  frontmatterFieldsEl.innerHTML = "";
+  for (const [key, label, format] of KNOWN_FRONTMATTER_FIELDS) {
+    if (!fields.has(key)) continue;
+    const display = format(fields.get(key));
+    if (!display) continue;
+    const field = document.createElement("span");
+    field.className = "frontmatter-field";
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "frontmatter-field-label";
+    labelSpan.textContent = label;
+    field.appendChild(labelSpan);
+    field.appendChild(document.createTextNode(display));
+    frontmatterFieldsEl.appendChild(field);
+  }
+
+  const knownKeys = new Set(KNOWN_FRONTMATTER_FIELDS.map(([key]) => key));
+  frontmatterOtherListEl.innerHTML = "";
+  let hasExtras = false;
+  for (const [key, value] of fields) {
+    if (knownKeys.has(key)) continue;
+    hasExtras = true;
+    const line = document.createElement("span");
+    line.textContent = `${key} = ${value}`;
+    frontmatterOtherListEl.appendChild(line);
+  }
+  frontmatterOtherEl.style.display = hasExtras ? "flex" : "none";
+};
+
+// The one render entry point for the frontmatter box - called on every tab
+// switch, undo/redo jump, disk reload, and post-stamp resync, always from
+// scratch (never a partial update), so the view/edit boxes can never drift
+// from what tab.content actually holds.
+const renderFrontmatterBox = (tab) => {
+  const { frontmatter } = splitFrontmatter(tab.content);
+  if (!frontmatter) {
+    frontmatterViewEl.style.display = "none";
+    frontmatterEditEl.style.display = "none";
+    return;
+  }
+  renderFrontmatterFieldsAndExtras(frontmatterBlockText(frontmatter));
+  frontmatterRawEl.value = frontmatter;
+  frontmatterViewEl.style.display = tab.frontmatterEditing ? "none" : "block";
+  frontmatterEditEl.style.display = tab.frontmatterEditing ? "block" : "none";
+};
+
+document.getElementById("frontmatter-edit-open").addEventListener("click", () => {
+  if (!activeTab) return;
+  const tab = tabs.get(activeTab);
+  tab.frontmatterEditing = true;
+  renderFrontmatterBox(tab);
+});
+
+document.getElementById("frontmatter-edit-close").addEventListener("click", () => {
+  if (!activeTab) return;
+  const tab = tabs.get(activeTab);
+  tab.frontmatterEditing = false;
+  renderFrontmatterBox(tab);
+});
+
 // A page whose actual rendered content is driven by something other than
 // what's visibly in this buffer - a custom `template` override, or a
 // <script> tag pasted directly into the body. Just a heads-up, not a
@@ -519,7 +661,8 @@ const switchToTab = (path) => {
   const tab = tabs.get(path);
   if (!tab) return;
   activeTab = path;
-  editorEl.value = tab.content;
+  editorEl.value = splitFrontmatter(tab.content).body;
+  renderFrontmatterBox(tab);
   editorEl.disabled = false;
   updateStatusForActiveTab();
   renderTabBar();
@@ -554,6 +697,7 @@ export const openTab = async (path) => {
       undoStack: [],
       redoStack: [],
       lastUndoTime: null,
+      frontmatterEditing: false,
     });
     switchToTab(path);
   } catch (err) {
@@ -615,10 +759,20 @@ const doSave = async (path, content, { onError } = {}) => {
       if (tab.content === content) {
         tab.content = written;
         if (path === activeTab) {
-          const selStart = remapOffset(content, written, editorEl.selectionStart);
-          const selEnd = remapOffset(content, written, editorEl.selectionEnd);
-          editorEl.value = written;
+          // remapOffset now only ever needs to correct for a shift INSIDE
+          // the body - a frontmatter-only stamp (the common case) leaves
+          // the body substring byte-identical, so this is a no-op in
+          // practice, kept as a defensive fallback rather than relied on.
+          const { frontmatter: oldFm, body: oldBody } = splitFrontmatter(content);
+          const { frontmatter: newFm, body: newBody } = splitFrontmatter(written);
+          const selStart = remapOffset(oldBody, newBody, editorEl.selectionStart);
+          const selEnd = remapOffset(oldBody, newBody, editorEl.selectionEnd);
+          editorEl.value = newBody;
           editorEl.setSelectionRange(selStart, selEnd);
+          // Only re-render the frontmatter box if the stamp actually
+          // changed it - avoids clobbering an in-progress raw-edit for no
+          // reason on every single autosave tick.
+          if (newFm !== oldFm) renderFrontmatterBox(tab);
         }
       }
     }
@@ -726,11 +880,13 @@ const scheduleAutosave = (path, tab) => {
 const UNDO_COALESCE_MS = 700;
 const UNDO_MAX_DEPTH = 200;
 
-editorEl.addEventListener("input", () => {
-  if (!activeTab) return;
-  const tab = tabs.get(activeTab);
+// Shared by both editable surfaces (the body textarea and the frontmatter
+// raw-edit textarea, pws-dbs.19) - each just reassembles its own half plus
+// whatever the OTHER half currently is and hands the full result here,
+// so there is exactly one undo/dirty/autosave implementation regardless of
+// which box was actually typed in.
+const handleBufferEdit = (tab, newValue) => {
   const previousValue = tab.content;
-  const newValue = editorEl.value;
 
   if (previousValue !== newValue) {
     const now = Date.now();
@@ -753,17 +909,37 @@ editorEl.addEventListener("input", () => {
   updateStatusForActiveTab();
   renderTabBar();
   scheduleAutosave(activeTab, tab);
+};
+
+editorEl.addEventListener("input", () => {
+  if (!activeTab) return;
+  const tab = tabs.get(activeTab);
+  const { frontmatter } = splitFrontmatter(tab.content);
+  handleBufferEdit(tab, frontmatter + editorEl.value);
+});
+
+frontmatterRawEl.addEventListener("input", () => {
+  if (!activeTab) return;
+  const tab = tabs.get(activeTab);
+  const { body } = splitFrontmatter(tab.content);
+  handleBufferEdit(tab, frontmatterRawEl.value + body);
 });
 
 // Jumps straight to a stored buffer (used by undo/redo) without going
-// through the "input" listener above - it already changed editorEl.value
-// itself, so re-dispatching input would just push this jump back onto the
-// undo/redo stacks as if it were a fresh edit.
+// through the "input" listeners above - they already changed their own
+// textarea's value, so re-dispatching input would just push this jump back
+// onto the undo/redo stacks as if it were a fresh edit. Always resets to
+// frontmatter VIEW mode (not raw-edit) and re-splits from scratch - a
+// history entry could have been pushed by either textarea, so there's no
+// single "right" one to leave focused.
 const jumpToHistoryEntry = (tab, value) => {
   tab.lastUndoTime = null;
   tab.content = value;
-  editorEl.value = value;
-  editorEl.setSelectionRange(value.length, value.length);
+  const { body } = splitFrontmatter(value);
+  editorEl.value = body;
+  editorEl.setSelectionRange(body.length, body.length);
+  tab.frontmatterEditing = false;
+  renderFrontmatterBox(tab);
   tab.dirty = true;
   updateStatusForActiveTab();
   renderTabBar();
@@ -903,8 +1079,10 @@ export const reloadTabFromDisk = async (path) => {
   tab.undoStack.length = 0;
   tab.redoStack.length = 0;
   tab.lastUndoTime = null;
+  tab.frontmatterEditing = false;
   if (path === activeTab) {
-    editorEl.value = content;
+    editorEl.value = splitFrontmatter(content).body;
+    renderFrontmatterBox(tab);
     updateStatusForActiveTab();
     banner.style.display = "none";
   }

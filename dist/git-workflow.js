@@ -294,11 +294,13 @@ const REVIEW_MODE_DISABLED_IDS = [
   "fmt-ol",
   "fmt-image",
   "fmt-image-url",
+  "frontmatter-edit-open",
 ];
 
 const applyReviewModeUI = () => {
   const active = !!reviewModeActive;
   editorEl.readOnly = active;
+  document.getElementById("frontmatter-raw").readOnly = active;
   for (const id of REVIEW_MODE_DISABLED_IDS) {
     const el = document.getElementById(id);
     if (el) el.disabled = active;
