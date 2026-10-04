@@ -16,3 +16,4 @@ import "./pages-page.js";
 import "./media-page.js";
 import "./menus.js";
 import "./theme.js";
+import "./tour.js";
