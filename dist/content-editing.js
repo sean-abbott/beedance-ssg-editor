@@ -107,6 +107,11 @@ document.getElementById("new-content-confirm").addEventListener("click", async (
     await refreshFileList();
     setActiveFilePath(path);
     await openTab(path);
+    // pws-jkuo - creating new content should always end with you looking
+    // at it in the Editor, regardless of which panel (Pages, main toolbar)
+    // triggered creation - otherwise the new tab opens in the background
+    // with no visual cue it happened or where to find it.
+    showAppMainPage("editor");
   } catch (err) {
     newContentStatus.textContent = "";
     showError(err);

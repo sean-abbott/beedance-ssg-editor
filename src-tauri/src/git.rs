@@ -25,7 +25,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use tauri::State;
 
-use crate::site::{config_dir, site_dir, SelfWriteTracker};
+use crate::site::{config_dir, site_dir, OpenFiles, SelfWriteTracker};
 
 /// Records that THIS app is about to change which branch is checked out, so
 /// the content watcher (site.rs) can tell that apart from someone switching
@@ -35,6 +35,24 @@ use crate::site::{config_dir, site_dir, SelfWriteTracker};
 fn mark_head_self_write(tracker: &State<SelfWriteTracker>) {
     let head_path = site_dir().join(".git").join("HEAD");
     tracker.0.lock().unwrap().insert(head_path, Instant::now());
+}
+
+/// Also marks every currently-open file as a self-write, at the same moment
+/// as mark_head_self_write - a checkout can change, delete, or recreate
+/// arbitrary content files that have nothing to do with .git/HEAD, and the
+/// content watcher (site.rs) checks self-write per CONTENT path for those,
+/// not just HEAD. Without this, any file still open in a tab when the
+/// resulting filesystem events get processed reads as a genuine external
+/// edit (pws-2qke) - the watcher thread reacts to real filesystem events on
+/// its own independent OS thread, so it reliably wins the race against
+/// whatever tab-closing cleanup the frontend does only after this command's
+/// own IPC round-trip actually returns.
+fn mark_open_files_self_write(tracker: &State<SelfWriteTracker>, open_files: &State<OpenFiles>) {
+    let now = Instant::now();
+    let mut guard = tracker.0.lock().unwrap();
+    for path in open_files.0.lock().unwrap().iter() {
+        guard.insert(path.clone(), now);
+    }
 }
 
 fn run_git(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -226,7 +244,7 @@ pub fn git_diff_for_file(path: String) -> Result<String, String> {
 /// between those two calls) to surface as a clear error instead of building
 /// that out now.
 #[tauri::command]
-pub fn git_discard_file(path: String) -> Result<(), String> {
+pub fn git_discard_file(path: String, tracker: State<SelfWriteTracker>) -> Result<(), String> {
     ensure_site_repo()?;
     let dir = site_dir();
     let status = run_git(&dir, &["status", "--porcelain", "--", &path])?;
@@ -235,6 +253,12 @@ pub fn git_discard_file(path: String) -> Result<(), String> {
         return Ok(());
     }
     let code = &status[..2];
+    // Marked as a self-write before actually touching the file, same as
+    // write_file - this path may be open in a tab, and discarding it is an
+    // intentional in-app action, not an external edit the watcher should
+    // flag (pws-2qke's same root cause: the content watcher only knows
+    // self-writes it's told about).
+    tracker.0.lock().unwrap().insert(dir.join(&path), Instant::now());
     if code == "??" {
         return std::fs::remove_file(dir.join(&path)).map_err(|e| e.to_string());
     }
@@ -313,10 +337,11 @@ pub fn current_branch() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn start_draft(name: String, tracker: State<SelfWriteTracker>) -> Result<String, String> {
+pub fn start_draft(name: String, tracker: State<SelfWriteTracker>, open_files: State<OpenFiles>) -> Result<String, String> {
     ensure_site_repo()?;
     let branch = format!("draft/{}", slugify(&name));
     mark_head_self_write(&tracker);
+    mark_open_files_self_write(&tracker, &open_files);
     run_git(&site_dir(), &["checkout", "-b", &branch])?;
     Ok(format!("Switched to new branch '{}'", branch))
 }
@@ -372,9 +397,14 @@ pub fn git_list_local_branches() -> Result<Vec<LocalBranch>, String> {
 }
 
 #[tauri::command]
-pub fn git_checkout_branch(branch: String, tracker: State<SelfWriteTracker>) -> Result<String, String> {
+pub fn git_checkout_branch(
+    branch: String,
+    tracker: State<SelfWriteTracker>,
+    open_files: State<OpenFiles>,
+) -> Result<String, String> {
     ensure_site_repo()?;
     mark_head_self_write(&tracker);
+    mark_open_files_self_write(&tracker, &open_files);
     run_git(&site_dir(), &["checkout", &branch])
 }
 
@@ -413,6 +443,7 @@ pub fn git_delete_local_branch(branch: String) -> Result<(), String> {
 pub fn git_checkout_remote_branch(
     branch: String,
     tracker: State<SelfWriteTracker>,
+    open_files: State<OpenFiles>,
     auth: State<GitAuthConfigState>,
 ) -> Result<String, String> {
     ensure_site_repo()?;
@@ -421,6 +452,7 @@ pub fn git_checkout_remote_branch(
     let refspec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
     run_git_authed(&dir, &["fetch", "origin", &refspec], &cfg)?;
     mark_head_self_write(&tracker);
+    mark_open_files_self_write(&tracker, &open_files);
     let remote_ref = format!("origin/{branch}");
     run_git(&dir, &["checkout", "-B", &branch, &remote_ref])
 }
