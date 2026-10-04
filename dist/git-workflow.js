@@ -27,6 +27,7 @@ import {
   formatUncheckpointedFilesMessage,
   showError,
   wirePanelKeys,
+  activeTabFullContent,
 } from "./editor-core.js";
 import { makeIcon } from "./icons.js";
 import { showAppMainPage } from "./menus.js";
@@ -573,7 +574,7 @@ const switchDraft = async (name) => {
       cancelTabAutosave(activeTab);
       await invoke("write_file", {
         path: activeTab,
-        content: editorEl.value,
+        content: activeTabFullContent(),
         datetime: nowForZola(),
         author: currentAuthorName,
       });
@@ -774,7 +775,7 @@ const startReviewingPr = async (pr) => {
       cancelTabAutosave(activeTab);
       await invoke("write_file", {
         path: activeTab,
-        content: editorEl.value,
+        content: activeTabFullContent(),
         datetime: nowForZola(),
         author: currentAuthorName,
       });
@@ -917,7 +918,7 @@ const createNewDraft = async () => {
       cancelTabAutosave(activeTab);
       await invoke("write_file", {
         path: activeTab,
-        content: editorEl.value,
+        content: activeTabFullContent(),
         datetime: nowForZola(),
         author: currentAuthorName,
       });

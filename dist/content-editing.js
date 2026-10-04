@@ -20,6 +20,8 @@ import {
   reviewModeActive,
   showError,
   createSearchCombobox,
+  activeTabFullContent,
+  applyFullContentUpdate,
 } from "./editor-core.js";
 import { makeIcon } from "./icons.js";
 import { showAppMainPage } from "./menus.js";
@@ -144,7 +146,7 @@ document.getElementById("rename-content").addEventListener(
   withActiveTab(async () => {
     renamePanelStatus.textContent = "";
     try {
-      const title = await invoke("get_front_matter_title", { content: editorEl.value });
+      const title = await invoke("get_front_matter_title", { content: activeTabFullContent() });
       renamePanelOriginalTitle = title || "";
       renamePanelInput.value = renamePanelOriginalTitle;
     } catch (err) {
@@ -181,7 +183,7 @@ document.getElementById("rename-panel-confirm").addEventListener("click", async 
     // or they'd be silently discarded.
     await invoke("write_file", {
       path: oldPath,
-      content: editorEl.value,
+      content: activeTabFullContent(),
       datetime: nowForZola(),
       author: currentAuthorName,
     });
@@ -483,7 +485,7 @@ document.getElementById("fmt-date").addEventListener(
   withActiveTab(async () => {
     datePanelStatus.textContent = "";
     try {
-      const current = await invoke("get_front_matter_date", { content: editorEl.value });
+      const current = await invoke("get_front_matter_date", { content: activeTabFullContent() });
       fillDatePanel(zolaDateToParts(current));
     } catch (err) {
       datePanelStatus.textContent = "";
@@ -510,9 +512,8 @@ document.getElementById("date-panel-now").addEventListener("click", () => {
 document.getElementById("date-panel-clear").addEventListener("click", async () => {
   if (!activeTab) return;
   try {
-    const updated = await invoke("remove_front_matter_date", { content: editorEl.value });
-    editorEl.value = updated;
-    emitEdited();
+    const updated = await invoke("remove_front_matter_date", { content: activeTabFullContent() });
+    applyFullContentUpdate(updated);
     datePanel.style.display = "none";
   } catch (err) {
     datePanelStatus.textContent = "";
@@ -534,9 +535,8 @@ document.getElementById("date-panel-confirm").addEventListener("click", async ()
     `${String(datePanelYear.value).padStart(4, "0")}-${pad2(datePanelMonth.value)}-${pad2(datePanelDay.value)}` +
     `T${pad2(datePanelHour.value)}:${pad2(datePanelMinute.value)}:00`;
   try {
-    const updated = await invoke("set_front_matter_date", { content: editorEl.value, datetime });
-    editorEl.value = updated;
-    emitEdited();
+    const updated = await invoke("set_front_matter_date", { content: activeTabFullContent(), datetime });
+    applyFullContentUpdate(updated);
     datePanel.style.display = "none";
   } catch (err) {
     datePanelStatus.textContent = "";
@@ -598,7 +598,7 @@ document.getElementById("fmt-tags").addEventListener(
     tagsPanelStatus.textContent = "";
     try {
       const [current, allTags] = await Promise.all([
-        invoke("get_content_tags", { content: editorEl.value }),
+        invoke("get_content_tags", { content: activeTabFullContent() }),
         invoke("list_all_tags"),
       ]);
       tagsPanelTags = [...current];
@@ -637,9 +637,8 @@ document.getElementById("tags-panel-confirm").addEventListener("click", async ()
   // Enter/Add) shouldn't silently vanish on Save.
   addTagFromInput();
   try {
-    const updated = await invoke("set_content_tags", { content: editorEl.value, tags: tagsPanelTags });
-    editorEl.value = updated;
-    emitEdited();
+    const updated = await invoke("set_content_tags", { content: activeTabFullContent(), tags: tagsPanelTags });
+    applyFullContentUpdate(updated);
     tagsPanel.style.display = "none";
   } catch (err) {
     tagsPanelStatus.textContent = "";

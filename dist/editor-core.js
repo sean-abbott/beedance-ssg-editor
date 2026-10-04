@@ -504,6 +504,14 @@ const splitFrontmatter = (content) => {
   return { frontmatter: match[0], body: content.slice(match[0].length) };
 };
 
+// The FULL file content (frontmatter + body) for whatever's currently
+// active - every other module needs this, never editorEl.value alone, for
+// anything that round-trips through write_file or a frontmatter-reading
+// command (get/set_front_matter_date, get/set_content_tags, rename,
+// git_commit's own pre-checkout flush, etc.) - editorEl now only ever holds
+// the BODY half.
+export const activeTabFullContent = () => (activeTab ? tabs.get(activeTab)?.content ?? "" : "");
+
 const frontmatterBlockText = (frontmatterRaw) => {
   const match = frontmatterRaw.match(FRONTMATTER_RE);
   return match ? match[2] : "";
@@ -911,6 +919,21 @@ const handleBufferEdit = (tab, newValue) => {
   scheduleAutosave(activeTab, tab);
 };
 
+// Applies a brand new FULL file content that some command produced
+// server-side (set_front_matter_date, remove_front_matter_date,
+// set_content_tags - all pure string transforms, no disk write of their
+// own) - reuses the same undo/dirty/autosave machinery as a direct edit,
+// then re-renders BOTH the body and the frontmatter box from the result,
+// since these specifically change the frontmatter (title/date/tags are all
+// "known fields" the view shows), not the body.
+export const applyFullContentUpdate = (newContent) => {
+  if (!activeTab) return;
+  const tab = tabs.get(activeTab);
+  handleBufferEdit(tab, newContent);
+  editorEl.value = splitFrontmatter(newContent).body;
+  renderFrontmatterBox(tab);
+};
+
 editorEl.addEventListener("input", () => {
   if (!activeTab) return;
   const tab = tabs.get(activeTab);
@@ -1106,7 +1129,7 @@ fileSelect.addEventListener("change", () => openTab(fileSelect.value));
 document.getElementById("save").addEventListener("click", () => {
   if (!activeTab) return;
   cancelTabAutosave(activeTab);
-  doSave(activeTab, editorEl.value, { onError: showError });
+  doSave(activeTab, activeTabFullContent(), { onError: showError });
 });
 
 const siteDirEl = document.getElementById("site-dir");
