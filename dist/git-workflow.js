@@ -404,6 +404,10 @@ const updateBranchIndicator = (branches) => {
     editorBannerStatus.textContent = "";
     editorBannerStatus.classList.remove("status-success", "status-error");
     refreshDraftFeedback();
+    // Also keeps the Publish buttons' de-emphasized-while-uncheckpointed
+    // state current without requiring the Review & checkpoint modal to be
+    // opened first - see refreshReviewChanges/setPublishButtonsEmphasis.
+    refreshReviewChanges();
   }
 };
 
@@ -1001,6 +1005,40 @@ const refreshDraftPrState = async () => {
   }
 };
 
+const PUBLISH_BUTTON_IDS = ["draft-publish-button", "editor-publish-open", "editor-feedback-modal-publish"];
+
+// De-emphasized (swapped to the plain "secondary" style), not disabled -
+// Sean: publishing while there are uncheckpointed changes left behind is
+// a real, intentional thing someone might still want to do (the confirm
+// dialog below is the actual guard, this is just so the button doesn't
+// look like the obviously-right next step while work is still in
+// progress). Driven by refreshReviewChanges, the one place that already
+// fetches the current uncheckpointed-files list.
+const setPublishButtonsEmphasis = (hasUncheckpointedChanges) => {
+  for (const id of PUBLISH_BUTTON_IDS) {
+    document.getElementById(id).classList.toggle("secondary", hasUncheckpointedChanges);
+  }
+};
+
+// Same capped-list rendering as editor-core.js's formatUncheckpointedFilesMessage,
+// but a different tail - that one describes a BLOCKED action ("checkpoint
+// them, then try again"); this one describes publishing anyway, so saying
+// the same thing would misdescribe what happens if you proceed.
+const describeUnpublishedChanges = (changedFiles) => {
+  if (changedFiles.length === 0) {
+    return "Merge this draft into the live site? Anyone can see it there immediately afterward.";
+  }
+  const paths = changedFiles.map((f) => f.path);
+  const listed = paths.slice(0, 10).map((p) => `  - ${p}`).join("\n");
+  const overflow = paths.length > 10 ? `\n  ...and ${paths.length - 10} more` : "";
+  const plural = paths.length === 1 ? "has" : "have";
+  return (
+    `${paths.length} file${paths.length === 1 ? "" : "s"} ${plural} changes that haven't been checkpointed ` +
+    `yet:\n\n${listed}${overflow}\n\nThose won't be included - only what's already checkpointed gets ` +
+    `published. Merge the rest of this draft into the live site anyway?`
+  );
+};
+
 // pws-662d.5 - the simple case only. Author-only and conflict-fallback are
 // both enforced server-side (github_publish_current_draft), not just by
 // whichever button is hidden from a reviewer - this just surfaces whatever
@@ -1009,11 +1047,14 @@ const refreshDraftPrState = async () => {
 // modal's own Publish footer button (pws-662d.7) - one real action, three
 // entry points, not three separate implementations.
 const publishCurrentDraft = async (statusEl) => {
-  const proceed = await askConfirm(
-    "Publish this draft?",
-    "Merge this draft into the live site? Anyone can see it there immediately afterward.",
-    "Publish"
-  );
+  let changedFiles = [];
+  try {
+    changedFiles = await invoke("git_changed_files");
+  } catch {
+    // Best-effort - if this fails, fall back to the plain confirm below
+    // rather than blocking Publish entirely over a secondary check.
+  }
+  const proceed = await askConfirm("Publish this draft?", describeUnpublishedChanges(changedFiles), "Publish");
   if (!proceed) return;
   statusEl.classList.remove("status-success", "status-error");
   statusEl.textContent = "Publishing...";
@@ -1146,6 +1187,7 @@ const refreshReviewChanges = async () => {
     reviewChangesDiff.textContent = "Select a file to see its changes.";
   }
   renderReviewChangesList();
+  setPublishButtonsEmphasis(reviewChangesFiles.length > 0);
 };
 
 document.getElementById("review-changes-commit").addEventListener("click", async () => {

@@ -314,8 +314,8 @@
        button. "Page on this site" reuses the same createSearchCombobox
        already built for Open-file/site-menu's page picker. -->
   <div id="link-panel" class="modal-overlay">
-    <div class="modal">
-      <div class="modal-header"><h3>Insert link</h3></div>
+    <div class="modal modal-xwide">
+      <div class="modal-header"><h3 id="link-panel-title">Insert link</h3></div>
       <div class="modal-body">
         <span class="segmented" id="link-panel-mode">
           <button type="button" class="active" data-mode="page">Page on this site</button>
@@ -323,9 +323,9 @@
         </span>
 
         <div id="link-panel-page-mode" style="margin-top: var(--space-3);">
-          <label>
-            Page:
-            <span style="position: relative; display: block;">
+          <label class="field-label">
+            Page
+            <span style="position: relative; display: inline-block; width: 100%;">
               <input type="text" id="link-panel-page-search" placeholder="Type to search by title or path..." autocomplete="off" style="width: 100%;" />
               <div id="link-panel-page-search-results" class="search-combobox-results"></div>
             </span>
@@ -333,11 +333,16 @@
         </div>
 
         <div id="link-panel-url-mode" style="display: none; margin-top: var(--space-3);">
-          <label>
-            Web address:
+          <label class="field-label">
+            Web address
             <input type="text" id="link-panel-url-input" placeholder="https://" style="width: 100%;" />
           </label>
         </div>
+
+        <label class="field-label" style="margin-top: var(--space-3);">
+          Link text
+          <input type="text" id="link-panel-text-input" placeholder="link text" style="width: 100%;" />
+        </label>
       </div>
       <div class="modal-footer">
         <button id="link-panel-cancel" class="secondary">Cancel</button>

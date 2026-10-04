@@ -259,20 +259,24 @@ const numberLines = () => {
 // captured up front - everything below reads from this, never from
 // editorEl.selectionStart/End directly.
 const linkPanel = document.getElementById("link-panel");
+const linkPanelTitle = document.getElementById("link-panel-title");
 const linkPanelPageMode = document.getElementById("link-panel-page-mode");
 const linkPanelUrlMode = document.getElementById("link-panel-url-mode");
 const linkPanelPageSearch = document.getElementById("link-panel-page-search");
 const linkPanelPageSearchResults = document.getElementById("link-panel-page-search-results");
 const linkPanelUrlInput = document.getElementById("link-panel-url-input");
+const linkPanelTextInput = document.getElementById("link-panel-text-input");
 const linkPanelConfirm = document.getElementById("link-panel-confirm");
 let linkSelectionStart = 0;
 let linkSelectionEnd = 0;
-let linkSelectedText = "";
 let linkableFileEntries = [];
+let linkSelectedPageEntry = null;
+let currentLinkPanelMode = "page";
 
-// Inserts at the ORIGINAL selection (captured when the panel opened, not
-// wherever focus happens to be now), leaves the caret right after the
-// inserted markdown, and closes the panel.
+// Inserts/replaces at linkSelectionStart/End - either the original
+// selection (a brand new link) or an existing link's own full
+// `[text](target)` span (editing one in place, see findLinkAtCursor) -
+// leaves the caret right after it, and closes the panel.
 const insertLinkMarkdown = (linkText, target) => {
   const value = editorEl.value;
   const inserted = "[" + linkText + "](" + target + ")";
@@ -290,22 +294,49 @@ const insertLinkMarkdown = (linkText, target) => {
 // would 404 (Zola would look for content/content/...).
 const zolaLinkPath = (path) => "@/" + path.replace(/^content\//, "");
 
+// Finds a `[text](target)` markdown link whose span contains `pos` (the
+// caret, or the start of a selection) - used so clicking "Link" while
+// already inside one re-opens it for editing instead of inserting a new,
+// nested link right next to it.
+const LINK_MARKDOWN_RE = /\[([^\]]*)\]\(([^)]*)\)/g;
+const findLinkAtCursor = (value, pos) => {
+  LINK_MARKDOWN_RE.lastIndex = 0;
+  let match;
+  while ((match = LINK_MARKDOWN_RE.exec(value))) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (pos >= start && pos <= end) return { start, end, text: match[1], target: match[2] };
+  }
+  return null;
+};
+
+const updateLinkConfirmEnabled = () => {
+  linkPanelConfirm.disabled = currentLinkPanelMode === "page" && !linkSelectedPageEntry;
+};
+
 const linkPagePicker = createSearchCombobox({
   input: linkPanelPageSearch,
   resultsEl: linkPanelPageSearchResults,
   getEntries: () => linkableFileEntries,
   onSelect: (entry) => {
-    insertLinkMarkdown(linkSelectedText || entry.title, zolaLinkPath(entry.path));
+    linkSelectedPageEntry = entry;
+    // Only fills the text field when it's empty, so picking a page never
+    // clobbers a label already typed/kept from the original selection or
+    // an existing link being edited.
+    if (!linkPanelTextInput.value.trim()) linkPanelTextInput.value = entry.title;
+    updateLinkConfirmEnabled();
   },
+  getCurrentLabel: () => (linkSelectedPageEntry ? linkSelectedPageEntry.label : ""),
 });
 
 const setLinkPanelMode = (mode) => {
+  currentLinkPanelMode = mode;
   linkPanelMode.querySelectorAll("button[data-mode]").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.mode === mode);
   });
   linkPanelPageMode.style.display = mode === "page" ? "block" : "none";
   linkPanelUrlMode.style.display = mode === "url" ? "block" : "none";
-  linkPanelConfirm.disabled = mode !== "url";
+  updateLinkConfirmEnabled();
   if (mode === "page") {
     linkPanelPageSearch.focus();
   } else {
@@ -320,12 +351,30 @@ linkPanelMode.querySelectorAll("button[data-mode]").forEach((btn) => {
 });
 
 const openLinkPanel = async () => {
-  linkSelectionStart = editorEl.selectionStart;
-  linkSelectionEnd = editorEl.selectionEnd;
-  linkSelectedText = editorEl.value.slice(linkSelectionStart, linkSelectionEnd);
-  linkPanelUrlInput.value = "https://";
+  const pos = editorEl.selectionStart;
+  const existing = findLinkAtCursor(editorEl.value, pos);
+
+  linkSelectedPageEntry = null;
+  let pendingExistingTarget = null;
+  if (existing) {
+    linkSelectionStart = existing.start;
+    linkSelectionEnd = existing.end;
+    linkPanelTextInput.value = existing.text;
+    if (existing.target.startsWith("@/")) {
+      pendingExistingTarget = existing.target;
+    } else {
+      linkPanelUrlInput.value = existing.target;
+    }
+  } else {
+    linkSelectionStart = editorEl.selectionStart;
+    linkSelectionEnd = editorEl.selectionEnd;
+    linkPanelTextInput.value = editorEl.value.slice(linkSelectionStart, linkSelectionEnd);
+    linkPanelUrlInput.value = "https://";
+  }
+  linkPanelTitle.textContent = existing ? "Edit link" : "Insert link";
+  linkPanelConfirm.textContent = existing ? "Update link" : "Insert link";
+
   linkPanel.style.display = "flex";
-  setLinkPanelMode("page");
   try {
     const files = await invoke("list_editable_files_detailed");
     linkableFileEntries = files.map((f) => ({
@@ -339,6 +388,22 @@ const openLinkPanel = async () => {
     linkableFileEntries = [];
     showError(err);
   }
+
+  if (pendingExistingTarget) {
+    linkSelectedPageEntry = linkableFileEntries.find((e) => zolaLinkPath(e.path) === pendingExistingTarget) || null;
+    if (linkSelectedPageEntry) {
+      setLinkPanelMode("page");
+    } else {
+      // An @/ target that doesn't resolve to any current page (stale, or
+      // predates this feature) - fall back to Web address mode so editing
+      // the text still works rather than leaving Insert permanently
+      // disabled over an unresolvable page pick.
+      linkPanelUrlInput.value = pendingExistingTarget;
+      setLinkPanelMode("url");
+    }
+  } else {
+    setLinkPanelMode(existing ? "url" : "page");
+  }
   linkPagePicker.syncDisplay();
 };
 
@@ -348,8 +413,10 @@ document.getElementById("link-panel-cancel").addEventListener("click", () => {
 
 linkPanelConfirm.addEventListener("click", () => {
   if (linkPanelConfirm.disabled) return;
-  const url = linkPanelUrlInput.value.trim() || "https://";
-  insertLinkMarkdown(linkSelectedText || "link text", url);
+  const linkText = linkPanelTextInput.value.trim() || "link text";
+  const target =
+    currentLinkPanelMode === "page" ? zolaLinkPath(linkSelectedPageEntry.path) : linkPanelUrlInput.value.trim() || "https://";
+  insertLinkMarkdown(linkText, target);
 });
 
 wirePanelKeys(linkPanel, "link-panel-confirm", "link-panel-cancel");
