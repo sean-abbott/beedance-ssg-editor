@@ -580,6 +580,36 @@ pub fn list_all_tags() -> Vec<String> {
     tags
 }
 
+/// Every distinct name that's ever appeared in a page's extra.authors list
+/// (append_author's own accumulate-on-save field) anywhere on the site -
+/// pws-4g2n's auto-discovery for "does more than one person edit this
+/// site", same shape/dedup as list_all_tags, just targeting "authors"
+/// instead of "tags" (front_matter_field finds it regardless of the
+/// [extra] table it's actually nested under - same convention the
+/// frontmatter box's own known-fields list already relies on).
+#[tauri::command]
+pub fn list_all_authors() -> Vec<String> {
+    let dir = site_dir();
+    let mut content_paths = Vec::new();
+    collect_files_with_ext(&dir.join(zola::CONTENT_DIR), &dir, zola::CONTENT_EXT, &mut content_paths);
+    content_paths.sort();
+
+    let mut seen_lower = HashSet::new();
+    let mut authors = Vec::new();
+    for rel in content_paths {
+        let Ok(raw) = std::fs::read_to_string(dir.join(&rel)) else { continue };
+        let Some(block) = front_matter_block(&raw) else { continue };
+        let Some(raw_authors) = front_matter_field(block, "authors") else { continue };
+        for author in parse_toml_string_array(&raw_authors) {
+            if seen_lower.insert(author.to_lowercase()) {
+                authors.push(author);
+            }
+        }
+    }
+    authors.sort_by_key(|a| a.to_lowercase());
+    authors
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TagInfo {

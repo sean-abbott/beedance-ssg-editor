@@ -9,7 +9,7 @@
 // rather than tabs, since both matter enough to want visible at once
 // rather than picking one to hide.
 
-import { setCurrentAuthorName, setCurrentGithubUsername, showError } from "./editor-core.js";
+import { setCurrentAuthorName, setCurrentGithubUsername, showError, askConfirm } from "./editor-core.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -33,6 +33,12 @@ const r2AccountId = document.getElementById("r2-account-id");
 const r2AccessKeyId = document.getElementById("r2-access-key-id");
 const r2SecretAccessKey = document.getElementById("r2-secret-access-key");
 const r2PersonalSettingsStatus = document.getElementById("r2-personal-settings-status");
+
+const gitCollabMultipleEditorsToggle = document.getElementById("git-collab-multiple-editors-toggle");
+const gitCollabDetectedAuthors = document.getElementById("git-collab-detected-authors");
+const gitCollabStatus = document.getElementById("git-collab-status");
+const branchProtectionLink = document.getElementById("branch-protection-link");
+const branchProtectionAutoButton = document.getElementById("branch-protection-auto-button");
 
 const gitRemoteUrlInput = document.getElementById("git-remote-url");
 const gitTokenInput = document.getElementById("git-token");
@@ -153,6 +159,32 @@ document.getElementById("open-settings").addEventListener("click", async () => {
   } catch (err) {
     gitAuthSettingsStatus.textContent = "Couldn't load GitHub sync settings: " + err;
   }
+
+  gitCollabStatus.textContent = "";
+  try {
+    const collab = await invoke("get_git_collab_config");
+    gitCollabMultipleEditorsToggle.checked = collab.multipleEditors;
+  } catch (err) {
+    gitCollabStatus.textContent = "Couldn't load collaboration settings: " + err;
+  }
+  try {
+    const authors = await invoke("list_all_authors");
+    gitCollabDetectedAuthors.textContent =
+      authors.length > 1
+        ? `Detected ${authors.length} authors across this site's pages: ${authors.join(", ")} - treated as multi-editor automatically.`
+        : authors.length === 1
+          ? `Only one name detected so far (${authors[0]}) - not yet treated as multi-editor automatically.`
+          : "No authors detected yet in this site's pages.";
+  } catch (err) {
+    gitCollabDetectedAuthors.textContent = "Couldn't check detected authors: " + err;
+  }
+  try {
+    branchProtectionLink.href = await invoke("github_branch_protection_settings_url");
+  } catch {
+    // No remote configured yet, or not a github.com repo - leave the link
+    // as "#"; clicking it then just does nothing rather than erroring,
+    // same as every other GitHub-dependent control before sync is set up.
+  }
 });
 
 document.getElementById("save-author-settings").addEventListener("click", async () => {
@@ -210,6 +242,60 @@ document.getElementById("save-r2-site-settings").addEventListener("click", async
     r2SiteDirty.markDirty();
     showError(err);
   }
+});
+
+// pws-4g2n - a single boolean, auto-saves on change (same pattern as
+// tour.js's own auto-show toggle) rather than needing a separate Save
+// button for just one checkbox. Site-level (shared, committed) - a team
+// collaboration policy, not a personal preference.
+gitCollabMultipleEditorsToggle.addEventListener("change", async () => {
+  try {
+    await invoke("set_git_collab_config", { settings: { multipleEditors: gitCollabMultipleEditorsToggle.checked } });
+    gitCollabStatus.textContent = "";
+  } catch (err) {
+    gitCollabMultipleEditorsToggle.checked = !gitCollabMultipleEditorsToggle.checked;
+    showError(err);
+  }
+});
+
+// Same reasoning as reviewSyncLink/reviewModeLink - target="_blank" doesn't
+// reliably open the system browser from inside this app's webview.
+branchProtectionLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (branchProtectionLink.href && branchProtectionLink.href !== "#" && !branchProtectionLink.href.endsWith("/#")) {
+    window.__TAURI__.shell.open(branchProtectionLink.href);
+  }
+});
+
+// pws-4g2n - the "automatic" half: attempts the real GitHub API write
+// directly rather than trying to predict in advance whether the configured
+// token has Administration access (no reliable way to check that without
+// performing the write itself - see github_enable_branch_protection's own
+// doc comment). A clear confirm dialog up front, and a clear error (with
+// the manual link as the fallback) if the token doesn't have access.
+branchProtectionAutoButton.addEventListener("click", async () => {
+  const proceed = await askConfirm(
+    "Set up branch protection?",
+    "This will require a pull request with at least one approving review before anything can merge to the live " +
+      "branch on GitHub - for everyone, not just this installation. You (as a repo admin) can still push directly " +
+      "in an emergency. Needs a token with Administration access to this repository.",
+    "Set it up"
+  );
+  if (!proceed) return;
+  branchProtectionAutoButton.disabled = true;
+  gitCollabStatus.classList.remove("status-success", "status-error");
+  gitCollabStatus.textContent = "Setting up branch protection...";
+  try {
+    const drift = await invoke("git_check_main_drift");
+    if (!drift.liveBranch) throw new Error("No live-site branch detected yet - set up GitHub sync first.");
+    await invoke("github_enable_branch_protection", { branch: drift.liveBranch });
+    gitCollabStatus.textContent = "Branch protection is set up.";
+    gitCollabStatus.classList.add("status-success");
+  } catch (err) {
+    gitCollabStatus.textContent = String(err);
+    gitCollabStatus.classList.add("status-error");
+  }
+  branchProtectionAutoButton.disabled = false;
 });
 
 document.getElementById("save-r2-personal-settings").addEventListener("click", async () => {

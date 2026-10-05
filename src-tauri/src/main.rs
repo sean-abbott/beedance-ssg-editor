@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod collab;
 mod content;
 mod frontmatter;
 mod git;
@@ -18,6 +19,7 @@ use std::sync::Mutex;
 
 use tauri::Manager;
 
+use collab::GitCollabConfigState;
 use content::AuthorSettingsState;
 use git::GitAuthConfigState;
 use images::TierSettingsState;
@@ -62,6 +64,7 @@ fn main() {
         .manage(WatcherState(Mutex::new(None)))
         .manage(TierSettingsState(Mutex::new(images::load_tier_settings())))
         .manage(R2SiteConfigState(Mutex::new(r2::load_r2_site_config())))
+        .manage(GitCollabConfigState(Mutex::new(collab::load_git_collab_config())))
         .manage(R2PersonalConfigState(Mutex::new(r2::load_r2_personal_config())))
         .manage(AuthorSettingsState(Mutex::new(content::load_author_settings())))
         .manage(UiSettingsState(Mutex::new(ui_settings::load_ui_settings())))
@@ -103,6 +106,10 @@ fn main() {
             github::github_current_draft_pr_state,
             github::github_publish_current_draft,
             github::github_list_draft_pr_states,
+            github::github_branch_protection_settings_url,
+            github::github_enable_branch_protection,
+            collab::get_git_collab_config,
+            collab::set_git_collab_config,
             preview::zola_serve,
             preview::zola_stop,
             preview::open_log_window,
@@ -121,6 +128,7 @@ fn main() {
             content::get_front_matter_title,
             content::detect_external_content,
             content::list_all_tags,
+            content::list_all_authors,
             content::list_all_tags_with_counts,
             content::get_content_tags,
             content::set_content_tags,

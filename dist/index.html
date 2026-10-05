@@ -241,6 +241,26 @@
     </div>
   </div>
 
+  <!-- pws-4g2n - a real 3-way choice, not a funnel toward drafting only: the
+       warning's job is "make sure you meant to," not blocking a deliberate
+       call to save straight to the live site. -->
+  <div id="live-save-warning-panel" class="modal-overlay" style="z-index: 25;">
+    <div class="modal">
+      <div class="modal-header"><h3 id="live-save-warning-title">Save directly to the live site?</h3></div>
+      <div class="modal-body">
+        <p style="margin: 0;">
+          You're saving directly to the live site. If others also edit this site, consider
+          starting a draft instead.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button id="live-save-warning-cancel" class="secondary">Cancel</button>
+        <button id="live-save-warning-draft" class="secondary">Start a draft</button>
+        <button id="live-save-warning-anyway">Send anyway</button>
+      </div>
+    </div>
+  </div>
+
   <div id="error-panel" class="modal-overlay" style="z-index: 30;">
     <div class="modal modal-wide" style="max-height: 80vh;">
       <div class="modal-header"><h3 style="color: var(--danger);">Something went wrong</h3></div>
@@ -1146,6 +1166,34 @@
             <span id="r2-site-settings-status" class="status-line"></span>
             <button id="save-r2-site-settings" class="secondary">Save bucket settings</button>
           </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Protecting the live site</h4></div>
+          <p class="card-description">
+            Nothing local-only can actually stop someone from pushing straight to the
+            live branch with raw git, bypassing drafts and review entirely - the only
+            real protection is a rule GitHub itself enforces. If more than one person
+            edits this site, set up a branch-protection rule requiring a pull request
+            before merging to the live branch.
+          </p>
+          <p class="card-description" id="git-collab-detected-authors">Checking who's edited this site so far&hellip;</p>
+          <label style="display: block; font-size: var(--text-base); margin-bottom: var(--space-2);">
+            <input type="checkbox" id="git-collab-multiple-editors-toggle" /> Also treat this as multi-editor manually
+          </label>
+          <p class="card-description">
+            Detected automatically above once more than one name has saved a page here -
+            check this to turn the reminder on before that happens, or if detection
+            doesn't fit how this site is actually edited. Either way, checkpointing or
+            sending changes while directly on the live branch shows a reminder to start
+            a draft instead - a nudge, not a block, since this app can't prevent a
+            direct git push on its own.
+          </p>
+          <div class="card-footer" style="justify-content: flex-start;">
+            <a href="#" id="branch-protection-link" rel="noopener">Open branch protection settings on GitHub</a>
+            <button type="button" id="branch-protection-auto-button" class="secondary">Set up automatically&hellip;</button>
+          </div>
+          <div id="git-collab-status" class="status-line" style="margin-top: 8px;"></div>
         </div>
       </div>
     </div>

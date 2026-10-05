@@ -12,6 +12,7 @@ use tauri::{Emitter, Manager};
 
 use crate::frontmatter::{front_matter_block, front_matter_field, parse_toml_string_array};
 use crate::images::{self, TierSettingsState};
+use crate::collab::{self, GitCollabConfigState};
 use crate::r2::{self, R2SiteConfigState};
 use crate::zola;
 
@@ -162,6 +163,7 @@ pub fn set_site_dir(
     tracker: tauri::State<SelfWriteTracker>,
     tier_settings: tauri::State<TierSettingsState>,
     r2_site_config: tauri::State<R2SiteConfigState>,
+    git_collab_config: tauri::State<GitCollabConfigState>,
 ) -> Result<String, String> {
     if std::env::var("BEEDANCE_SITE_DIR").is_ok() {
         return Err("BEEDANCE_SITE_DIR env var is set and overrides this - unset it to use the site switcher".to_string());
@@ -190,11 +192,13 @@ pub fn set_site_dir(
     open_files.0.lock().unwrap().clear();
     tracker.0.lock().unwrap().clear();
 
-    // TierSettings/R2SiteConfig are SITE config (site_config_dir(), which
-    // moved along with site_dir() above) - reload them for the new site
-    // instead of leaving the previous site's values cached in memory.
+    // TierSettings/R2SiteConfig/GitCollabConfig are all SITE config
+    // (site_config_dir(), which moved along with site_dir() above) - reload
+    // them for the new site instead of leaving the previous site's values
+    // cached in memory.
     *tier_settings.0.lock().unwrap() = images::load_tier_settings();
     *r2_site_config.0.lock().unwrap() = r2::load_r2_site_config();
+    *git_collab_config.0.lock().unwrap() = collab::load_git_collab_config();
 
     let mut message = new_dir.to_string_lossy().to_string();
     if !zola::looks_like_site(&new_dir) {

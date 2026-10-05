@@ -384,6 +384,8 @@ const describeDrift = (drift) => {
   return `Live site (${drift.liveBranch}): ${parts.join(" and ")} the remote.`;
 };
 
+let isOnLiveBranch = false;
+
 const updateBranchIndicator = (branches) => {
   if (reviewModeActive) {
     headerReviewIndicatorLabel.textContent = `Reviewing PR #${reviewModeActive.number}`;
@@ -398,6 +400,11 @@ const updateBranchIndicator = (branches) => {
   // for anything else, per Sean's repeated ask for the current draft to be
   // "more visually obvious" when it's NOT main.
   const onLive = !current || current.isLive;
+  // Cached at module scope (pws-4g2n) so the checkpoint/push handlers can
+  // check "am I on the live branch right now" without their own round-trip -
+  // this already runs on every branch-affecting action, so it's never stale
+  // by more than that.
+  isOnLiveBranch = onLive;
   headerDraftIndicatorLabel.textContent = current ? (current.isLive ? "main" : current.name) : "…";
   headerDraftIndicator.classList.toggle("on-draft", !onLive);
 
@@ -1193,10 +1200,66 @@ const refreshReviewChanges = async () => {
   setPublishButtonsEmphasis(reviewChangesFiles.length > 0);
 };
 
+// pws-4g2n's soft, in-app half - a reminder, not a block (nothing local-only
+// can actually stop a direct git push, see github_enable_branch_protection
+// for the real enforcement). Only fires when BOTH are true: the site has
+// declared it has more than one editor (Settings → This site), and this is
+// actually the live branch right now - a solo editor, or anyone on a
+// draft, never sees this.
+// A real 3-way choice ("make sure you meant to," not a funnel toward
+// drafting only) - "cancel"/"draft"/"anyway", not a plain boolean, since
+// Sean's own revision explicitly rejected blocking a deliberate call to
+// save straight to the live site.
+const liveSaveWarningPanel = document.getElementById("live-save-warning-panel");
+const liveSaveWarningTitle = document.getElementById("live-save-warning-title");
+let liveSaveWarningResolve = null;
+
+const askLiveSaveWarning = (actionLabel) =>
+  new Promise((resolve) => {
+    liveSaveWarningTitle.textContent = `${actionLabel} directly to the live site?`;
+    liveSaveWarningResolve = resolve;
+    liveSaveWarningPanel.style.display = "flex";
+  });
+
+const closeLiveSaveWarning = (outcome) => {
+  liveSaveWarningPanel.style.display = "none";
+  if (liveSaveWarningResolve) liveSaveWarningResolve(outcome);
+  liveSaveWarningResolve = null;
+};
+
+document.getElementById("live-save-warning-cancel").addEventListener("click", () => closeLiveSaveWarning("cancel"));
+document.getElementById("live-save-warning-draft").addEventListener("click", () => closeLiveSaveWarning("draft"));
+document.getElementById("live-save-warning-anyway").addEventListener("click", () => closeLiveSaveWarning("anyway"));
+wirePanelKeys(liveSaveWarningPanel, "live-save-warning-anyway", "live-save-warning-cancel");
+
+// Returns "anyway" (proceed, same as if this check didn't exist), "draft"
+// (go start one instead, abort the original action), or "cancel" (abort,
+// do nothing) - only ever asks when BOTH on the live branch right now AND
+// the site's been flagged (manually or auto-detected via list_all_authors,
+// pws-4g2n) as having more than one editor.
+const confirmIfSavingDirectlyToLive = async (actionLabel) => {
+  if (!isOnLiveBranch) return "anyway";
+  let multipleEditors = false;
+  try {
+    const [collab, authors] = await Promise.all([invoke("get_git_collab_config"), invoke("list_all_authors")]);
+    multipleEditors = collab.multipleEditors || authors.length > 1;
+  } catch {
+    return "anyway"; // Best-effort - never block the real action over this check failing.
+  }
+  if (!multipleEditors) return "anyway";
+  return askLiveSaveWarning(actionLabel);
+};
+
 document.getElementById("review-changes-commit").addEventListener("click", async () => {
   const message = reviewChangesCommitMsg.value.trim();
   if (!message) {
     reviewChangesStatus.textContent = "Describe what changed first.";
+    return;
+  }
+  const liveSaveOutcome = await confirmIfSavingDirectlyToLive("Checkpoint");
+  if (liveSaveOutcome === "cancel") return;
+  if (liveSaveOutcome === "draft") {
+    showAppMainPage("drafts");
     return;
   }
   reviewChangesStatus.textContent = "Checkpointing...";
@@ -1237,6 +1300,12 @@ document.getElementById("review-changes-pull").addEventListener("click", async (
 });
 
 document.getElementById("review-changes-push").addEventListener("click", async () => {
+  const liveSaveOutcome = await confirmIfSavingDirectlyToLive("Send changes");
+  if (liveSaveOutcome === "cancel") return;
+  if (liveSaveOutcome === "draft") {
+    showAppMainPage("drafts");
+    return;
+  }
   reviewChangesPullButton.disabled = true;
   reviewChangesPushButton.disabled = true;
   reviewSyncStatus.classList.remove("status-success", "status-error");

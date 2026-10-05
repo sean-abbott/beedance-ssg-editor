@@ -59,6 +59,22 @@ export function describeGitError(rawError) {
   if (/could not resolve host/i.test(text)) {
     return "Couldn't reach GitHub - check the internet connection on this machine.\n\nRaw error: " + text;
   }
+  // GitHub's own wording for a branch-protection rejection (pws-4g2n's
+  // layer 1) - verified against real GitHub output, not guessed: "GH006:
+  // Protected branch update failed" / "(protected branch hook declined)",
+  // usually with the specific violated rule on the line above (e.g.
+  // "Changes must be made through a pull request"). Nothing was actually
+  // lost here - the checkpoint/commit already happened locally, only the
+  // push itself was refused - so this points at starting a draft with
+  // what's already there, not redoing any work.
+  if (/GH006: Protected branch update failed/i.test(text) || /protected branch hook declined/i.test(text)) {
+    return (
+      "This site only allows changes through a draft and pull request, not a direct push to the live site - " +
+      "someone set this up to keep things safer with more than one person editing. Nothing was lost: start a " +
+      "draft with these changes instead (Drafts → New draft), then checkpoint and send changes from there." +
+      "\n\nRaw error: " + text
+    );
+  }
   // Switching drafts/reviewing/pulling all move the checked-out tree to a
   // different commit - git refuses outright if that would silently discard
   // a file's on-disk changes that were never committed. "Committed" isn't

@@ -526,6 +526,91 @@ pub fn github_publish_current_draft(auth: State<GitAuthConfigState>) -> Result<S
     Err(format!("GitHub couldn't merge the pull request ({status}): {text}"))
 }
 
+/// The only link-out this needs - owner/repo are already known from the
+/// configured remote, so the frontend doesn't have to duplicate
+/// parse_owner_repo just to build this one URL.
+#[tauri::command]
+pub fn github_branch_protection_settings_url() -> Result<String, String> {
+    let (owner, repo) = owner_repo_for_current_remote()?;
+    Ok(format!("https://github.com/{owner}/{repo}/settings/branches"))
+}
+
+#[derive(serde::Serialize)]
+struct RequiredPullRequestReviews {
+    dismiss_stale_reviews: bool,
+    require_code_owner_reviews: bool,
+    required_approving_review_count: u32,
+}
+
+#[derive(serde::Serialize)]
+struct BranchProtectionBody {
+    // GitHub's branch-protection API requires all four of these top-level
+    // fields on every PUT, even to just turn on "require a pull request" -
+    // Option<_> fields set to None serialize as the literal `null` GitHub
+    // expects to mean "don't use this feature" (verified against GitHub's
+    // own REST API docs, not assumed).
+    required_status_checks: Option<bool>,
+    enforce_admins: bool,
+    required_pull_request_reviews: RequiredPullRequestReviews,
+    restrictions: Option<bool>,
+}
+
+/// pws-4g2n - the "automatic" half of the two-layer live-branch protection:
+/// GitHub's own branch-protection rule is the only mechanism that can't be
+/// bypassed by anyone pushing with raw git directly (nothing local-only
+/// can enforce that - see the soft in-app warning elsewhere for the other
+/// half). Requires "require a pull request before merging" with at least
+/// one approving review; doesn't touch status checks or push restrictions.
+/// enforce_admins is deliberately false - a repo admin can still push
+/// directly in a pinch, this isn't meant to lock the owner out.
+///
+/// There's no reliable way to check in advance whether the configured
+/// token actually has Administration access before attempting this - the
+/// same fine-grained-token introspection gap github_validate_token's own
+/// doc comment already covers applies here too (a repo-level permissions
+/// field reflects the ACCOUNT's role, not a fine-grained token's own
+/// restricted scope). So this just attempts the real write directly,
+/// behind the frontend's own confirm dialog, and reports a clear 401/403
+/// as "use the link instead" rather than guessing first.
+#[tauri::command]
+pub fn github_enable_branch_protection(auth: State<GitAuthConfigState>, branch: String) -> Result<(), String> {
+    let (owner, repo) = owner_repo_for_current_remote()?;
+    let token = auth.0.lock().unwrap().token.clone();
+
+    if token.is_empty() {
+        return Err(
+            "Needs a personal access token with Administration write access to this repository \
+             (Settings \u{2192} GitHub sync) first."
+                .to_string(),
+        );
+    }
+
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/branches/{branch}/protection");
+    let body = BranchProtectionBody {
+        required_status_checks: None,
+        enforce_admins: false,
+        required_pull_request_reviews: RequiredPullRequestReviews {
+            dismiss_stale_reviews: false,
+            require_code_owner_reviews: false,
+            required_approving_review_count: 1,
+        },
+        restrictions: None,
+    };
+    let (status, text) = github_api_write(|u: &str| ureq::put(u), &url, &token, &body)?;
+
+    if (200..300).contains(&status) {
+        return Ok(());
+    }
+    if status == 401 || status == 403 {
+        return Err(
+            "GitHub rejected this - the configured token doesn't have Administration access to this \
+             repository. Use the link above to set this up manually on GitHub instead."
+                .to_string(),
+        );
+    }
+    Err(format!("GitHub couldn't set up branch protection ({status}): {text}"))
+}
+
 #[derive(serde::Deserialize)]
 struct RawComment {
     body: String,
