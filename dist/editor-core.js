@@ -540,7 +540,9 @@ const parseFrontmatterFields = (block) => {
 
 const cleanFrontmatterValue = (raw) => raw.trim().replace(/^["']|["']$/g, "");
 
-const formatFrontmatterTags = (raw) =>
+// Same single-line TOML string array shape (["a", "b"]) for both tags and
+// authors - not a general TOML array parser, just enough to display either.
+const formatFrontmatterArray = (raw) =>
   raw
     .trim()
     .replace(/^\[/, "")
@@ -564,23 +566,51 @@ const frontmatterOtherEl = document.getElementById("frontmatter-other");
 const frontmatterOtherListEl = document.getElementById("frontmatter-other-list");
 const frontmatterRawEl = document.getElementById("frontmatter-raw");
 
-// [frontmatter key, display label, value formatter] - anything in the
-// block NOT listed here falls through to the plain key = value "Other
-// fields" list instead (pws-dbs.19's explicit answer to "what about fields
-// the app doesn't recognize but a theme does" - never hidden).
+// [frontmatter key, display label, value formatter, optional shouldShow
+// predicate] - anything in the block NOT listed here falls through to the
+// plain key = value "Other fields" list instead (pws-dbs.19's explicit
+// answer to "what about fields the app doesn't recognize but a theme does"
+// - never hidden). This list was swept against the actual backend
+// (front_matter_field/stamp_* call sites), not guessed - every field one of
+// this app's OWN features already reads or writes somewhere, not just
+// title/date/tags:
+// - authors: appended on every save (frontmatter.rs's append_author) -
+//   nested under a [extra] table on disk, not a bare top-level key, but
+//   this scanner (like front_matter_field on the Rust side it mirrors)
+//   doesn't track TOML table boundaries, so it finds the line either way -
+//   an existing, shared limitation, not something new this introduces.
+// - updated: auto-stamped on every save (write_file) - basically never
+//   hand-typed, but still worth showing since it's genuinely informative.
+// - template: detect_external_content already reads this to flag a custom-
+//   rendering page - shown only when set to something other than Zola's
+//   own page.html/section.html defaults, same filter that function applies
+//   (showing "Template: page.html" on every ordinary post would be noise).
+// - heading_kind/sort_by: section-_index.md-only (zola::heading_kind_of) -
+//   no dedicated UI writes these anywhere (create_section never sets
+//   either), so hand-editing frontmatter is the ONLY way to set them today;
+//   showing them read-only here is a real improvement, not a duplicate of
+//   something the Menu editor already does. They simply won't appear on an
+//   ordinary post, which never has either field.
 const KNOWN_FRONTMATTER_FIELDS = [
   ["title", "Title", cleanFrontmatterValue],
   ["date", "Date", formatFrontmatterDate],
-  ["tags", "Tags", formatFrontmatterTags],
+  ["tags", "Tags", formatFrontmatterArray],
+  ["authors", "Authors", formatFrontmatterArray],
+  ["updated", "Updated", formatFrontmatterDate],
+  ["template", "Template", cleanFrontmatterValue, (raw) => raw !== "page.html" && raw !== "section.html"],
+  ["heading_kind", "Section type", cleanFrontmatterValue],
+  ["sort_by", "Sort by", cleanFrontmatterValue],
 ];
 
 const renderFrontmatterFieldsAndExtras = (block) => {
   const fields = parseFrontmatterFields(block);
 
   frontmatterFieldsEl.innerHTML = "";
-  for (const [key, label, format] of KNOWN_FRONTMATTER_FIELDS) {
+  for (const [key, label, format, shouldShow] of KNOWN_FRONTMATTER_FIELDS) {
     if (!fields.has(key)) continue;
-    const display = format(fields.get(key));
+    const raw = fields.get(key);
+    if (shouldShow && !shouldShow(cleanFrontmatterValue(raw))) continue;
+    const display = format(raw);
     if (!display) continue;
     const field = document.createElement("span");
     field.className = "frontmatter-field";

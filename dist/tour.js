@@ -17,7 +17,11 @@
 // it. This is the manual "Take the tour" button + overlay mechanism only.
 
 const TOUR_STEPS = [
-  { title: "Quick tour", body: "4 stops, skip anytime.", selector: null },
+  {
+    title: "Quick tour",
+    body: "4 stops, skip anytime — and you can always come back to this tour later from the compass button up top.",
+    selector: null,
+  },
   {
     title: "Everything lives in the sidebar",
     body: "Write in Editor, browse Pages, manage Media/Tags/Menu, and more — one destination per job.",
@@ -33,7 +37,7 @@ const TOUR_STEPS = [
     body: 'This shows your current draft. A name here (not "main") means your changes stay separate from the live site until you publish.',
     selector: ".header-draft-indicator",
   },
-  { title: "That's it", body: "Take this tour again anytime from the tour button up top.", selector: null },
+  { title: "That's it", body: "Take this tour again anytime from the compass button up top.", selector: null },
 ];
 
 let tourOverlay;
