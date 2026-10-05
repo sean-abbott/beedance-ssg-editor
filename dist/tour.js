@@ -37,7 +37,13 @@ const TOUR_STEPS = [
     body: 'This shows your current draft. A name here (not "main") means your changes stay separate from the live site until you publish.',
     selector: ".header-draft-indicator",
   },
-  { title: "That's it", body: "Take this tour again anytime from the compass button up top.", selector: null },
+  {
+    title: "That's it",
+    body:
+      "Take this tour again anytime from the compass button up top. Don't want it popping up automatically on launch? " +
+      "Turn that off in Settings → This installation → Feature tour.",
+    selector: null,
+  },
 ];
 
 let tourOverlay;
