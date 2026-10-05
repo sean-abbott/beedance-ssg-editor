@@ -19,7 +19,7 @@
 const TOUR_STEPS = [
   {
     title: "Quick tour",
-    body: "4 stops, skip anytime — and you can always come back to this tour later from the compass button up top.",
+    body: "5 stops, skip anytime — and you can always come back to this tour later from the compass button up top.",
     selector: null,
   },
   {
@@ -28,14 +28,24 @@ const TOUR_STEPS = [
     selector: ".sidebar-nav",
   },
   {
-    title: "See your actual site",
-    body: "This is the one people miss: click Start preview anytime to see your real site. It opens its own window and updates live as you type.",
+    title: "See what your site looks like",
+    body:
+      "This is the one people miss: click Start preview to open a preview window showing your edits moments after " +
+      "you make them - exactly how they'll look once published. Use the Phone preview checkbox alongside it to see " +
+      "how it looks on a phone.",
     selector: "#preview-start",
   },
   {
     title: "What you're working on",
     body: 'This shows your current draft. A name here (not "main") means your changes stay separate from the live site until you publish.',
     selector: ".header-draft-indicator",
+  },
+  {
+    title: "Settings",
+    body:
+      "Your name, GitHub sync, image storage, this tour, and more live here - split into This installation " +
+      "(just your computer) and This site (shared with everyone who edits it).",
+    selector: "#open-settings",
   },
   {
     title: "That's it",
