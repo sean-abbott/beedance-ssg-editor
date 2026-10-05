@@ -60,10 +60,28 @@
       <h1>beedance-ssg-editor <span id="review-mode-header-badge" style="display: none; font-size: 12px; font-weight: 700; color: #b8860b; border: 1px solid #b8860b; border-radius: 999px; padding: 2px 8px; vertical-align: middle;">READ-ONLY &middot; REVIEWING</span></h1>
     </div>
     <div class="header-actions">
-      <a href="#" id="header-draft-indicator" class="header-draft-indicator" title="Currently on a draft, not the live site - click to switch, review, or sync">
-        <svg class="icon"><use href="#icon-branch"/></svg>
-        <span id="header-draft-indicator-label">&hellip;</span>
-      </a>
+      <!-- pws-662d.1's originally-deferred dropdown, now unblocked (.5/.7
+           both shipped) - a plain link only on the Editor page itself
+           (its own draft-mode-banner already surfaces Review&checkpoint/
+           Publish right below it, a redundant dropdown there would be
+           clutter), a real switcher-ish menu everywhere else. One element,
+           not two swapped via display - git-workflow.js's own click
+           handler intercepts and stops propagation on the Editor page so
+           menus.js's generic .menu>button delegate never sees that click,
+           letting it through everywhere else. -->
+      <div class="menu" id="header-draft-indicator-menu">
+        <button type="button" id="header-draft-indicator" class="header-draft-indicator" title="Currently on a draft, not the live site - click to switch, review, or sync">
+          <svg class="icon"><use href="#icon-branch"/></svg>
+          <span id="header-draft-indicator-label">&hellip;</span>
+          <span id="header-draft-indicator-dirty-pencil" class="diff-pencil" style="display: none; margin-left: 2px;"><svg class="icon"><use href="#icon-pencil"/></svg></span>
+        </button>
+        <div class="menu-dropdown">
+          <button type="button" id="header-draft-review-item"><svg class="icon"><use href="#icon-doc"/></svg>Review &amp; checkpoint&hellip;</button>
+          <button type="button" id="header-draft-publish-item" title="Merges this draft into the live site - only you can do this for your own drafts"><svg class="icon"><use href="#icon-external-link"/></svg>Publish to live site</button>
+          <div class="menu-divider"></div>
+          <a href="#" id="header-draft-goto-item"><svg class="icon"><use href="#icon-branch"/></svg>Go to Drafts &rarr;</a>
+        </div>
+      </div>
       <div class="menu" id="header-review-indicator" style="display: none;">
         <button class="header-draft-indicator on-review" title="Reviewing someone else's draft, read-only">
           <svg class="icon"><use href="#icon-pull-request"/></svg>

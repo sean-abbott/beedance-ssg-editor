@@ -160,6 +160,18 @@
       cursor: pointer;
     }
     .header-draft-indicator.on-review:hover { background: color-mix(in srgb, var(--warning) 85%, black); }
+    /* pws-jod6 - "main" means nothing to non-engineers, relabeled "Live
+       (main)" everywhere the literal branch name used to show. Still the
+       calm/default look when clean; uncommitted changes directly on the
+       live branch (not a draft) get a warning recolor - not a full fill
+       like on-draft/on-review (those mean "you've left the default context
+       entirely"), this means "still the default context, pay attention" -
+       plus the same muted pencil icon this app's diff-indicator language
+       (pws-jp1u) uses elsewhere for "not yet checkpointed". */
+    .header-draft-indicator.on-main-dirty { border-color: var(--warning); color: var(--warning); }
+    .header-draft-indicator.on-main-dirty .diff-pencil { color: var(--warning); }
+    .diff-pencil { color: var(--muted); }
+    .diff-pencil svg { width: 12px; height: 12px; }
 
     /* The Editor page's own escalated "you're on a draft" signal (pws-
        662d.7) - accent-colored, deliberately NOT amber/warning, which stays
@@ -742,6 +754,12 @@
       gap: 4px;
     }
     .content-row .content-row-tags.expanded { flex-wrap: wrap; overflow: visible; }
+    /* Hidden explicitly, past the "+N" toggle's own maxVisibleTags count -
+       not left to flex-wrap:nowrap + overflow:hidden to clip at the same
+       number, which depends on available width/label length and can
+       silently drift from whatever "+N" actually says. */
+    .content-row .content-row-tags .tag-chip.tag-chip-overflow { display: none; }
+    .content-row .content-row-tags.expanded .tag-chip.tag-chip-overflow { display: inline-flex; }
     .content-row .content-row-tags .tag-chip { padding: 1px 8px; font-size: var(--text-xs); flex-shrink: 0; }
     .content-row .content-row-tags .tag-chip button { display: none; }
     .content-row .content-row-date { font-size: var(--text-sm); color: var(--muted); flex-shrink: 0; width: 84px; text-align: right; }

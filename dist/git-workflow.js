@@ -173,9 +173,39 @@ document.getElementById("draft-feedback-refresh").addEventListener("click", refr
 // gated behind the Drafts page itself for the same reason Start/Stop
 // preview live there (pws-898q): which draft you're on is a global,
 // not-page-scoped concern.
+const headerDraftIndicatorMenu = document.getElementById("header-draft-indicator-menu");
 const headerDraftIndicator = document.getElementById("header-draft-indicator");
 const headerDraftIndicatorLabel = document.getElementById("header-draft-indicator-label");
+const headerDraftIndicatorDirtyPencil = document.getElementById("header-draft-indicator-dirty-pencil");
+
+// Editor page keeps this a plain "go to Drafts" link - its own draft-mode-
+// banner (pws-662d.7) already surfaces Review&checkpoint/Publish right
+// below it, so the dropdown would be redundant clutter there. Everywhere
+// else it's the real menu. One element, not two swapped via display:
+// intercepted here (fires before menus.js's document-level delegated
+// handler, since this listener sits on the target itself) and
+// stopPropagation'd on the Editor page only, so the generic .menu>button
+// toggle never sees that click.
+let currentMainPage = "editor";
+document.addEventListener("beedance:page-changed", (e) => {
+  currentMainPage = e.detail.page;
+});
+
 headerDraftIndicator.addEventListener("click", (e) => {
+  if (currentMainPage === "editor") {
+    e.preventDefault();
+    e.stopPropagation();
+    showAppMainPage("drafts");
+  }
+});
+
+document.getElementById("header-draft-review-item").addEventListener("click", () => {
+  document.getElementById("editor-review-open").click();
+});
+document.getElementById("header-draft-publish-item").addEventListener("click", () => {
+  document.getElementById("draft-publish-button").click();
+});
+document.getElementById("header-draft-goto-item").addEventListener("click", (e) => {
   e.preventDefault();
   showAppMainPage("drafts");
 });
@@ -323,7 +353,7 @@ const applyReviewModeUI = () => {
   // to miss.
   document.body.classList.toggle("review-mode-active", active);
   reviewModeHeaderBadge.style.display = active ? "inline-block" : "none";
-  headerDraftIndicator.style.display = active ? "none" : "inline-flex";
+  headerDraftIndicatorMenu.style.display = active ? "none" : "inline-block";
   headerReviewIndicator.style.display = active ? "inline-block" : "none";
   if (active) {
     const message = `Reviewing PR #${reviewModeActive.number}: "${reviewModeActive.title}" by ${reviewModeActive.authorLogin}.`;
@@ -405,11 +435,17 @@ const updateBranchIndicator = (branches) => {
   // this already runs on every branch-affecting action, so it's never stale
   // by more than that.
   isOnLiveBranch = onLive;
-  headerDraftIndicatorLabel.textContent = current ? (current.isLive ? "main" : current.name) : "…";
+  // pws-jod6 - "main" means nothing to non-engineers; kept in parentheses
+  // (not fully hidden) so anyone who does know git still sees the real
+  // branch name.
+  headerDraftIndicatorLabel.textContent = current ? (current.isLive ? "Live (main)" : current.name) : "…";
   headerDraftIndicator.classList.toggle("on-draft", !onLive);
 
   editorDraftBanner.style.display = onLive ? "none" : "flex";
   if (!onLive) {
+    headerDraftIndicator.classList.remove("on-main-dirty");
+    headerDraftIndicatorDirtyPencil.style.display = "none";
+    headerDraftIndicator.title = "Currently on a draft, not the live site - click to switch, review, or sync";
     editorDraftBannerName.textContent = current.name;
     editorBannerStatus.textContent = "";
     editorBannerStatus.classList.remove("status-success", "status-error");
@@ -418,6 +454,21 @@ const updateBranchIndicator = (branches) => {
     // state current without requiring the Review & checkpoint modal to be
     // opened first - see refreshReviewChanges/setPublishButtonsEmphasis.
     refreshReviewChanges();
+  } else {
+    // pws-jod6's dirty state: uncommitted changes directly on the live
+    // branch (not a draft) is a riskier, materially different situation
+    // than a clean synced live site - best-effort, never blocks the pill
+    // from showing something if this fails.
+    invoke("git_changed_files")
+      .then((files) => {
+        const dirty = files.length > 0;
+        headerDraftIndicator.classList.toggle("on-main-dirty", dirty);
+        headerDraftIndicatorDirtyPencil.style.display = dirty ? "inline-flex" : "none";
+        headerDraftIndicator.title = dirty
+          ? "You're editing the live site directly - these changes aren't in a draft. Pushing sends them to the internet directly."
+          : "You're on the live site, not a draft.";
+      })
+      .catch(() => {});
   }
 };
 
@@ -449,7 +500,8 @@ const renderLocalDraftsList = (branches, prStates) => {
     row.appendChild(makeIcon("branch", "review-row-status-icon"));
     const label = document.createElement("span");
     label.className = "review-row-path";
-    label.textContent = branch.isLive ? `Live site (${branch.name})` : branch.name;
+    // pws-jod6 - same "Live (main)" relabeling as the header pill.
+    label.textContent = branch.isLive ? `Live (${branch.name})` : branch.name;
     row.appendChild(label);
 
     const prState = prStates.get(branch.name);

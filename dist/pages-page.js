@@ -162,21 +162,29 @@ const renderPagesList = () => {
     main.append(title, path);
     row.appendChild(main);
 
+    // Title and tags each get ~50% of the row's flexible space - a page
+    // with many tags used to push the title out of the way; beyond a fixed
+    // count of 2, the rest collapse into the "+N" toggle below instead of
+    // crowding the row. Explicitly hides chips past that count (.tag-chip-
+    // overflow) rather than trusting flex-wrap:nowrap + overflow:hidden to
+    // clip at the same number - that visual clipping depends on available
+    // width and each tag's own label length, so it can end up showing more
+    // or fewer than `maxVisibleTags` chips while the "+N" count (computed
+    // from maxVisibleTags alone) silently stops matching what's actually
+    // visible. Found the hard way: Sean saw all 4 tags rendered plus a
+    // stale "+2".
+    const maxVisibleTags = 2;
     const tags = document.createElement("span");
     tags.className = "content-row-tags";
-    for (const tag of page.tags) {
+    page.tags.forEach((tag, i) => {
       const chip = document.createElement("span");
       chip.className = "tag-chip";
+      if (i >= maxVisibleTags) chip.classList.add("tag-chip-overflow");
       chip.textContent = tag;
       tags.appendChild(chip);
-    }
+    });
     row.appendChild(tags);
 
-    // Title and tags each get ~50% of the row's flexible space (see
-    // .content-row-tags's flex:1 1 0 + overflow:hidden) - a page with many
-    // tags used to push the title out of the way; beyond a fixed count of
-    // 2, the rest collapse into this toggle instead of crowding the row.
-    const maxVisibleTags = 2;
     if (page.tags.length > maxVisibleTags) {
       const extra = page.tags.length - maxVisibleTags;
       const toggle = document.createElement("button");
