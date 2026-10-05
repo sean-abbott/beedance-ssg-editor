@@ -1,7 +1,7 @@
 [package]
 name = "beedance-ssg-editor"
-version = "0.2.0"
-description = "Git+markdown-backed desktop static site editor (Tauri sidecar-SSG spike)"
+version = "0.3.0"
+description = "Git+markdown-backed desktop static site editor (Tauri, Zola sidecar) - alpha"
 edition = "2021"
 
 [build-dependencies]

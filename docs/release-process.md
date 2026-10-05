@@ -60,14 +60,12 @@ that's normal, expected GitHub behavior for an unpublished draft, not a
 sign anything's wrong. It resolves to the real `app-v<version>` tag/URLs as
 soon as you publish it.
 
-## Known gap: the app icon
+## Replacing the app icon
 
-`src-tauri/icons/` currently holds a real, correctly-formatted icon set
-(`.ico`, `.icns`, the PNG sizes), but it was generated from a 1x1 placeholder
-pixel, not real artwork - every installer's icon is a blank square right
-now. Replace `src-tauri/icons/icon.png` with real square artwork (1024x1024
-recommended) and regenerate the set before actually publishing a release
-anyone's meant to take seriously:
+`src-tauri/icons/` holds a real icon set (a bumblebee + flight trail, CC0
+art - see `src-tauri/icons/icon-source.svg` for the editable master). To
+replace it with something else, regenerate the full set from a new 1024x1024
+source image:
 
 ```
 cargo tauri icon src-tauri/icons/icon.png -o src-tauri/icons
